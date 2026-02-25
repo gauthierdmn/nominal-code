@@ -31,6 +31,36 @@ job runs serially per PR
         └─ [REVIEWER] clone/update → fetch diff + comments → run agent (read-only) → submit review
 ```
 
+## CLI Flow
+
+```
+nominal-code review owner/repo#42 [--dry-run] [--prompt "..."]
+        │
+        ▼
+parse_pr_ref()                     ← validate owner/repo#N format
+        │
+        ▼
+build_platform()                   ← construct platform from env token
+        │
+        ├─ fetch_pr_branch()       ← resolve HEAD branch via API
+        │
+        ▼
+execute_review()
+        │
+        ├─ clone/update workspace
+        ├─ fetch diff + comments (parallel)
+        ├─ build prompt + run agent
+        ├─ parse JSON + filter findings
+        │
+        ▼
+print_review()                     ← format results for terminal
+        │
+        ├─ [unless --dry-run] submit_review() or post_reply()
+        │
+        ▼
+exit 0
+```
+
 ## Components
 
 ### Webhook Server
@@ -50,7 +80,14 @@ A factory-based registry where each platform module self-registers at import tim
 
 - **`shared.handle_comment()`** — central dispatch. Checks authorization, posts the eyes reaction, and enqueues the job.
 - **`worker.process_comment()`** — clones the repo, runs the agent with full tools, posts the reply.
-- **`reviewer.process_comment()`** — clones the repo, fetches diff + existing comments, runs the agent with restricted tools, parses JSON output, and submits a structured review.
+- **`reviewer.execute_review()`** — core review logic (clone, fetch diff + comments, run agent, parse JSON, filter findings). Returns an `ExecuteReviewResult` without posting. Used by both webhook and CLI modes.
+- **`reviewer.process_comment()`** — webhook entry point. Calls `execute_review()` then posts results to the platform.
+
+### CLI Module
+
+- **`cli.parse_pr_ref()`** — parses `owner/repo#42` into a repo name and PR number.
+- **`cli.build_platform()`** — constructs a platform client from environment tokens (no webhook secret needed).
+- **`cli.run_review()`** — orchestrates the CLI flow: resolve branch, call `execute_review()`, print results, optionally post.
 
 ### Agent Runner
 
