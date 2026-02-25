@@ -1,0 +1,27 @@
+# Virtual environment
+.venv/
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+
+# Secrets
+.env
+
+# Project runtime
+.cache/
+workspaces/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+
+# Ruff / pytest
+.ruff_cache/
+.pytest_cache/
