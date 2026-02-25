@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
@@ -219,18 +220,36 @@ async def process_comment(
 
             return
 
-        if review_result.findings:
+        valid_findings, rejected_findings = filter_findings(
+            review_result.findings,
+            changed_files,
+        )
+
+        if rejected_findings:
+            logger.warning(
+                "Filtered %d findings outside the diff for %s#%d",
+                len(rejected_findings),
+                comment.repo_full_name,
+                comment.pr_number,
+            )
+
+        effective_summary: str = build_effective_summary(
+            review_result.summary,
+            rejected_findings,
+        )
+
+        if valid_findings:
             await platform.submit_review(
                 repo_full_name=comment.repo_full_name,
                 pr_number=comment.pr_number,
-                findings=review_result.findings,
-                summary=review_result.summary,
+                findings=valid_findings,
+                summary=effective_summary,
                 comment=comment,
             )
         else:
             await platform.post_reply(
                 comment,
-                CommentReply(body=review_result.summary),
+                CommentReply(body=effective_summary),
             )
 
         logger.info(
@@ -415,6 +434,131 @@ def parse_review_output(output: str) -> ReviewResult | None:
         findings.append(ReviewFinding(file_path=path, line=line, body=body))
 
     return ReviewResult(summary=summary, findings=findings)
+
+
+HUNK_HEADER_PATTERN: re.Pattern[str] = re.compile(
+    r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@",
+)
+
+
+def _parse_diff_lines(patch: str) -> set[int]:
+    """
+    Extract the set of new-side line numbers present in a unified diff.
+
+    Parses hunk headers and walks the diff lines to collect every line
+    number on the RIGHT side (additions and context lines).
+
+    Args:
+        patch (str): Unified diff text for a single file.
+
+    Returns:
+        set[int]: Line numbers that appear on the new side of the diff.
+    """
+
+    lines: set[int] = set()
+    current_line: int = 0
+
+    for raw_line in patch.splitlines():
+        header_match: re.Match[str] | None = HUNK_HEADER_PATTERN.match(raw_line)
+
+        if header_match:
+            current_line = int(header_match.group(1))
+            continue
+
+        if current_line == 0:
+            continue
+
+        if raw_line.startswith("-"):
+            continue
+
+        lines.add(current_line)
+        current_line += 1
+
+    return lines
+
+
+def _build_diff_index(
+    changed_files: list[ChangedFile],
+) -> dict[str, set[int]]:
+    """
+    Build a mapping from file path to the set of valid diff line numbers.
+
+    Args:
+        changed_files (list[ChangedFile]): Files changed in the PR.
+
+    Returns:
+        dict[str, set[int]]: File paths mapped to their valid new-side lines.
+    """
+
+    index: dict[str, set[int]] = {}
+
+    for changed_file in changed_files:
+        if changed_file.patch:
+            index[changed_file.file_path] = _parse_diff_lines(changed_file.patch)
+
+    return index
+
+
+def filter_findings(
+    findings: list[ReviewFinding],
+    changed_files: list[ChangedFile],
+) -> tuple[list[ReviewFinding], list[ReviewFinding]]:
+    """
+    Split findings into those targeting valid diff lines and those that don't.
+
+    Args:
+        findings (list[ReviewFinding]): All findings from the agent.
+        changed_files (list[ChangedFile]): Files changed in the PR.
+
+    Returns:
+        tuple[list[ReviewFinding], list[ReviewFinding]]: A pair of
+            (valid, rejected) findings.
+    """
+
+    diff_index: dict[str, set[int]] = _build_diff_index(changed_files)
+    valid: list[ReviewFinding] = []
+    rejected: list[ReviewFinding] = []
+
+    for finding in findings:
+        valid_lines: set[int] | None = diff_index.get(finding.file_path)
+
+        if valid_lines is not None and finding.line in valid_lines:
+            valid.append(finding)
+        else:
+            rejected.append(finding)
+
+    return valid, rejected
+
+
+def build_effective_summary(
+    summary: str,
+    rejected_findings: list[ReviewFinding],
+) -> str:
+    """
+    Append rejected findings to the review summary as additional notes.
+
+    When findings reference files or lines outside the diff, they cannot
+    be posted as inline comments. This function folds them into the
+    summary text so the information is not lost.
+
+    Args:
+        summary (str): The original review summary.
+        rejected_findings (list[ReviewFinding]): Findings that could not
+            be posted inline.
+
+    Returns:
+        str: The summary, potentially extended with additional notes.
+    """
+
+    if not rejected_findings:
+        return summary
+
+    parts: list[str] = [summary, "\n\n**Additional notes** (not in diff):\n"]
+
+    for finding in rejected_findings:
+        parts.append(f"- **{finding.file_path}:{finding.line}** — {finding.body}")
+
+    return "\n".join(parts)
 
 
 def build_retry_prompt(previous_output: str) -> str:
