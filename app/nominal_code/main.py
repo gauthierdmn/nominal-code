@@ -127,8 +127,15 @@ async def _async_main() -> None:
 
 def main() -> None:
     """
-    Entry point: set up logging and run the async main loop.
+    Entry point: dispatch to CLI review mode or start the webhook server.
     """
+
+    if len(sys.argv) > 1 and sys.argv[1] == "review":
+        from nominal_code.cli import cli_main
+
+        cli_main()
+
+        return
 
     _setup_logging()
 
