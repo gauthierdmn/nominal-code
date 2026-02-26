@@ -2,6 +2,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+from claude_agent_sdk import ResultMessage, SystemMessage
 
 from nominal_code.agent_runner import AgentResult, run_agent
 
@@ -35,8 +36,6 @@ def _make_system_message(subtype="init", data=None):
 class TestRunClaude:
     @pytest.mark.asyncio
     async def test_run_agent_returns_result(self):
-        from claude_agent_sdk import ResultMessage, SystemMessage
-
         init_msg = MagicMock(spec=SystemMessage)
         init_msg.subtype = "init"
         init_msg.data = {"session_id": "sess-abc"}
@@ -77,8 +76,6 @@ class TestRunClaude:
 
     @pytest.mark.asyncio
     async def test_run_agent_empty_result(self):
-        from claude_agent_sdk import ResultMessage
-
         result_msg = MagicMock(spec=ResultMessage)
         result_msg.result = ""
         result_msg.is_error = False
@@ -96,8 +93,6 @@ class TestRunClaude:
 
     @pytest.mark.asyncio
     async def test_run_agent_forwards_system_prompt(self):
-        from claude_agent_sdk import ResultMessage
-
         result_msg = MagicMock(spec=ResultMessage)
         result_msg.result = "Done"
         result_msg.is_error = False
@@ -123,8 +118,6 @@ class TestRunClaude:
 
     @pytest.mark.asyncio
     async def test_run_agent_omits_system_prompt_when_empty(self):
-        from claude_agent_sdk import ResultMessage
-
         result_msg = MagicMock(spec=ResultMessage)
         result_msg.result = "Done"
         result_msg.is_error = False
@@ -146,8 +139,6 @@ class TestRunClaude:
 
     @pytest.mark.asyncio
     async def test_run_agent_forwards_permission_mode(self):
-        from claude_agent_sdk import ResultMessage
-
         result_msg = MagicMock(spec=ResultMessage)
         result_msg.result = "Done"
         result_msg.is_error = False
@@ -173,8 +164,6 @@ class TestRunClaude:
 
     @pytest.mark.asyncio
     async def test_run_agent_forwards_allowed_tools(self):
-        from claude_agent_sdk import ResultMessage
-
         result_msg = MagicMock(spec=ResultMessage)
         result_msg.result = "Done"
         result_msg.is_error = False
@@ -204,8 +193,6 @@ class TestRunClaude:
 
     @pytest.mark.asyncio
     async def test_run_agent_default_allowed_tools_is_empty(self):
-        from claude_agent_sdk import ResultMessage
-
         result_msg = MagicMock(spec=ResultMessage)
         result_msg.result = "Done"
         result_msg.is_error = False
@@ -227,8 +214,6 @@ class TestRunClaude:
 
     @pytest.mark.asyncio
     async def test_run_agent_default_permission_mode_is_bypass(self):
-        from claude_agent_sdk import ResultMessage
-
         result_msg = MagicMock(spec=ResultMessage)
         result_msg.result = "Done"
         result_msg.is_error = False

@@ -22,6 +22,7 @@ from claude_agent_sdk.types import (
 )
 
 SESSION_ID_INIT_SUBTYPE: str = "init"
+MAX_TOOL_RESULT_LOG_LENGTH: int = 500
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -63,47 +64,6 @@ def _patched_parse_message(data: dict[str, Any]) -> Message:
 
 _sdk_parser.parse_message = _patched_parse_message
 _sdk_client.parse_message = _patched_parse_message  # type: ignore[attr-defined]
-
-MAX_TOOL_RESULT_LOG_LENGTH: int = 500
-
-
-def _log_message(message: Message) -> None:
-    """
-    Log an agent message at DEBUG level for auditing.
-
-    Logs assistant text, thinking, tool calls, and tool results so the full
-    agent conversation can be inspected when debug logging is enabled.
-
-    Args:
-        message (Message): The SDK message to log.
-    """
-
-    if not logger.isEnabledFor(logging.DEBUG):
-        return
-
-    if isinstance(message, AssistantMessage):
-        for block in message.content:
-            if isinstance(block, TextBlock):
-                logger.debug("[assistant] %s", block.text)
-            elif isinstance(block, ThinkingBlock):
-                logger.debug("[thinking] %s", block.thinking)
-            elif isinstance(block, ToolUseBlock):
-                logger.debug("[tool_use] %s(%s)", block.name, block.input)
-
-    elif isinstance(message, UserMessage) and isinstance(message.content, list):
-        for block in message.content:
-            if isinstance(block, ToolResultBlock):
-                content: str = str(block.content) if block.content else ""
-
-                if len(content) > MAX_TOOL_RESULT_LOG_LENGTH:
-                    content = content[:MAX_TOOL_RESULT_LOG_LENGTH] + "...(truncated)"
-
-                logger.debug(
-                    "[tool_result] %s error=%s %s",
-                    block.tool_use_id,
-                    block.is_error,
-                    content,
-                )
 
 
 @dataclass(frozen=True)
@@ -205,3 +165,42 @@ async def run_agent(
         duration_ms=0,
         session_id=captured_session_id,
     )
+
+
+def _log_message(message: Message) -> None:
+    """
+    Log an agent message at DEBUG level for auditing.
+
+    Logs assistant text, thinking, tool calls, and tool results so the full
+    agent conversation can be inspected when debug logging is enabled.
+
+    Args:
+        message (Message): The SDK message to log.
+    """
+
+    if not logger.isEnabledFor(logging.DEBUG):
+        return
+
+    if isinstance(message, AssistantMessage):
+        for block in message.content:
+            if isinstance(block, TextBlock):
+                logger.debug("[assistant] %s", block.text)
+            elif isinstance(block, ThinkingBlock):
+                logger.debug("[thinking] %s", block.thinking)
+            elif isinstance(block, ToolUseBlock):
+                logger.debug("[tool_use] %s(%s)", block.name, block.input)
+
+    elif isinstance(message, UserMessage) and isinstance(message.content, list):
+        for block in message.content:
+            if isinstance(block, ToolResultBlock):
+                content: str = str(block.content) if block.content else ""
+
+                if len(content) > MAX_TOOL_RESULT_LOG_LENGTH:
+                    content = content[:MAX_TOOL_RESULT_LOG_LENGTH] + "...(truncated)"
+
+                logger.debug(
+                    "[tool_result] %s error=%s %s",
+                    block.tool_use_id,
+                    block.is_error,
+                    content,
+                )
