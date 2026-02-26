@@ -1,5 +1,5 @@
 # type: ignore
-from nominal_code.bot_type import COMMENT_EVENT_TYPES, EventType
+from nominal_code.models import COMMENT_EVENT_TYPES, EventType
 
 
 class TestEventType:

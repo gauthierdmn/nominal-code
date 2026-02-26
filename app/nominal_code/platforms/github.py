@@ -10,7 +10,7 @@ from typing import Any
 import httpx
 from aiohttp import web
 
-from nominal_code.bot_type import ChangedFile, EventType, FileStatus, ReviewFinding
+from nominal_code.models import ChangedFile, EventType, FileStatus, ReviewFinding
 from nominal_code.platforms.base import (
     CommentEvent,
     CommentReply,
@@ -159,168 +159,6 @@ class GitHubPlatform:
             return self._parse_pull_request(payload)
 
         return None
-
-    def _parse_issue_comment(
-        self,
-        payload: dict[str, Any],
-    ) -> CommentEvent | None:
-        """
-        Parse an ``issue_comment`` event payload.
-
-        Only processes ``created`` actions on pull requests.
-
-        Args:
-            payload (dict[str, Any]): The webhook payload.
-
-        Returns:
-            CommentEvent | None: Parsed comment, or None if not relevant.
-        """
-
-        if payload.get("action") != "created":
-            return None
-
-        if "pull_request" not in payload.get("issue", {}):
-            return None
-
-        comment: dict[str, Any] = payload.get("comment", {})
-        issue: dict[str, Any] = payload.get("issue", {})
-        repo: dict[str, Any] = payload.get("repository", {})
-        repo_full_name: str = repo.get("full_name", "")
-        pr_number: int = issue.get("number", 0)
-
-        return CommentEvent(
-            platform=PlatformName.GITHUB,
-            repo_full_name=repo_full_name,
-            pr_number=pr_number,
-            pr_branch="",
-            clone_url=self._build_clone_url(repo_full_name),
-            event_type=EventType.ISSUE_COMMENT,
-            comment_id=comment.get("id", 0),
-            author_username=comment.get("user", {}).get("login", ""),
-            body=comment.get("body", ""),
-        )
-
-    def _parse_review_comment(
-        self,
-        payload: dict[str, Any],
-    ) -> CommentEvent | None:
-        """
-        Parse a ``pull_request_review_comment`` event payload.
-
-        Only processes ``created`` actions.
-
-        Args:
-            payload (dict[str, Any]): The webhook payload.
-
-        Returns:
-            CommentEvent | None: Parsed comment, or None if not relevant.
-        """
-
-        if payload.get("action") != "created":
-            return None
-
-        comment: dict[str, Any] = payload.get("comment", {})
-        pull_request: dict[str, Any] = payload.get("pull_request", {})
-        repo: dict[str, Any] = payload.get("repository", {})
-        repo_full_name: str = repo.get("full_name", "")
-
-        return CommentEvent(
-            platform=PlatformName.GITHUB,
-            repo_full_name=repo_full_name,
-            pr_number=pull_request.get("number", 0),
-            pr_branch=pull_request.get("head", {}).get("ref", ""),
-            clone_url=self._build_clone_url(repo_full_name),
-            event_type=EventType.REVIEW_COMMENT,
-            comment_id=comment.get("id", 0),
-            author_username=comment.get("user", {}).get("login", ""),
-            body=comment.get("body", ""),
-            diff_hunk=comment.get("diff_hunk", ""),
-            file_path=comment.get("path", ""),
-        )
-
-    def _parse_review(
-        self,
-        payload: dict[str, Any],
-    ) -> CommentEvent | None:
-        """
-        Parse a ``pull_request_review`` event payload.
-
-        Only processes ``submitted`` actions with a non-empty body.
-
-        Args:
-            payload (dict[str, Any]): The webhook payload.
-
-        Returns:
-            CommentEvent | None: Parsed comment, or None if not relevant.
-        """
-
-        if payload.get("action") != "submitted":
-            return None
-
-        review: dict[str, Any] = payload.get("review", {})
-        review_body: str = review.get("body", "") or ""
-
-        if not review_body.strip():
-            return None
-
-        pull_request: dict[str, Any] = payload.get("pull_request", {})
-        repo: dict[str, Any] = payload.get("repository", {})
-        repo_full_name: str = repo.get("full_name", "")
-
-        return CommentEvent(
-            platform=PlatformName.GITHUB,
-            repo_full_name=repo_full_name,
-            pr_number=pull_request.get("number", 0),
-            pr_branch=pull_request.get("head", {}).get("ref", ""),
-            clone_url=self._build_clone_url(repo_full_name),
-            event_type=EventType.REVIEW,
-            comment_id=review.get("id", 0),
-            author_username=review.get("user", {}).get("login", ""),
-            body=review_body,
-        )
-
-    def _parse_pull_request(
-        self,
-        payload: dict[str, Any],
-    ) -> LifecycleEvent | None:
-        """
-        Parse a ``pull_request`` lifecycle event payload.
-
-        Maps ``opened``, ``synchronize``, ``reopened``, and
-        ``ready_for_review`` actions to the corresponding EventType.
-        Draft PRs are skipped.
-
-        Args:
-            payload (dict[str, Any]): The webhook payload.
-
-        Returns:
-            LifecycleEvent | None: Parsed event, or None if not relevant.
-        """
-
-        action: str = payload.get("action", "")
-        event_type: EventType | None = PR_ACTION_TO_EVENT_TYPE.get(action)
-
-        if event_type is None:
-            return None
-
-        pull_request: dict[str, Any] = payload.get("pull_request", {})
-
-        if pull_request.get("draft", False):
-            return None
-
-        repo: dict[str, Any] = payload.get("repository", {})
-        repo_full_name: str = repo.get("full_name", "")
-
-        return LifecycleEvent(
-            platform=PlatformName.GITHUB,
-            repo_full_name=repo_full_name,
-            pr_number=pull_request.get("number", 0),
-            pr_branch=pull_request.get("head", {}).get("ref", ""),
-            clone_url=self._build_clone_url(repo_full_name),
-            event_type=event_type,
-            pr_title=pull_request.get("title", ""),
-            pr_author=pull_request.get("user", {}).get("login", ""),
-        )
 
     async def post_reply(
         self,
@@ -506,124 +344,6 @@ class GitHubPlatform:
 
         return comments
 
-    async def _fetch_issue_comments(
-        self,
-        repo_full_name: str,
-        pr_number: int,
-    ) -> list[ExistingComment]:
-        """
-        Fetch top-level issue comments on a PR.
-
-        Args:
-            repo_full_name (str): Full repository name.
-            pr_number (int): Pull request number.
-
-        Returns:
-            list[ExistingComment]: Top-level conversation comments.
-        """
-
-        results: list[ExistingComment] = []
-        page: int = 1
-
-        while True:
-            url: str = (
-                f"/repos/{repo_full_name}/issues/{pr_number}/comments"
-                f"?per_page={FILES_PER_PAGE}&page={page}"
-            )
-
-            try:
-                response: httpx.Response = await self._client.get(url)
-                response.raise_for_status()
-                data: list[dict[str, Any]] = response.json()
-            except httpx.HTTPError:
-                logger.exception(
-                    "Failed to fetch issue comments for %s#%d (page %d)",
-                    repo_full_name,
-                    pr_number,
-                    page,
-                )
-
-                break
-
-            if not data:
-                break
-
-            for entry in data:
-                results.append(
-                    ExistingComment(
-                        author=entry.get("user", {}).get("login", ""),
-                        body=entry.get("body", ""),
-                        created_at=entry.get("created_at", ""),
-                    ),
-                )
-
-            if len(data) < FILES_PER_PAGE:
-                break
-
-            page += 1
-
-        return results
-
-    async def _fetch_review_comments(
-        self,
-        repo_full_name: str,
-        pr_number: int,
-    ) -> list[ExistingComment]:
-        """
-        Fetch inline review comments on a PR.
-
-        Args:
-            repo_full_name (str): Full repository name.
-            pr_number (int): Pull request number.
-
-        Returns:
-            list[ExistingComment]: Inline review comments with file and line info.
-        """
-
-        results: list[ExistingComment] = []
-        page: int = 1
-
-        while True:
-            url: str = (
-                f"/repos/{repo_full_name}/pulls/{pr_number}/comments"
-                f"?per_page={FILES_PER_PAGE}&page={page}"
-            )
-
-            try:
-                response: httpx.Response = await self._client.get(url)
-                response.raise_for_status()
-                data: list[dict[str, Any]] = response.json()
-            except httpx.HTTPError:
-                logger.exception(
-                    "Failed to fetch review comments for %s#%d (page %d)",
-                    repo_full_name,
-                    pr_number,
-                    page,
-                )
-
-                break
-
-            if not data:
-                break
-
-            for entry in data:
-                results.append(
-                    ExistingComment(
-                        author=entry.get("user", {}).get("login", ""),
-                        body=entry.get("body", ""),
-                        file_path=entry.get("path", ""),
-                        line=entry.get("line", 0) or 0,
-                        created_at=entry.get("created_at", ""),
-                    ),
-                )
-
-            if len(data) < FILES_PER_PAGE:
-                break
-
-            page += 1
-
-        return results
-
     async def fetch_pr_diff(
         self,
         repo_full_name: str,
@@ -754,6 +474,286 @@ class GitHubPlatform:
         return (
             f"https://x-access-token:{effective_token}@github.com/{repo_full_name}.git"
         )
+
+    def _parse_issue_comment(
+        self,
+        payload: dict[str, Any],
+    ) -> CommentEvent | None:
+        """
+        Parse an ``issue_comment`` event payload.
+
+        Only processes ``created`` actions on pull requests.
+
+        Args:
+            payload (dict[str, Any]): The webhook payload.
+
+        Returns:
+            CommentEvent | None: Parsed comment, or None if not relevant.
+        """
+
+        if payload.get("action") != "created":
+            return None
+
+        if "pull_request" not in payload.get("issue", {}):
+            return None
+
+        comment: dict[str, Any] = payload.get("comment", {})
+        issue: dict[str, Any] = payload.get("issue", {})
+        repo: dict[str, Any] = payload.get("repository", {})
+        repo_full_name: str = repo.get("full_name", "")
+        pr_number: int = issue.get("number", 0)
+
+        return CommentEvent(
+            platform=PlatformName.GITHUB,
+            repo_full_name=repo_full_name,
+            pr_number=pr_number,
+            pr_branch="",
+            clone_url=self._build_clone_url(repo_full_name),
+            event_type=EventType.ISSUE_COMMENT,
+            comment_id=comment.get("id", 0),
+            author_username=comment.get("user", {}).get("login", ""),
+            body=comment.get("body", ""),
+        )
+
+    def _parse_review_comment(
+        self,
+        payload: dict[str, Any],
+    ) -> CommentEvent | None:
+        """
+        Parse a ``pull_request_review_comment`` event payload.
+
+        Only processes ``created`` actions.
+
+        Args:
+            payload (dict[str, Any]): The webhook payload.
+
+        Returns:
+            CommentEvent | None: Parsed comment, or None if not relevant.
+        """
+
+        if payload.get("action") != "created":
+            return None
+
+        comment: dict[str, Any] = payload.get("comment", {})
+        pull_request: dict[str, Any] = payload.get("pull_request", {})
+        repo: dict[str, Any] = payload.get("repository", {})
+        repo_full_name: str = repo.get("full_name", "")
+
+        return CommentEvent(
+            platform=PlatformName.GITHUB,
+            repo_full_name=repo_full_name,
+            pr_number=pull_request.get("number", 0),
+            pr_branch=pull_request.get("head", {}).get("ref", ""),
+            clone_url=self._build_clone_url(repo_full_name),
+            event_type=EventType.REVIEW_COMMENT,
+            comment_id=comment.get("id", 0),
+            author_username=comment.get("user", {}).get("login", ""),
+            body=comment.get("body", ""),
+            diff_hunk=comment.get("diff_hunk", ""),
+            file_path=comment.get("path", ""),
+        )
+
+    def _parse_review(
+        self,
+        payload: dict[str, Any],
+    ) -> CommentEvent | None:
+        """
+        Parse a ``pull_request_review`` event payload.
+
+        Only processes ``submitted`` actions with a non-empty body.
+
+        Args:
+            payload (dict[str, Any]): The webhook payload.
+
+        Returns:
+            CommentEvent | None: Parsed comment, or None if not relevant.
+        """
+
+        if payload.get("action") != "submitted":
+            return None
+
+        review: dict[str, Any] = payload.get("review", {})
+        review_body: str = review.get("body", "") or ""
+
+        if not review_body.strip():
+            return None
+
+        pull_request: dict[str, Any] = payload.get("pull_request", {})
+        repo: dict[str, Any] = payload.get("repository", {})
+        repo_full_name: str = repo.get("full_name", "")
+
+        return CommentEvent(
+            platform=PlatformName.GITHUB,
+            repo_full_name=repo_full_name,
+            pr_number=pull_request.get("number", 0),
+            pr_branch=pull_request.get("head", {}).get("ref", ""),
+            clone_url=self._build_clone_url(repo_full_name),
+            event_type=EventType.REVIEW,
+            comment_id=review.get("id", 0),
+            author_username=review.get("user", {}).get("login", ""),
+            body=review_body,
+        )
+
+    def _parse_pull_request(
+        self,
+        payload: dict[str, Any],
+    ) -> LifecycleEvent | None:
+        """
+        Parse a ``pull_request`` lifecycle event payload.
+
+        Maps ``opened``, ``synchronize``, ``reopened``, and
+        ``ready_for_review`` actions to the corresponding EventType.
+        Draft PRs are skipped.
+
+        Args:
+            payload (dict[str, Any]): The webhook payload.
+
+        Returns:
+            LifecycleEvent | None: Parsed event, or None if not relevant.
+        """
+
+        action: str = payload.get("action", "")
+        event_type: EventType | None = PR_ACTION_TO_EVENT_TYPE.get(action)
+
+        if event_type is None:
+            return None
+
+        pull_request: dict[str, Any] = payload.get("pull_request", {})
+
+        if pull_request.get("draft", False):
+            return None
+
+        repo: dict[str, Any] = payload.get("repository", {})
+        repo_full_name: str = repo.get("full_name", "")
+
+        return LifecycleEvent(
+            platform=PlatformName.GITHUB,
+            repo_full_name=repo_full_name,
+            pr_number=pull_request.get("number", 0),
+            pr_branch=pull_request.get("head", {}).get("ref", ""),
+            clone_url=self._build_clone_url(repo_full_name),
+            event_type=event_type,
+            pr_title=pull_request.get("title", ""),
+            pr_author=pull_request.get("user", {}).get("login", ""),
+        )
+
+    async def _fetch_issue_comments(
+        self,
+        repo_full_name: str,
+        pr_number: int,
+    ) -> list[ExistingComment]:
+        """
+        Fetch top-level issue comments on a PR.
+
+        Args:
+            repo_full_name (str): Full repository name.
+            pr_number (int): Pull request number.
+
+        Returns:
+            list[ExistingComment]: Top-level conversation comments.
+        """
+
+        results: list[ExistingComment] = []
+        page: int = 1
+
+        while True:
+            url: str = (
+                f"/repos/{repo_full_name}/issues/{pr_number}/comments"
+                f"?per_page={FILES_PER_PAGE}&page={page}"
+            )
+
+            try:
+                response: httpx.Response = await self._client.get(url)
+                response.raise_for_status()
+                data: list[dict[str, Any]] = response.json()
+            except httpx.HTTPError:
+                logger.exception(
+                    "Failed to fetch issue comments for %s#%d (page %d)",
+                    repo_full_name,
+                    pr_number,
+                    page,
+                )
+
+                break
+
+            if not data:
+                break
+
+            for entry in data:
+                results.append(
+                    ExistingComment(
+                        author=entry.get("user", {}).get("login", ""),
+                        body=entry.get("body", ""),
+                        created_at=entry.get("created_at", ""),
+                    ),
+                )
+
+            if len(data) < FILES_PER_PAGE:
+                break
+
+            page += 1
+
+        return results
+
+    async def _fetch_review_comments(
+        self,
+        repo_full_name: str,
+        pr_number: int,
+    ) -> list[ExistingComment]:
+        """
+        Fetch inline review comments on a PR.
+
+        Args:
+            repo_full_name (str): Full repository name.
+            pr_number (int): Pull request number.
+
+        Returns:
+            list[ExistingComment]: Inline review comments with file and line info.
+        """
+
+        results: list[ExistingComment] = []
+        page: int = 1
+
+        while True:
+            url: str = (
+                f"/repos/{repo_full_name}/pulls/{pr_number}/comments"
+                f"?per_page={FILES_PER_PAGE}&page={page}"
+            )
+
+            try:
+                response: httpx.Response = await self._client.get(url)
+                response.raise_for_status()
+                data: list[dict[str, Any]] = response.json()
+            except httpx.HTTPError:
+                logger.exception(
+                    "Failed to fetch review comments for %s#%d (page %d)",
+                    repo_full_name,
+                    pr_number,
+                    page,
+                )
+
+                break
+
+            if not data:
+                break
+
+            for entry in data:
+                results.append(
+                    ExistingComment(
+                        author=entry.get("user", {}).get("login", ""),
+                        body=entry.get("body", ""),
+                        file_path=entry.get("path", ""),
+                        line=entry.get("line", 0) or 0,
+                        created_at=entry.get("created_at", ""),
+                    ),
+                )
+
+            if len(data) < FILES_PER_PAGE:
+                break
+
+            page += 1
+
+        return results
 
     def _build_clone_url(self, repo_full_name: str) -> str:
         """

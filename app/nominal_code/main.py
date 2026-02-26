@@ -7,12 +7,12 @@ import sys
 
 from aiohttp import web
 
+from nominal_code.agent.session import SessionQueue, SessionStore
 from nominal_code.config import Config
 from nominal_code.platforms import build_platforms
 from nominal_code.platforms.base import Platform
-from nominal_code.session import SessionQueue, SessionStore
-from nominal_code.webhook_server import create_app
-from nominal_code.workspace_cleanup import WorkspaceCleaner
+from nominal_code.webhooks.server import create_app
+from nominal_code.workspace.cleanup import WorkspaceCleaner
 
 logger: logging.Logger = logging.getLogger(__name__)
 

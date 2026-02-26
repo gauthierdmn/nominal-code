@@ -5,10 +5,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nominal_code.agent_runner import AgentResult
-from nominal_code.bot_type import ChangedFile, EventType, FileStatus, ReviewFinding
+from nominal_code.agent.runner import AgentResult
+from nominal_code.agent.session import SessionStore
 from nominal_code.config import ReviewerConfig
-from nominal_code.handlers.reviewer import (
+from nominal_code.models import ChangedFile, EventType, FileStatus, ReviewFinding
+from nominal_code.platforms.base import CommentEvent, ExistingComment, PlatformName
+from nominal_code.review.handler import (
     MAX_EXISTING_COMMENTS,
     REVIEWER_ALLOWED_TOOLS,
     ReviewResult,
@@ -19,8 +21,6 @@ from nominal_code.handlers.reviewer import (
     review,
     review_and_post,
 )
-from nominal_code.platforms.base import CommentEvent, ExistingComment, PlatformName
-from nominal_code.session import SessionStore
 
 
 def _make_config(allowed_users=None):
@@ -106,7 +106,7 @@ class TestReviewerProcessComment:
         )
 
         with patch(
-            "nominal_code.handlers.common.run_agent",
+            "nominal_code.agent.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -118,7 +118,7 @@ class TestReviewerProcessComment:
             )
 
             with patch(
-                "nominal_code.handlers.common.GitWorkspace",
+                "nominal_code.workspace.setup.GitWorkspace",
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
@@ -150,7 +150,7 @@ class TestReviewerProcessComment:
         )
 
         with patch(
-            "nominal_code.handlers.common.run_agent",
+            "nominal_code.agent.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -162,7 +162,7 @@ class TestReviewerProcessComment:
             )
 
             with patch(
-                "nominal_code.handlers.common.GitWorkspace",
+                "nominal_code.workspace.setup.GitWorkspace",
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
@@ -199,7 +199,7 @@ class TestReviewerProcessComment:
         )
 
         with patch(
-            "nominal_code.handlers.common.run_agent",
+            "nominal_code.agent.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -211,7 +211,7 @@ class TestReviewerProcessComment:
             )
 
             with patch(
-                "nominal_code.handlers.common.GitWorkspace",
+                "nominal_code.workspace.setup.GitWorkspace",
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
@@ -219,7 +219,7 @@ class TestReviewerProcessComment:
                 mock_ws_class.return_value = mock_ws
 
                 with patch(
-                    "nominal_code.handlers.common.resolve_guidelines",
+                    "nominal_code.agent.prompts.resolve_guidelines",
                     return_value="Repo guidelines override",
                 ) as mock_resolve:
                     await review_and_post(
@@ -270,7 +270,7 @@ class TestReviewerProcessComment:
         )
 
         with patch(
-            "nominal_code.handlers.common.run_agent",
+            "nominal_code.agent.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -282,7 +282,7 @@ class TestReviewerProcessComment:
             )
 
             with patch(
-                "nominal_code.handlers.common.GitWorkspace",
+                "nominal_code.workspace.setup.GitWorkspace",
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
@@ -319,7 +319,7 @@ class TestReviewerProcessComment:
         )
 
         with patch(
-            "nominal_code.handlers.common.run_agent",
+            "nominal_code.agent.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.side_effect = [
@@ -340,7 +340,7 @@ class TestReviewerProcessComment:
             ]
 
             with patch(
-                "nominal_code.handlers.common.GitWorkspace",
+                "nominal_code.workspace.setup.GitWorkspace",
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
@@ -375,13 +375,13 @@ class TestReviewerProcessComment:
         )
 
         with patch(
-            "nominal_code.handlers.common.run_agent",
+            "nominal_code.agent.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = bad_result
 
             with patch(
-                "nominal_code.handlers.common.GitWorkspace",
+                "nominal_code.workspace.setup.GitWorkspace",
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
@@ -678,7 +678,7 @@ class TestBotCommentFiltering:
         )
 
         with patch(
-            "nominal_code.handlers.common.run_agent",
+            "nominal_code.agent.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -690,7 +690,7 @@ class TestBotCommentFiltering:
             )
 
             with patch(
-                "nominal_code.handlers.common.GitWorkspace",
+                "nominal_code.workspace.setup.GitWorkspace",
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
@@ -736,7 +736,7 @@ class TestBotCommentFiltering:
         )
 
         with patch(
-            "nominal_code.handlers.common.run_agent",
+            "nominal_code.agent.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -748,7 +748,7 @@ class TestBotCommentFiltering:
             )
 
             with patch(
-                "nominal_code.handlers.common.GitWorkspace",
+                "nominal_code.workspace.setup.GitWorkspace",
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
@@ -800,7 +800,7 @@ class TestBotCommentFiltering:
         platform.fetch_pr_comments = AsyncMock(side_effect=track_fetch_comments)
 
         with patch(
-            "nominal_code.handlers.common.run_agent",
+            "nominal_code.agent.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -812,7 +812,7 @@ class TestBotCommentFiltering:
             )
 
             with patch(
-                "nominal_code.handlers.common.GitWorkspace",
+                "nominal_code.workspace.setup.GitWorkspace",
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock(side_effect=track_ensure_ready)
@@ -820,7 +820,7 @@ class TestBotCommentFiltering:
                 mock_ws_class.return_value = mock_ws
 
                 with patch(
-                    "nominal_code.handlers.reviewer.asyncio.gather",
+                    "nominal_code.review.handler.asyncio.gather",
                     wraps=asyncio.gather,
                 ) as mock_gather:
                     await review_and_post(
@@ -1020,7 +1020,7 @@ class TestReview:
         )
 
         with patch(
-            "nominal_code.handlers.common.run_agent",
+            "nominal_code.agent.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -1032,7 +1032,7 @@ class TestReview:
             )
 
             with patch(
-                "nominal_code.handlers.common.GitWorkspace",
+                "nominal_code.workspace.setup.GitWorkspace",
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
@@ -1060,7 +1060,7 @@ class TestReview:
         comment = _make_comment()
 
         with patch(
-            "nominal_code.handlers.common.run_agent",
+            "nominal_code.agent.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -1072,7 +1072,7 @@ class TestReview:
             )
 
             with patch(
-                "nominal_code.handlers.common.GitWorkspace",
+                "nominal_code.workspace.setup.GitWorkspace",
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
@@ -1103,7 +1103,7 @@ class TestReview:
         )
 
         with patch(
-            "nominal_code.handlers.common.run_agent",
+            "nominal_code.agent.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -1115,7 +1115,7 @@ class TestReview:
             )
 
             with patch(
-                "nominal_code.handlers.common.GitWorkspace",
+                "nominal_code.workspace.setup.GitWorkspace",
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
@@ -1157,7 +1157,7 @@ class TestReview:
         )
 
         with patch(
-            "nominal_code.handlers.common.run_agent",
+            "nominal_code.agent.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -1169,7 +1169,7 @@ class TestReview:
             )
 
             with patch(
-                "nominal_code.handlers.common.GitWorkspace",
+                "nominal_code.workspace.setup.GitWorkspace",
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()

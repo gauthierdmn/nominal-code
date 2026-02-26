@@ -4,8 +4,8 @@ from unittest.mock import patch
 
 import pytest
 
-from nominal_code.bot_type import EventType
 from nominal_code.config import Config, _parse_reviewer_triggers
+from nominal_code.models import EventType
 
 
 @pytest.fixture

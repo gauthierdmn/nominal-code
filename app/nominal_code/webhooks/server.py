@@ -6,15 +6,15 @@ from typing import TYPE_CHECKING, cast
 
 from aiohttp import web
 
-from nominal_code.bot_type import COMMENT_EVENT_TYPES, BotType
-from nominal_code.handlers import enqueue_job
-from nominal_code.mention import extract_mention
+from nominal_code.models import COMMENT_EVENT_TYPES, BotType
 from nominal_code.platforms.base import CommentEvent, LifecycleEvent
+from nominal_code.webhooks.dispatch import enqueue_job
+from nominal_code.webhooks.mention import extract_mention
 
 if TYPE_CHECKING:
+    from nominal_code.agent.session import SessionQueue, SessionStore
     from nominal_code.config import Config
     from nominal_code.platforms.base import Platform, ReviewerPlatform
-    from nominal_code.session import SessionQueue, SessionStore
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -134,7 +134,7 @@ async def _handle_webhook(
         lifecycle_event: LifecycleEvent = event
 
         async def _auto_trigger_job() -> None:
-            from nominal_code.handlers.reviewer import review_and_post
+            from nominal_code.review.handler import review_and_post
 
             await review_and_post(
                 lifecycle_event,
@@ -170,14 +170,16 @@ async def _handle_webhook(
         worker_prompt = extract_mention(comment_event.body, config.worker.bot_username)
 
     if config.reviewer is not None:
-        reviewer_prompt = extract_mention(comment_event.body, config.reviewer.bot_username)
+        reviewer_prompt = extract_mention(
+            comment_event.body, config.reviewer.bot_username
+        )
 
     if worker_prompt is not None:
         bot_type: BotType = BotType.WORKER
         prompt: str = worker_prompt
 
         async def _job() -> None:
-            from nominal_code.handlers.worker import review_and_fix
+            from nominal_code.worker.handler import review_and_fix
 
             await review_and_fix(
                 comment_event,
@@ -192,7 +194,7 @@ async def _handle_webhook(
         prompt = reviewer_prompt
 
         async def _job() -> None:
-            from nominal_code.handlers.reviewer import review_and_post
+            from nominal_code.review.handler import review_and_post
 
             await review_and_post(
                 comment_event,

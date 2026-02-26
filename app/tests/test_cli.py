@@ -4,14 +4,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nominal_code.bot_type import AgentReview, ReviewFinding
 from nominal_code.cli import (
     build_cli_parser,
     parse_pr_ref,
     print_review,
     run_review,
 )
-from nominal_code.handlers.reviewer import ReviewResult
+from nominal_code.models import AgentReview, ReviewFinding
+from nominal_code.review.handler import ReviewResult
 
 
 class TestParsePrRef:

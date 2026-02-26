@@ -5,11 +5,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import pytest_asyncio
 
-from nominal_code.bot_type import BotType, EventType
+from nominal_code.agent.session import SessionQueue, SessionStore
 from nominal_code.config import ReviewerConfig, WorkerConfig
+from nominal_code.models import BotType, EventType
 from nominal_code.platforms.base import CommentEvent, LifecycleEvent, PlatformName
-from nominal_code.session import SessionQueue, SessionStore
-from nominal_code.webhook_server import create_app
+from nominal_code.webhooks.server import create_app
 
 
 def _make_config(worker=True, reviewer=True, reviewer_triggers=None):
@@ -150,7 +150,7 @@ class TestGitHubWebhook:
         app["platforms"]["github"].parse_event.return_value = comment
 
         with patch(
-            "nominal_code.webhook_server.enqueue_job",
+            "nominal_code.webhooks.server.enqueue_job",
             new_callable=AsyncMock,
         ) as mock_handle:
             response = await client.post(
@@ -186,7 +186,7 @@ class TestGitHubWebhook:
         app["platforms"]["github"].parse_event.return_value = comment
 
         with patch(
-            "nominal_code.webhook_server.enqueue_job",
+            "nominal_code.webhooks.server.enqueue_job",
             new_callable=AsyncMock,
         ) as mock_handle:
             response = await client.post(
@@ -226,7 +226,7 @@ class TestGitHubWebhook:
         app["platforms"]["github"].parse_event.return_value = comment
 
         with patch(
-            "nominal_code.webhook_server.enqueue_job",
+            "nominal_code.webhooks.server.enqueue_job",
             new_callable=AsyncMock,
         ) as mock_handle:
             response = await client.post(
@@ -352,7 +352,7 @@ class TestAutoTrigger:
         app["platforms"]["github"].parse_event.return_value = event
 
         with patch(
-            "nominal_code.webhook_server.enqueue_job",
+            "nominal_code.webhooks.server.enqueue_job",
             new_callable=AsyncMock,
         ) as mock_auto:
             response = await client.post(

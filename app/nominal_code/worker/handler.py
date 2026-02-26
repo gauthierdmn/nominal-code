@@ -3,21 +3,18 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from nominal_code.bot_type import BotType
-from nominal_code.handlers.common import (
-    handle_agent_errors,
-    resolve_branch,
-    resolve_system_prompt,
-    run_and_track_session,
-    setup_workspace,
-)
+from nominal_code.agent.errors import handle_agent_errors
+from nominal_code.agent.prompts import resolve_system_prompt
+from nominal_code.agent.tracking import run_and_track_session
+from nominal_code.models import BotType
 from nominal_code.platforms.base import CommentEvent, CommentReply
+from nominal_code.workspace.setup import resolve_branch, setup_workspace
 
 if TYPE_CHECKING:
+    from nominal_code.agent.session import SessionStore
     from nominal_code.config import Config
-    from nominal_code.git_workspace import GitWorkspace
     from nominal_code.platforms.base import Platform
-    from nominal_code.session import SessionStore
+    from nominal_code.workspace.git import GitWorkspace
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -55,7 +52,10 @@ async def review_and_fix(
             [effective_event.file_path] if effective_event.file_path else []
         )
         system_prompt: str = resolve_system_prompt(
-            workspace, config, config.worker.system_prompt, file_paths,
+            workspace,
+            config,
+            config.worker.system_prompt,
+            file_paths,
         )
         full_prompt: str = build_prompt(
             effective_event,

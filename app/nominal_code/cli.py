@@ -7,16 +7,16 @@ import os
 import re
 import sys
 
-from nominal_code.bot_type import EventType
 from nominal_code.config import Config
-from nominal_code.handlers.reviewer import ReviewResult, review
 from nominal_code.main import setup_logging
+from nominal_code.models import EventType
 from nominal_code.platforms.base import (
     CommentReply,
     PlatformName,
     PullRequestEvent,
     ReviewerPlatform,
 )
+from nominal_code.review.handler import ReviewResult, review
 
 PR_REF_PATTERN: re.Pattern[str] = re.compile(
     r"^(?P<repo>[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+)#(?P<number>\d+)$",

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Protocol
 from aiohttp import web
 
 if TYPE_CHECKING:
-    from nominal_code.bot_type import ChangedFile, EventType, ReviewFinding
+    from nominal_code.models import ChangedFile, EventType, ReviewFinding
 
 
 class PlatformName(StrEnum):

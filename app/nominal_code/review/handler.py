@@ -7,31 +7,28 @@ import re
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
-from nominal_code.bot_type import (
+from nominal_code.agent.errors import handle_agent_errors
+from nominal_code.agent.prompts import resolve_system_prompt
+from nominal_code.agent.tracking import run_and_track_session
+from nominal_code.models import (
     AgentReview,
     BotType,
     ChangedFile,
     ReviewFinding,
-)
-from nominal_code.handlers.common import (
-    create_workspace,
-    handle_agent_errors,
-    resolve_branch,
-    resolve_system_prompt,
-    run_and_track_session,
 )
 from nominal_code.platforms.base import (
     CommentReply,
     ExistingComment,
     PullRequestEvent,
 )
+from nominal_code.workspace.setup import create_workspace, resolve_branch
 
 if TYPE_CHECKING:
-    from nominal_code.agent_runner import AgentResult
+    from nominal_code.agent.runner import AgentResult
+    from nominal_code.agent.session import SessionStore
     from nominal_code.config import Config
-    from nominal_code.git_workspace import GitWorkspace
     from nominal_code.platforms.base import ReviewerPlatform
-    from nominal_code.session import SessionStore
+    from nominal_code.workspace.git import GitWorkspace
 
 MAX_REVIEW_RETRIES: int = 2
 MAX_EXISTING_COMMENTS: int = 50
@@ -140,7 +137,10 @@ async def review(
 
     file_paths: list[str] = [changed.file_path for changed in changed_files]
     combined_system_prompt: str = resolve_system_prompt(
-        workspace, config, config.reviewer.system_prompt, file_paths,
+        workspace,
+        config,
+        config.reviewer.system_prompt,
+        file_paths,
     )
 
     result: AgentResult = await run_and_track_session(
@@ -359,44 +359,6 @@ def build_reviewer_prompt(
     return "\n\n".join(parts)
 
 
-def _format_existing_comments(comments: list[ExistingComment]) -> str:
-    """
-    Format existing comments into a prompt section.
-
-    Args:
-        comments (list[ExistingComment]): The comments to format.
-
-    Returns:
-        str: Markdown-formatted existing discussions section.
-    """
-
-    lines: list[str] = [
-        "## Existing discussions\n",
-        "The following comments have already been posted on this PR. "
-        "Do not raise issues that are already covered below.\n",
-    ]
-
-    for existing in comments:
-        location: str = ""
-
-        if existing.file_path:
-            location = f" on `{existing.file_path}"
-
-            if existing.line:
-                location += f":{existing.line}"
-
-            location += "`"
-
-        resolved_tag: str = " (resolved)" if existing.is_resolved else ""
-        header: str = f"**@{existing.author}**{location}{resolved_tag}"
-        quoted_body: str = "\n".join(
-            f"> {body_line}" for body_line in existing.body.splitlines()
-        )
-        lines.append(f"{header}\n{quoted_body}")
-
-    return "\n\n".join(lines)
-
-
 def parse_review_output(output: str) -> AgentReview | None:
     """
     Parse the agent's JSON output into an AgentReview.
@@ -602,3 +564,41 @@ def _build_diff_index(
             index[changed_file.file_path] = _parse_diff_lines(changed_file.patch)
 
     return index
+
+
+def _format_existing_comments(comments: list[ExistingComment]) -> str:
+    """
+    Format existing comments into a prompt section.
+
+    Args:
+        comments (list[ExistingComment]): The comments to format.
+
+    Returns:
+        str: Markdown-formatted existing discussions section.
+    """
+
+    lines: list[str] = [
+        "## Existing discussions\n",
+        "The following comments have already been posted on this PR. "
+        "Do not raise issues that are already covered below.\n",
+    ]
+
+    for existing in comments:
+        location: str = ""
+
+        if existing.file_path:
+            location = f" on `{existing.file_path}"
+
+            if existing.line:
+                location += f":{existing.line}"
+
+            location += "`"
+
+        resolved_tag: str = " (resolved)" if existing.is_resolved else ""
+        header: str = f"**@{existing.author}**{location}{resolved_tag}"
+        quoted_body: str = "\n".join(
+            f"> {body_line}" for body_line in existing.body.splitlines()
+        )
+        lines.append(f"{header}\n{quoted_body}")
+
+    return "\n\n".join(lines)

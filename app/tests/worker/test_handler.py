@@ -3,12 +3,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nominal_code.agent_runner import AgentResult
-from nominal_code.bot_type import EventType
+from nominal_code.agent.runner import AgentResult
+from nominal_code.agent.session import SessionStore
 from nominal_code.config import WorkerConfig
-from nominal_code.handlers.worker import build_prompt, review_and_fix
+from nominal_code.models import EventType
 from nominal_code.platforms.base import CommentEvent, PlatformName
-from nominal_code.session import SessionStore
+from nominal_code.worker.handler import build_prompt, review_and_fix
 
 
 def _make_config(allowed_users=None):
@@ -72,7 +72,7 @@ class TestWorkerProcessComment:
         session_store = SessionStore()
 
         with patch(
-            "nominal_code.handlers.common.run_agent",
+            "nominal_code.agent.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -84,7 +84,7 @@ class TestWorkerProcessComment:
             )
 
             with patch(
-                "nominal_code.handlers.common.GitWorkspace",
+                "nominal_code.workspace.setup.GitWorkspace",
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
@@ -114,7 +114,7 @@ class TestWorkerProcessComment:
         session_store = SessionStore()
 
         with patch(
-            "nominal_code.handlers.common.run_agent",
+            "nominal_code.agent.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -126,7 +126,7 @@ class TestWorkerProcessComment:
             )
 
             with patch(
-                "nominal_code.handlers.common.GitWorkspace",
+                "nominal_code.workspace.setup.GitWorkspace",
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
@@ -134,7 +134,7 @@ class TestWorkerProcessComment:
                 mock_ws_class.return_value = mock_ws
 
                 with patch(
-                    "nominal_code.handlers.common.resolve_guidelines",
+                    "nominal_code.agent.prompts.resolve_guidelines",
                     return_value="Repo guidelines override",
                 ) as mock_resolve:
                     await review_and_fix(

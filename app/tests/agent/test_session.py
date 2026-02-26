@@ -3,7 +3,7 @@ import asyncio
 
 import pytest
 
-from nominal_code.session import SessionQueue, SessionStore
+from nominal_code.agent.session import SessionQueue, SessionStore
 
 
 class TestSessionStore:

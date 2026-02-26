@@ -6,7 +6,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from nominal_code.bot_type import EventType
+from nominal_code.models import EventType
 
 logger: logging.Logger = logging.getLogger(__name__)
 

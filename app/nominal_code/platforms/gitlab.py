@@ -9,7 +9,7 @@ from urllib.parse import quote
 import httpx
 from aiohttp import web
 
-from nominal_code.bot_type import ChangedFile, EventType, FileStatus, ReviewFinding
+from nominal_code.models import ChangedFile, EventType, FileStatus, ReviewFinding
 from nominal_code.platforms.base import (
     CommentEvent,
     CommentReply,
@@ -80,7 +80,7 @@ class GitLabPlatform:
         return "gitlab"
 
     @property
-    def _host(self) -> str:
+    def host(self) -> str:
         """
         Extract the hostname from the base URL.
 
@@ -140,110 +140,6 @@ class GitLabPlatform:
             return self._parse_merge_request(payload)
 
         return None
-
-    def _parse_note(
-        self,
-        payload: dict[str, Any],
-    ) -> CommentEvent | None:
-        """
-        Parse a Note Hook event on a merge request.
-
-        Args:
-            payload (dict[str, Any]): The webhook payload.
-
-        Returns:
-            CommentEvent | None: Parsed comment, or None if not relevant.
-        """
-
-        object_attributes: dict[str, Any] = payload.get(
-            "object_attributes",
-            {},
-        )
-
-        if object_attributes.get("noteable_type") != "MergeRequest":
-            return None
-
-        merge_request: dict[str, Any] = payload.get("merge_request", {})
-        project: dict[str, Any] = payload.get("project", {})
-        user: dict[str, Any] = payload.get("user", {})
-
-        repo_full_name: str = project.get("path_with_namespace", "")
-
-        file_path: str = ""
-        position: dict[str, Any] = object_attributes.get("position", {})
-
-        if position:
-            file_path = position.get("new_path", "") or position.get(
-                "old_path",
-                "",
-            )
-
-        discussion_id: str = str(
-            object_attributes.get("discussion_id", ""),
-        )
-
-        return CommentEvent(
-            platform=PlatformName.GITLAB,
-            repo_full_name=repo_full_name,
-            pr_number=merge_request.get("iid", 0),
-            pr_branch=merge_request.get("source_branch", ""),
-            clone_url=f"https://oauth2:{self.token}@{self._host}/{repo_full_name}.git",
-            event_type=EventType.NOTE,
-            comment_id=object_attributes.get("id", 0),
-            author_username=user.get("username", ""),
-            body=object_attributes.get("note", ""),
-            file_path=file_path,
-            discussion_id=discussion_id,
-        )
-
-    def _parse_merge_request(
-        self,
-        payload: dict[str, Any],
-    ) -> LifecycleEvent | None:
-        """
-        Parse a Merge Request Hook lifecycle event.
-
-        Maps ``open``, ``reopen``, and ``update`` (with ``oldrev``) actions
-        to the corresponding EventType. WIP merge requests are skipped.
-
-        Args:
-            payload (dict[str, Any]): The webhook payload.
-
-        Returns:
-            LifecycleEvent | None: Parsed event, or None if not relevant.
-        """
-
-        object_attributes: dict[str, Any] = payload.get(
-            "object_attributes",
-            {},
-        )
-        action: str = object_attributes.get("action", "")
-
-        if action == "open":
-            event_type: EventType = EventType.PR_OPENED
-        elif action == "reopen":
-            event_type = EventType.PR_REOPENED
-        elif action == "update" and "oldrev" in object_attributes:
-            event_type = EventType.PR_PUSH
-        else:
-            return None
-
-        if object_attributes.get("work_in_progress", False):
-            return None
-
-        project: dict[str, Any] = payload.get("project", {})
-        repo_full_name: str = project.get("path_with_namespace", "")
-
-        return LifecycleEvent(
-            platform=PlatformName.GITLAB,
-            repo_full_name=repo_full_name,
-            pr_number=object_attributes.get("iid", 0),
-            pr_branch=object_attributes.get("source_branch", ""),
-            clone_url=f"https://oauth2:{self.token}@{self._host}/{repo_full_name}.git",
-            event_type=event_type,
-            pr_title=object_attributes.get("title", ""),
-            pr_author=payload.get("user", {}).get("username", ""),
-        )
 
     async def post_reply(
         self,
@@ -627,7 +523,111 @@ class GitLabPlatform:
 
         effective_token: str = self.reviewer_token or self.token
 
-        return f"https://oauth2:{effective_token}@{self._host}/{repo_full_name}.git"
+        return f"https://oauth2:{effective_token}@{self.host}/{repo_full_name}.git"
+
+    def _parse_note(
+        self,
+        payload: dict[str, Any],
+    ) -> CommentEvent | None:
+        """
+        Parse a Note Hook event on a merge request.
+
+        Args:
+            payload (dict[str, Any]): The webhook payload.
+
+        Returns:
+            CommentEvent | None: Parsed comment, or None if not relevant.
+        """
+
+        object_attributes: dict[str, Any] = payload.get(
+            "object_attributes",
+            {},
+        )
+
+        if object_attributes.get("noteable_type") != "MergeRequest":
+            return None
+
+        merge_request: dict[str, Any] = payload.get("merge_request", {})
+        project: dict[str, Any] = payload.get("project", {})
+        user: dict[str, Any] = payload.get("user", {})
+
+        repo_full_name: str = project.get("path_with_namespace", "")
+
+        file_path: str = ""
+        position: dict[str, Any] = object_attributes.get("position", {})
+
+        if position:
+            file_path = position.get("new_path", "") or position.get(
+                "old_path",
+                "",
+            )
+
+        discussion_id: str = str(
+            object_attributes.get("discussion_id", ""),
+        )
+
+        return CommentEvent(
+            platform=PlatformName.GITLAB,
+            repo_full_name=repo_full_name,
+            pr_number=merge_request.get("iid", 0),
+            pr_branch=merge_request.get("source_branch", ""),
+            clone_url=f"https://oauth2:{self.token}@{self.host}/{repo_full_name}.git",
+            event_type=EventType.NOTE,
+            comment_id=object_attributes.get("id", 0),
+            author_username=user.get("username", ""),
+            body=object_attributes.get("note", ""),
+            file_path=file_path,
+            discussion_id=discussion_id,
+        )
+
+    def _parse_merge_request(
+        self,
+        payload: dict[str, Any],
+    ) -> LifecycleEvent | None:
+        """
+        Parse a Merge Request Hook lifecycle event.
+
+        Maps ``open``, ``reopen``, and ``update`` (with ``oldrev``) actions
+        to the corresponding EventType. WIP merge requests are skipped.
+
+        Args:
+            payload (dict[str, Any]): The webhook payload.
+
+        Returns:
+            LifecycleEvent | None: Parsed event, or None if not relevant.
+        """
+
+        object_attributes: dict[str, Any] = payload.get(
+            "object_attributes",
+            {},
+        )
+        action: str = object_attributes.get("action", "")
+
+        if action == "open":
+            event_type: EventType = EventType.PR_OPENED
+        elif action == "reopen":
+            event_type = EventType.PR_REOPENED
+        elif action == "update" and "oldrev" in object_attributes:
+            event_type = EventType.PR_PUSH
+        else:
+            return None
+
+        if object_attributes.get("work_in_progress", False):
+            return None
+
+        project: dict[str, Any] = payload.get("project", {})
+        repo_full_name: str = project.get("path_with_namespace", "")
+
+        return LifecycleEvent(
+            platform=PlatformName.GITLAB,
+            repo_full_name=repo_full_name,
+            pr_number=object_attributes.get("iid", 0),
+            pr_branch=object_attributes.get("source_branch", ""),
+            clone_url=f"https://oauth2:{self.token}@{self.host}/{repo_full_name}.git",
+            event_type=event_type,
+            pr_title=object_attributes.get("title", ""),
+            pr_author=payload.get("user", {}).get("username", ""),
+        )
 
     def _build_clone_url(self, repo_full_name: str) -> str:
         """
@@ -640,7 +640,7 @@ class GitLabPlatform:
             str: The authenticated HTTPS clone URL.
         """
 
-        return f"https://oauth2:{self.token}@{self._host}/{repo_full_name}.git"
+        return f"https://oauth2:{self.token}@{self.host}/{repo_full_name}.git"
 
 
 def _create_gitlab_platform() -> GitLabPlatform | None:

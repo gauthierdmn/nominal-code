@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nominal_code.bot_type import EventType, FileStatus, ReviewFinding
+from nominal_code.models import EventType, FileStatus, ReviewFinding
 from nominal_code.platforms.base import (
     CommentEvent,
     CommentReply,
