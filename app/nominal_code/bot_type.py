@@ -19,13 +19,13 @@ class ReviewFinding:
     A single inline comment produced by the reviewer bot.
 
     Attributes:
-        path (str): File path relative to repository root.
+        file_path (str): File path relative to repository root.
         line (int): Line number in the new version of the file.
         body (str): The review comment text.
         side (str): Which side of the diff the comment applies to.
     """
 
-    path: str
+    file_path: str
     line: int
     body: str
     side: str = "RIGHT"
@@ -51,11 +51,11 @@ class ChangedFile:
     A file changed in a pull request or merge request.
 
     Attributes:
-        filename (str): File path relative to repository root.
+        file_path (str): File path relative to repository root.
         status (str): Change type (added, modified, removed, renamed).
         patch (str): Unified diff text for the file.
     """
 
-    filename: str
+    file_path: str
     status: str
     patch: str
