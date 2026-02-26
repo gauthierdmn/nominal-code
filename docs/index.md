@@ -1,6 +1,6 @@
 # Nominal Code
 
-A bot that monitors GitHub PRs and GitLab MRs for review comments mentioning it, then uses an AI agent to respond, review code, and otionally push changes. Comment `@your-bot fix this bug` on a pull request, and the bot clones the repo, runs the agent, and replies with comments and/or code commits.
+A bot that monitors GitHub PRs and GitLab MRs for review comments mentioning it, then uses an AI agent to respond, review code, and optionally push changes. Comment `@your-bot fix this bug` on a pull request, and the bot clones the repo, runs the agent, and replies with comments and/or code commits.
 
 ## Features
 
@@ -39,7 +39,7 @@ uv run nominal-code review owner/repo#42 --prompt "focus on security"
 cd nominal-code/app
 uv sync
 
-# Configure (see docs/configuration.md for all options)
+# Configure (see configuration.md for all options)
 export REVIEWER_BOT_USERNAME=my-reviewer
 export ALLOWED_USERS=alice,bob
 export GITHUB_TOKEN=ghp_...
@@ -50,36 +50,19 @@ uv run nominal-code
 
 ## Documentation
 
-- [Getting Started](docs/getting-started.md) — from zero to a working bot
-- [CLI Mode](docs/cli.md) — run one-off reviews without a server
-- [Configuration](docs/configuration.md) — full environment variable reference
-- **Platforms**
-  - [GitHub](docs/platforms/github.md) — webhook setup, tokens, supported events
-  - [GitLab](docs/platforms/gitlab.md) — webhook setup, self-hosted support, differences from GitHub
-- **Bots**
-  - [Worker](docs/bots/worker.md) — full-access agent that pushes code changes
-  - [Reviewer](docs/bots/reviewer.md) — read-only agent that posts structured reviews
-- [Architecture](docs/architecture.md) — request flow, components, workspace layout
-- [Deployment](docs/deployment.md) — production setup, health checks, reverse proxy
+<div class="grid cards" markdown>
 
-## Development
+- :material-rocket-launch: **[Getting Started](getting-started.md)** — from zero to a working bot
+- :material-console: **[CLI Mode](cli.md)** — run one-off reviews without a server
+- :material-cog: **[Configuration](configuration.md)** — full environment variable reference
+- :material-github: **[GitHub](platforms/github.md)** — webhook setup, tokens, supported events
+- :material-gitlab: **[GitLab](platforms/gitlab.md)** — webhook setup, self-hosted support
+- :material-robot: **[Worker Bot](bots/worker.md)** — full-access agent that pushes code changes
+- :material-eye: **[Reviewer Bot](bots/reviewer.md)** — read-only agent that posts structured reviews
+- :material-sitemap: **[Architecture](architecture.md)** — request flow, components, workspace layout
+- :material-server: **[Deployment](deployment.md)** — production setup, health checks, reverse proxy
 
-```bash
-cd app
-
-# Install with dev dependencies
-uv sync
-
-# Lint and format
-uv run ruff check nominal_code/ tests/
-uv run ruff format nominal_code/ tests/
-
-# Type check
-uv run mypy nominal_code/
-
-# Run tests
-uv run pytest
-```
+</div>
 
 ## Security
 
