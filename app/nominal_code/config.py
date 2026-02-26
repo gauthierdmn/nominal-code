@@ -72,6 +72,60 @@ class Config:
     cleanup_interval_hours: int
 
     @classmethod
+    def for_cli(
+        cls,
+        model: str = "",
+        max_turns: int = 0,
+    ) -> Config:
+        """
+        Build a Config for CLI mode without requiring webhook-only settings.
+
+        Reviewer is always enabled with the default system prompt. Settings
+        like ``ALLOWED_USERS`` and bot usernames are not required.
+
+        Args:
+            model (str): Optional agent model override.
+            max_turns (int): Optional agent max turns override.
+
+        Returns:
+            Config: A configuration suitable for one-off CLI reviews.
+        """
+
+        reviewer_system_prompt: str = _load_file_content(
+            os.environ.get("REVIEWER_SYSTEM_PROMPT", "prompts/reviewer_prompt.md"),
+        )
+
+        workspace_base_dir: str = os.environ.get(
+            "WORKSPACE_BASE_DIR",
+            os.path.join(tempfile.gettempdir(), "nominal-code"),
+        )
+
+        coding_guidelines: str = _load_file_content(
+            os.environ.get("CODING_GUIDELINES", "prompts/coding_guidelines.md"),
+        )
+        language_guidelines: dict[str, str] = _load_language_guidelines(
+            os.environ.get("LANGUAGE_GUIDELINES_DIR", "prompts/languages"),
+        )
+
+        return cls(
+            worker=None,
+            reviewer=ReviewerConfig(
+                bot_username="",
+                system_prompt=reviewer_system_prompt,
+            ),
+            webhook_host="",
+            webhook_port=0,
+            allowed_users=frozenset(),
+            workspace_base_dir=workspace_base_dir,
+            agent_max_turns=max_turns or int(os.environ.get("AGENT_MAX_TURNS", "0")),
+            agent_model=model or os.environ.get("AGENT_MODEL", ""),
+            agent_cli_path=os.environ.get("AGENT_CLI_PATH", ""),
+            coding_guidelines=coding_guidelines,
+            language_guidelines=language_guidelines,
+            cleanup_interval_hours=0,
+        )
+
+    @classmethod
     def from_env(cls) -> Config:
         """
         Build a Config by reading environment variables.

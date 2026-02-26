@@ -1,6 +1,6 @@
 # Getting Started
 
-Minimal steps to go from zero to a working bot.
+Minimal steps to go from zero to a working review.
 
 ## Prerequisites
 
@@ -8,7 +8,6 @@ Minimal steps to go from zero to a working bot.
 - **[uv](https://github.com/astral-sh/uv)** for dependency management
 - **[Claude Code CLI](https://claude.ai/code)** installed and on `PATH`
 - A **GitHub** or **GitLab** account with API tokens
-- A publicly reachable server (or a tunnel like ngrok for development)
 
 ## Install
 
@@ -18,7 +17,27 @@ cd nominal-code/app
 uv sync
 ```
 
-## Configure
+## Option A: CLI Mode (quickest)
+
+No server, no webhooks — just a token and a PR reference.
+
+```bash
+export GITHUB_TOKEN=ghp_...
+
+# Review a PR (prints results and posts to the PR)
+uv run nominal-code review owner/repo#42
+
+# Dry run (prints results without posting)
+uv run nominal-code review owner/repo#42 --dry-run
+```
+
+See [CLI Mode](cli.md) for all options and examples.
+
+## Option B: Webhook Server
+
+For automated reviews triggered by PR comments, deploy the webhook server.
+
+### Configure
 
 Create a `.env` file (or export the variables directly). The simplest setup is a **reviewer-only bot on GitHub**:
 
@@ -29,9 +48,9 @@ GITHUB_TOKEN=ghp_...
 GITHUB_WEBHOOK_SECRET=your-secret
 ```
 
-Then set up a webhook on your GitHub repository pointing to `https://your-server:8080/webhooks/github`. See [GitHub platform setup](platforms/github.md) for full instructions.
+You will also need a publicly reachable server (or a tunnel like ngrok for development). Set up a webhook on your GitHub repository pointing to `https://your-server:8080/webhooks/github`. See [GitHub platform setup](platforms/github.md) for full instructions.
 
-## Run
+### Run
 
 ```bash
 cd app
@@ -45,7 +64,7 @@ INFO     nominal_code.main Starting server on 0.0.0.0:8080 | platforms=['github'
 INFO     nominal_code.main Server is running, waiting for webhooks...
 ```
 
-## Verify
+### Verify
 
 Open a pull request on your repository and leave a comment:
 

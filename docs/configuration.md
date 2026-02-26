@@ -2,6 +2,8 @@
 
 The bot is configured entirely via environment variables. You can set them in a `.env` file or export them directly.
 
+> **CLI mode** uses a subset of these variables. Bot usernames, `ALLOWED_USERS`, webhook host/port, and webhook secrets are not required. See [CLI Mode](cli.md) for details.
+
 ## Environment Variables
 
 | Variable | Required | Default | Description |

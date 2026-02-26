@@ -4,7 +4,7 @@ import asyncio
 import json
 import logging
 import re
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from nominal_code.agent_runner import AgentResult, run_agent
@@ -44,6 +44,238 @@ REVIEWER_ALLOWED_TOOLS: list[str] = [
 logger: logging.Logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class ExecuteReviewResult:
+    """
+    Result of executing a code review without side effects.
+
+    Attributes:
+        review_result (ReviewResult | None): Parsed review, or None if parsing
+            failed after retries.
+        valid_findings (list[ReviewFinding]): Findings on lines within the diff.
+        rejected_findings (list[ReviewFinding]): Findings on lines outside the diff.
+        effective_summary (str): Summary with rejected findings appended.
+        raw_output (str): The raw agent output text.
+    """
+
+    review_result: ReviewResult | None
+    valid_findings: list[ReviewFinding]
+    rejected_findings: list[ReviewFinding]
+    effective_summary: str
+    raw_output: str
+
+
+async def execute_review(
+    comment: ReviewComment,
+    prompt: str,
+    config: Config,
+    platform: ReviewerPlatform,
+    session_store: SessionStore | None = None,
+    bot_username: str = "",
+) -> ExecuteReviewResult:
+    """
+    Run the core review logic without posting results to the platform.
+
+    Resolves the branch, clones the repo, fetches the diff and existing
+    comments, runs the agent, parses the output, and filters findings.
+
+    Args:
+        comment (ReviewComment): The parsed review comment.
+        prompt (str): The extracted prompt.
+        config (Config): Application configuration.
+        platform (ReviewerPlatform): The platform client with reviewer capabilities.
+        session_store (SessionStore | None): Agent session store (optional for CLI).
+        bot_username (str): Bot username to filter from existing comments.
+
+    Returns:
+        ExecuteReviewResult: The review result with findings and summary.
+
+    Raises:
+        RuntimeError: If workspace setup fails.
+    """
+
+    reviewer_clone_url: str = platform.build_reviewer_clone_url(
+        comment.repo_full_name,
+    )
+    effective_comment: ReviewComment = replace(comment, clone_url=reviewer_clone_url)
+
+    workspace: GitWorkspace = GitWorkspace(
+        base_dir=config.workspace_base_dir,
+        repo_full_name=effective_comment.repo_full_name,
+        pr_number=effective_comment.pr_number,
+        clone_url=effective_comment.clone_url,
+        branch=effective_comment.pr_branch,
+    )
+
+    results: tuple[
+        list[ChangedFile], list[ExistingComment], None
+    ] = await asyncio.gather(
+        platform.fetch_pr_diff(
+            comment.repo_full_name,
+            comment.pr_number,
+        ),
+        platform.fetch_pr_comments(
+            comment.repo_full_name,
+            comment.pr_number,
+        ),
+        workspace.ensure_ready(),
+    )
+    workspace.ensure_deps_dir()
+
+    changed_files: list[ChangedFile] = results[0]
+    all_comments: list[ExistingComment] = results[1]
+
+    existing_comments: list[ExistingComment] = [
+        existing for existing in all_comments if existing.author != bot_username
+    ][-MAX_EXISTING_COMMENTS:]
+
+    full_prompt: str = build_reviewer_prompt(
+        effective_comment,
+        prompt,
+        changed_files,
+        deps_path=workspace.deps_path,
+        existing_comments=existing_comments,
+    )
+
+    existing_session: str | None = None
+
+    if session_store is not None:
+        existing_session = session_store.get(
+            comment.platform,
+            comment.repo_full_name,
+            comment.pr_number,
+            BotType.REVIEWER.value,
+        )
+
+    assert config.reviewer is not None
+
+    file_paths: list[str] = [changed.file_path for changed in changed_files]
+
+    effective_guidelines: str = resolve_guidelines(
+        workspace.repo_path,
+        config.coding_guidelines,
+        config.language_guidelines,
+        file_paths,
+    )
+
+    combined_system_prompt: str = build_system_prompt(
+        config.reviewer.system_prompt,
+        effective_guidelines,
+    )
+
+    result: AgentResult = await run_agent(
+        prompt=full_prompt,
+        cwd=workspace.repo_path,
+        model=config.agent_model,
+        max_turns=config.agent_max_turns,
+        cli_path=config.agent_cli_path,
+        session_id=existing_session or "",
+        system_prompt=combined_system_prompt,
+        permission_mode="bypassPermissions",
+        allowed_tools=REVIEWER_ALLOWED_TOOLS,
+    )
+
+    if session_store is not None and result.session_id:
+        session_store.set(
+            comment.platform,
+            comment.repo_full_name,
+            comment.pr_number,
+            BotType.REVIEWER.value,
+            result.session_id,
+        )
+
+    review_result: ReviewResult | None = parse_review_output(result.output)
+
+    retry_count: int = 0
+
+    while review_result is None and retry_count < MAX_REVIEW_RETRIES:
+        retry_count += 1
+        retry_prompt: str = build_retry_prompt(result.output)
+
+        logger.warning(
+            "Reviewer JSON parse failed for %s#%d, retry %d/%d",
+            comment.repo_full_name,
+            comment.pr_number,
+            retry_count,
+            MAX_REVIEW_RETRIES,
+        )
+
+        result = await run_agent(
+            prompt=retry_prompt,
+            cwd=workspace.repo_path,
+            model=config.agent_model,
+            max_turns=config.agent_max_turns,
+            cli_path=config.agent_cli_path,
+            session_id=result.session_id,
+            system_prompt=combined_system_prompt,
+            permission_mode="bypassPermissions",
+            allowed_tools=REVIEWER_ALLOWED_TOOLS,
+        )
+
+        if session_store is not None and result.session_id:
+            session_store.set(
+                comment.platform,
+                comment.repo_full_name,
+                comment.pr_number,
+                BotType.REVIEWER.value,
+                result.session_id,
+            )
+
+        review_result = parse_review_output(result.output)
+
+    if review_result is None:
+        logger.warning(
+            "Reviewer JSON still invalid after %d retries for %s#%d, "
+            "falling back to plain comment",
+            MAX_REVIEW_RETRIES,
+            comment.repo_full_name,
+            comment.pr_number,
+        )
+
+        return ExecuteReviewResult(
+            review_result=None,
+            valid_findings=[],
+            rejected_findings=[],
+            effective_summary="",
+            raw_output=result.output,
+        )
+
+    valid_findings, rejected_findings = filter_findings(
+        review_result.findings,
+        changed_files,
+    )
+
+    if rejected_findings:
+        logger.warning(
+            "Filtered %d findings outside the diff for %s#%d",
+            len(rejected_findings),
+            comment.repo_full_name,
+            comment.pr_number,
+        )
+
+    effective_summary: str = build_effective_summary(
+        review_result.summary,
+        rejected_findings,
+    )
+
+    logger.info(
+        "Reviewer finished for %s#%d (findings=%d, turns=%d, duration=%dms)",
+        comment.repo_full_name,
+        comment.pr_number,
+        len(review_result.findings),
+        result.num_turns,
+        result.duration_ms,
+    )
+
+    return ExecuteReviewResult(
+        review_result=review_result,
+        valid_findings=valid_findings,
+        rejected_findings=rejected_findings,
+        effective_summary=effective_summary,
+        raw_output=result.output,
+    )
+
+
 async def process_comment(
     comment: ReviewComment,
     prompt: str,
@@ -70,34 +302,15 @@ async def process_comment(
     assert config.reviewer is not None
     bot_username: str = config.reviewer.bot_username
 
-    reviewer_clone_url: str = platform.build_reviewer_clone_url(
-        comment.repo_full_name,
-    )
-    effective_comment = replace(effective_comment, clone_url=reviewer_clone_url)
-
-    workspace: GitWorkspace = GitWorkspace(
-        base_dir=config.workspace_base_dir,
-        repo_full_name=effective_comment.repo_full_name,
-        pr_number=effective_comment.pr_number,
-        clone_url=effective_comment.clone_url,
-        branch=effective_comment.pr_branch,
-    )
-
     try:
-        results: tuple[
-            list[ChangedFile], list[ExistingComment], None
-        ] = await asyncio.gather(
-            platform.fetch_pr_diff(
-                comment.repo_full_name,
-                comment.pr_number,
-            ),
-            platform.fetch_pr_comments(
-                comment.repo_full_name,
-                comment.pr_number,
-            ),
-            workspace.ensure_ready(),
+        review: ExecuteReviewResult = await execute_review(
+            comment=effective_comment,
+            prompt=prompt,
+            config=config,
+            platform=platform,
+            session_store=session_store,
+            bot_username=bot_username,
         )
-        workspace.ensure_deps_dir()
     except RuntimeError:
         logger.exception("Failed to set up workspace")
 
@@ -108,164 +321,36 @@ async def process_comment(
 
         return
 
-    changed_files: list[ChangedFile] = results[0]
-    all_comments: list[ExistingComment] = results[1]
-
-    existing_comments: list[ExistingComment] = [
-        existing for existing in all_comments if existing.author != bot_username
-    ][-MAX_EXISTING_COMMENTS:]
-
-    full_prompt: str = build_reviewer_prompt(
-        effective_comment,
-        prompt,
-        changed_files,
-        deps_path=workspace.deps_path,
-        existing_comments=existing_comments,
-    )
-    existing_session: str | None = session_store.get(
-        comment.platform,
-        comment.repo_full_name,
-        comment.pr_number,
-        BotType.REVIEWER.value,
-    )
-
-    try:
-        file_paths: list[str] = [changed.file_path for changed in changed_files]
-
-        effective_guidelines: str = resolve_guidelines(
-            workspace.repo_path,
-            config.coding_guidelines,
-            config.language_guidelines,
-            file_paths,
-        )
-
-        combined_system_prompt: str = build_system_prompt(
-            config.reviewer.system_prompt,
-            effective_guidelines,
-        )
-
-        result: AgentResult = await run_agent(
-            prompt=full_prompt,
-            cwd=workspace.repo_path,
-            model=config.agent_model,
-            max_turns=config.agent_max_turns,
-            cli_path=config.agent_cli_path,
-            session_id=existing_session or "",
-            system_prompt=combined_system_prompt,
-            permission_mode="bypassPermissions",
-            allowed_tools=REVIEWER_ALLOWED_TOOLS,
-        )
-
-        if result.session_id:
-            session_store.set(
-                comment.platform,
-                comment.repo_full_name,
-                comment.pr_number,
-                BotType.REVIEWER.value,
-                result.session_id,
-            )
-
-        review_result: ReviewResult | None = parse_review_output(result.output)
-
-        retry_count: int = 0
-
-        while review_result is None and retry_count < MAX_REVIEW_RETRIES:
-            retry_count += 1
-            retry_prompt: str = build_retry_prompt(result.output)
-
-            logger.warning(
-                "Reviewer JSON parse failed for %s#%d, retry %d/%d",
-                comment.repo_full_name,
-                comment.pr_number,
-                retry_count,
-                MAX_REVIEW_RETRIES,
-            )
-
-            result = await run_agent(
-                prompt=retry_prompt,
-                cwd=workspace.repo_path,
-                model=config.agent_model,
-                max_turns=config.agent_max_turns,
-                cli_path=config.agent_cli_path,
-                session_id=result.session_id,
-                system_prompt=combined_system_prompt,
-                permission_mode="bypassPermissions",
-                allowed_tools=REVIEWER_ALLOWED_TOOLS,
-            )
-
-            if result.session_id:
-                session_store.set(
-                    comment.platform,
-                    comment.repo_full_name,
-                    comment.pr_number,
-                    BotType.REVIEWER.value,
-                    result.session_id,
-                )
-
-            review_result = parse_review_output(result.output)
-
-        if review_result is None:
-            logger.warning(
-                "Reviewer JSON still invalid after %d retries for %s#%d, "
-                "falling back to plain comment",
-                MAX_REVIEW_RETRIES,
-                comment.repo_full_name,
-                comment.pr_number,
-            )
-
-            await platform.post_reply(
-                comment,
-                CommentReply(body=result.output),
-            )
-
-            return
-
-        valid_findings, rejected_findings = filter_findings(
-            review_result.findings,
-            changed_files,
-        )
-
-        if rejected_findings:
-            logger.warning(
-                "Filtered %d findings outside the diff for %s#%d",
-                len(rejected_findings),
-                comment.repo_full_name,
-                comment.pr_number,
-            )
-
-        effective_summary: str = build_effective_summary(
-            review_result.summary,
-            rejected_findings,
-        )
-
-        if valid_findings:
-            await platform.submit_review(
-                repo_full_name=comment.repo_full_name,
-                pr_number=comment.pr_number,
-                findings=valid_findings,
-                summary=effective_summary,
-                comment=comment,
-            )
-        else:
-            await platform.post_reply(
-                comment,
-                CommentReply(body=effective_summary),
-            )
-
-        logger.info(
-            "Reviewer finished for %s#%d (findings=%d, turns=%d, duration=%dms)",
-            comment.repo_full_name,
-            comment.pr_number,
-            len(review_result.findings),
-            result.num_turns,
-            result.duration_ms,
-        )
     except Exception:
         logger.exception("Error running agent (reviewer)")
 
         await platform.post_reply(
             comment,
             CommentReply(body="An unexpected error occurred while running the agent."),
+        )
+
+        return
+
+    if review.review_result is None:
+        await platform.post_reply(
+            comment,
+            CommentReply(body=review.raw_output),
+        )
+
+        return
+
+    if review.valid_findings:
+        await platform.submit_review(
+            repo_full_name=comment.repo_full_name,
+            pr_number=comment.pr_number,
+            findings=review.valid_findings,
+            summary=review.effective_summary,
+            comment=comment,
+        )
+    else:
+        await platform.post_reply(
+            comment,
+            CommentReply(body=review.effective_summary),
         )
 
 

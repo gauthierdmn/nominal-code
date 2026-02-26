@@ -6,6 +6,7 @@ A bot that monitors GitHub PRs and GitLab MRs for review comments mentioning it,
 
 - **Worker bot** — receives a prompt, clones the repo, runs an agent with full tool access, commits and pushes changes
 - **Reviewer bot** — fetches the PR diff, runs an agent with read-only tools, posts structured inline code reviews
+- **CLI mode** — run a one-off review on any PR without deploying a webhook server
 - **GitHub and GitLab** — supports both platforms simultaneously
 - **Session continuity** — multi-turn conversations within the same PR
 - **Automatic cleanup** — stale workspaces for closed/merged PRs are removed periodically
@@ -13,8 +14,28 @@ A bot that monitors GitHub PRs and GitLab MRs for review comments mentioning it,
 
 ## Quick Start
 
+### CLI Mode (no server required)
+
 ```bash
 git clone https://github.com/your-org/nominal-code.git
+cd nominal-code/app
+uv sync
+
+export GITHUB_TOKEN=ghp_...
+
+# Review any PR
+uv run nominal-code review owner/repo#42
+
+# Dry run (print results without posting)
+uv run nominal-code review owner/repo#42 --dry-run
+
+# Custom instructions
+uv run nominal-code review owner/repo#42 --prompt "focus on security"
+```
+
+### Webhook Server Mode
+
+```bash
 cd nominal-code/app
 uv sync
 
@@ -30,6 +51,7 @@ uv run nominal-code
 ## Documentation
 
 - [Getting Started](docs/getting-started.md) — from zero to a working bot
+- [CLI Mode](docs/cli.md) — run one-off reviews without a server
 - [Configuration](docs/configuration.md) — full environment variable reference
 - **Platforms**
   - [GitHub](docs/platforms/github.md) — webhook setup, tokens, supported events

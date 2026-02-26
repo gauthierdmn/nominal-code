@@ -84,3 +84,14 @@ By default, the reviewer clones using the main platform token (`GITHUB_TOKEN` / 
 ## Session Continuity
 
 The reviewer maintains session continuity within the same PR. Subsequent review requests resume from the previous session, preserving context. Sessions are keyed by `(platform, repo, pr_number, "reviewer")`.
+
+## CLI Mode
+
+The reviewer can also be invoked directly from the command line without a webhook server:
+
+```bash
+export GITHUB_TOKEN=ghp_...
+uv run nominal-code review owner/repo#42
+```
+
+This uses the same review logic (diff fetch, agent execution, finding filtering) but skips session continuity and does not require bot usernames or `ALLOWED_USERS`. See [CLI Mode](../cli.md) for details.
