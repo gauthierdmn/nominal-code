@@ -9,13 +9,13 @@ from typing import TYPE_CHECKING
 
 from nominal_code.agent_runner import AgentResult, run_agent
 from nominal_code.bot_type import (
+    AgentReview,
     BotType,
     ChangedFile,
     ReviewFinding,
-    ReviewResult,
 )
 from nominal_code.git_workspace import GitWorkspace
-from nominal_code.handlers.shared import (
+from nominal_code.handlers.common import (
     build_system_prompt,
     resolve_branch,
     resolve_guidelines,
@@ -49,12 +49,12 @@ logger: logging.Logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
-class ExecuteReviewResult:
+class ReviewResult:
     """
     Result of executing a code review without side effects.
 
     Attributes:
-        review_result (ReviewResult | None): Parsed review, or None if parsing
+        agent_review (AgentReview | None): Parsed review, or None if parsing
             failed after retries.
         valid_findings (list[ReviewFinding]): Findings on lines within the diff.
         rejected_findings (list[ReviewFinding]): Findings on lines outside the diff.
@@ -62,21 +62,21 @@ class ExecuteReviewResult:
         raw_output (str): The raw agent output text.
     """
 
-    review_result: ReviewResult | None
+    agent_review: AgentReview | None
     valid_findings: list[ReviewFinding]
     rejected_findings: list[ReviewFinding]
     effective_summary: str
     raw_output: str
 
 
-async def execute_review(
-    comment: PullRequestEvent,
+async def review(
+    event: PullRequestEvent,
     prompt: str,
     config: Config,
     platform: ReviewerPlatform,
     session_store: SessionStore | None = None,
     bot_username: str = "",
-) -> ExecuteReviewResult:
+) -> ReviewResult:
     """
     Run the core review logic without posting results to the platform.
 
@@ -84,7 +84,7 @@ async def execute_review(
     comments, runs the agent, parses the output, and filters findings.
 
     Args:
-        comment (PullRequestEvent): The parsed review comment.
+        event (PullRequestEvent): The parsed event that triggered the review.
         prompt (str): The extracted prompt.
         config (Config): Application configuration.
         platform (ReviewerPlatform): The platform client with reviewer capabilities.
@@ -92,35 +92,35 @@ async def execute_review(
         bot_username (str): Bot username to filter from existing comments.
 
     Returns:
-        ExecuteReviewResult: The review result with findings and summary.
+        ReviewResult: The review result with findings and summary.
 
     Raises:
         RuntimeError: If workspace setup fails.
     """
 
     reviewer_clone_url: str = platform.build_reviewer_clone_url(
-        comment.repo_full_name,
+        event.repo_full_name,
     )
-    effective_comment: PullRequestEvent = replace(comment, clone_url=reviewer_clone_url)
+    effective_event: PullRequestEvent = replace(event, clone_url=reviewer_clone_url)
 
     workspace: GitWorkspace = GitWorkspace(
         base_dir=config.workspace_base_dir,
-        repo_full_name=effective_comment.repo_full_name,
-        pr_number=effective_comment.pr_number,
-        clone_url=effective_comment.clone_url,
-        branch=effective_comment.pr_branch,
+        repo_full_name=effective_event.repo_full_name,
+        pr_number=effective_event.pr_number,
+        clone_url=effective_event.clone_url,
+        branch=effective_event.pr_branch,
     )
 
     results: tuple[
         list[ChangedFile], list[ExistingComment], None
     ] = await asyncio.gather(
         platform.fetch_pr_diff(
-            comment.repo_full_name,
-            comment.pr_number,
+            event.repo_full_name,
+            event.pr_number,
         ),
         platform.fetch_pr_comments(
-            comment.repo_full_name,
-            comment.pr_number,
+            event.repo_full_name,
+            event.pr_number,
         ),
         workspace.ensure_ready(),
     )
@@ -134,7 +134,7 @@ async def execute_review(
     ][-MAX_EXISTING_COMMENTS:]
 
     full_prompt: str = build_reviewer_prompt(
-        effective_comment,
+        effective_event,
         prompt,
         changed_files,
         deps_path=workspace.deps_path,
@@ -145,9 +145,9 @@ async def execute_review(
 
     if session_store is not None:
         existing_session = session_store.get(
-            comment.platform,
-            comment.repo_full_name,
-            comment.pr_number,
+            event.platform,
+            event.repo_full_name,
+            event.pr_number,
             BotType.REVIEWER.value,
         )
 
@@ -182,14 +182,14 @@ async def execute_review(
 
     if session_store is not None and result.session_id:
         session_store.set(
-            comment.platform,
-            comment.repo_full_name,
-            comment.pr_number,
+            event.platform,
+            event.repo_full_name,
+            event.pr_number,
             BotType.REVIEWER.value,
             result.session_id,
         )
 
-    review_result: ReviewResult | None = parse_review_output(result.output)
+    review_result: AgentReview | None = parse_review_output(result.output)
 
     retry_count: int = 0
 
@@ -199,8 +199,8 @@ async def execute_review(
 
         logger.warning(
             "Reviewer JSON parse failed for %s#%d, retry %d/%d",
-            comment.repo_full_name,
-            comment.pr_number,
+            event.repo_full_name,
+            event.pr_number,
             retry_count,
             MAX_REVIEW_RETRIES,
         )
@@ -219,9 +219,9 @@ async def execute_review(
 
         if session_store is not None and result.session_id:
             session_store.set(
-                comment.platform,
-                comment.repo_full_name,
-                comment.pr_number,
+                event.platform,
+                event.repo_full_name,
+                event.pr_number,
                 BotType.REVIEWER.value,
                 result.session_id,
             )
@@ -233,12 +233,12 @@ async def execute_review(
             "Reviewer JSON still invalid after %d retries for %s#%d, "
             "falling back to plain comment",
             MAX_REVIEW_RETRIES,
-            comment.repo_full_name,
-            comment.pr_number,
+            event.repo_full_name,
+            event.pr_number,
         )
 
-        return ExecuteReviewResult(
-            review_result=None,
+        return ReviewResult(
+            agent_review=None,
             valid_findings=[],
             rejected_findings=[],
             effective_summary="",
@@ -254,8 +254,8 @@ async def execute_review(
         logger.warning(
             "Filtered %d findings outside the diff for %s#%d",
             len(rejected_findings),
-            comment.repo_full_name,
-            comment.pr_number,
+            event.repo_full_name,
+            event.pr_number,
         )
 
     effective_summary: str = build_effective_summary(
@@ -265,15 +265,15 @@ async def execute_review(
 
     logger.info(
         "Reviewer finished for %s#%d (findings=%d, turns=%d, duration=%dms)",
-        comment.repo_full_name,
-        comment.pr_number,
+        event.repo_full_name,
+        event.pr_number,
         len(review_result.findings),
         result.num_turns,
         result.duration_ms,
     )
 
-    return ExecuteReviewResult(
-        review_result=review_result,
+    return ReviewResult(
+        agent_review=review_result,
         valid_findings=valid_findings,
         rejected_findings=rejected_findings,
         effective_summary=effective_summary,
@@ -281,27 +281,27 @@ async def execute_review(
     )
 
 
-async def process_comment(
-    comment: PullRequestEvent,
+async def review_and_post(
+    event: PullRequestEvent,
     prompt: str,
     config: Config,
     platform: ReviewerPlatform,
     session_store: SessionStore,
 ) -> None:
     """
-    Process a comment using the reviewer bot: fetch diff, run agent, submit review.
+    Run a review and post the results to the platform.
 
     Args:
-        comment (PullRequestEvent): The parsed review comment.
+        event (PullRequestEvent): The parsed event that triggered the review.
         prompt (str): The extracted prompt.
         config (Config): Application configuration.
         platform (ReviewerPlatform): The platform client with reviewer capabilities.
         session_store (SessionStore): Agent session store.
     """
 
-    effective_comment: PullRequestEvent | None = await resolve_branch(comment, platform)
+    effective_event: PullRequestEvent | None = await resolve_branch(event, platform)
 
-    if effective_comment is None:
+    if effective_event is None:
         return
 
     if config.reviewer is None:
@@ -310,8 +310,8 @@ async def process_comment(
     bot_username: str = config.reviewer.bot_username
 
     try:
-        review: ExecuteReviewResult = await execute_review(
-            comment=effective_comment,
+        review_result: ReviewResult = await review(
+            event=effective_event,
             prompt=prompt,
             config=config,
             platform=platform,
@@ -322,7 +322,7 @@ async def process_comment(
         logger.exception("Failed to set up workspace")
 
         await platform.post_reply(
-            comment,
+            event,
             CommentReply(body="Failed to set up the git workspace."),
         )
 
@@ -332,37 +332,37 @@ async def process_comment(
         logger.exception("Error running agent (reviewer)")
 
         await platform.post_reply(
-            comment,
+            event,
             CommentReply(body="An unexpected error occurred while running the agent."),
         )
 
         return
 
-    if review.review_result is None:
+    if review_result.agent_review is None:
         await platform.post_reply(
-            comment,
-            CommentReply(body=review.raw_output),
+            event,
+            CommentReply(body=review_result.raw_output),
         )
 
         return
 
-    if review.valid_findings:
+    if review_result.valid_findings:
         await platform.submit_review(
-            repo_full_name=comment.repo_full_name,
-            pr_number=comment.pr_number,
-            findings=review.valid_findings,
-            summary=review.effective_summary,
-            comment=comment,
+            repo_full_name=event.repo_full_name,
+            pr_number=event.pr_number,
+            findings=review_result.valid_findings,
+            summary=review_result.effective_summary,
+            event=event,
         )
     else:
         await platform.post_reply(
-            comment,
-            CommentReply(body=review.effective_summary),
+            event,
+            CommentReply(body=review_result.effective_summary),
         )
 
 
 def build_reviewer_prompt(
-    comment: PullRequestEvent,
+    event: PullRequestEvent,
     user_prompt: str,
     changed_files: list[ChangedFile],
     deps_path: str = "",
@@ -372,7 +372,7 @@ def build_reviewer_prompt(
     Build a prompt for the reviewer bot including the full PR diff.
 
     Args:
-        comment (PullRequestEvent): The review comment with context.
+        event (PullRequestEvent): The event with PR context.
         user_prompt (str): The user's extracted prompt text.
         changed_files (list[ChangedFile]): Files changed in the PR.
         deps_path (str): Path to the shared dependencies directory.
@@ -384,8 +384,7 @@ def build_reviewer_prompt(
     """
 
     parts: list[str] = [
-        f"Branch: {comment.pr_branch} "
-        f"(PR #{comment.pr_number} on {comment.repo_full_name})",
+        f"Branch: {event.pr_branch} (PR #{event.pr_number} on {event.repo_full_name})",
     ]
 
     if user_prompt:
@@ -461,9 +460,9 @@ def _format_existing_comments(comments: list[ExistingComment]) -> str:
     return "\n\n".join(lines)
 
 
-def parse_review_output(output: str) -> ReviewResult | None:
+def parse_review_output(output: str) -> AgentReview | None:
     """
-    Parse the agent's JSON output into a ReviewResult.
+    Parse the agent's JSON output into an AgentReview.
 
     Returns None if the output is not valid JSON or does not match
     the expected structure.
@@ -472,7 +471,7 @@ def parse_review_output(output: str) -> ReviewResult | None:
         output (str): Raw text output from the agent.
 
     Returns:
-        ReviewResult | None: Parsed result, or None on failure.
+        AgentReview | None: Parsed result, or None on failure.
     """
 
     stripped: str = output.strip()
@@ -525,7 +524,7 @@ def parse_review_output(output: str) -> ReviewResult | None:
 
         findings.append(ReviewFinding(file_path=path, line=line, body=body))
 
-    return ReviewResult(summary=summary, findings=findings)
+    return AgentReview(summary=summary, findings=findings)
 
 
 def _parse_diff_lines(patch: str) -> set[int]:

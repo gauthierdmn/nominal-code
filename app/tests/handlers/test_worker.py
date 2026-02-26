@@ -7,7 +7,7 @@ import pytest
 from nominal_code.agent_runner import AgentResult
 from nominal_code.bot_type import BotType
 from nominal_code.config import WorkerConfig
-from nominal_code.handlers.shared import handle_comment
+from nominal_code.handlers.common import handle_comment
 from nominal_code.handlers.worker import build_prompt
 from nominal_code.platforms.base import PlatformName, PullRequestEvent
 from nominal_code.session import SessionQueue, SessionStore
@@ -94,7 +94,7 @@ class TestWorkerProcessComment:
                 mock_ws_class.return_value = mock_ws
 
                 await handle_comment(
-                    comment=comment,
+                    event=comment,
                     prompt="fix this",
                     config=config,
                     platform=platform,
@@ -145,7 +145,7 @@ class TestWorkerProcessComment:
                     return_value="Repo guidelines override",
                 ) as mock_resolve:
                     await handle_comment(
-                        comment=comment,
+                        event=comment,
                         prompt="fix this",
                         config=config,
                         platform=platform,

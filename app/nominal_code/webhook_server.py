@@ -157,7 +157,7 @@ async def _handle_webhook(
         return web.json_response({"status": "no_mention"})
 
     await handle_comment(
-        comment=event,
+        event=event,
         prompt=prompt,
         config=config,
         platform=platform,

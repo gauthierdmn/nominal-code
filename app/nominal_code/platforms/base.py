@@ -150,14 +150,14 @@ class Platform(Protocol):
 
     async def post_reply(
         self,
-        comment: PullRequestEvent,
+        event: PullRequestEvent,
         reply: CommentReply,
     ) -> None:
         """
         Post a reply to a review comment on the platform.
 
         Args:
-            comment (PullRequestEvent): The original comment to reply to.
+            event (PullRequestEvent): The original event to reply to.
             reply (CommentReply): The reply content.
         """
 
@@ -165,14 +165,14 @@ class Platform(Protocol):
 
     async def post_reaction(
         self,
-        comment: PullRequestEvent,
+        event: PullRequestEvent,
         reaction: str,
     ) -> None:
         """
         Add a reaction/emoji to a comment on the platform.
 
         Args:
-            comment (PullRequestEvent): The comment to react to.
+            event (PullRequestEvent): The event to react to.
             reaction (str): The reaction name (e.g. ``eyes``, ``+1``).
         """
 
@@ -192,7 +192,7 @@ class Platform(Protocol):
 
         ...
 
-    async def fetch_pr_branch(self, comment: PullRequestEvent) -> str:
+    async def fetch_pr_branch(self, event: PullRequestEvent) -> str:
         """
         Resolve the head branch name when the webhook payload lacks it.
 
@@ -200,7 +200,7 @@ class Platform(Protocol):
         return an empty string.
 
         Args:
-            comment (PullRequestEvent): The event with repo and PR info.
+            event (PullRequestEvent): The event with repo and PR info.
 
         Returns:
             str: The head branch name, or empty string if unavailable.
@@ -256,7 +256,7 @@ class ReviewerPlatform(Platform, Protocol):
         pr_number: int,
         findings: list[ReviewFinding],
         summary: str,
-        comment: PullRequestEvent,
+        event: PullRequestEvent,
     ) -> None:
         """
         Submit a native code review with inline comments.
@@ -266,7 +266,7 @@ class ReviewerPlatform(Platform, Protocol):
             pr_number (int): Pull request or merge request number.
             findings (list[ReviewFinding]): Inline review comments.
             summary (str): High-level review summary.
-            comment (PullRequestEvent): The original event that triggered the review.
+            event (PullRequestEvent): The original event that triggered the review.
         """
 
         ...

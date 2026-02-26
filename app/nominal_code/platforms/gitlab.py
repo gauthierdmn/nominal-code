@@ -252,14 +252,14 @@ class GitLabPlatform:
 
     async def post_reply(
         self,
-        comment: PullRequestEvent,
+        event: PullRequestEvent,
         reply: CommentReply,
     ) -> None:
         """
         Post a reply to a GitLab MR note.
 
         Args:
-            comment (PullRequestEvent): The original comment to reply to.
+            event (PullRequestEvent): The original event to reply to.
             reply (CommentReply): The reply content.
         """
 
@@ -268,16 +268,16 @@ class GitLabPlatform:
         if reply.commit_sha:
             body += f"\n\n_Pushed commit: {reply.commit_sha}_"
 
-        project_path: str = quote(comment.repo_full_name, safe="")
+        project_path: str = quote(event.repo_full_name, safe="")
 
-        if comment.discussion_id:
+        if event.discussion_id:
             url: str = (
                 f"/projects/{project_path}"
-                f"/merge_requests/{comment.pr_number}"
-                f"/discussions/{comment.discussion_id}/notes"
+                f"/merge_requests/{event.pr_number}"
+                f"/discussions/{event.discussion_id}/notes"
             )
         else:
-            url = f"/projects/{project_path}/merge_requests/{comment.pr_number}/notes"
+            url = f"/projects/{project_path}/merge_requests/{event.pr_number}/notes"
 
         try:
             response: httpx.Response = await self._client.post(
@@ -288,28 +288,28 @@ class GitLabPlatform:
         except httpx.HTTPError:
             logger.exception(
                 "Failed to post reply to %s!%d",
-                comment.repo_full_name,
-                comment.pr_number,
+                event.repo_full_name,
+                event.pr_number,
             )
 
     async def post_reaction(
         self,
-        comment: PullRequestEvent,
+        event: PullRequestEvent,
         reaction: str,
     ) -> None:
         """
         Add an award emoji to a GitLab MR note.
 
         Args:
-            comment (PullRequestEvent): The comment to react to.
+            event (PullRequestEvent): The event to react to.
             reaction (str): The emoji name (e.g. ``eyes``, ``thumbsup``).
         """
 
-        project_path: str = quote(comment.repo_full_name, safe="")
+        project_path: str = quote(event.repo_full_name, safe="")
         url: str = (
             f"/projects/{project_path}"
-            f"/merge_requests/{comment.pr_number}"
-            f"/notes/{comment.comment_id}/award_emoji"
+            f"/merge_requests/{event.pr_number}"
+            f"/notes/{event.comment_id}/award_emoji"
         )
 
         try:
@@ -321,8 +321,8 @@ class GitLabPlatform:
         except httpx.HTTPError:
             logger.warning(
                 "Failed to add reaction to note %d on %s",
-                comment.comment_id,
-                comment.repo_full_name,
+                event.comment_id,
+                event.repo_full_name,
             )
 
     async def is_pr_open(self, repo_full_name: str, pr_number: int) -> bool:
@@ -358,14 +358,14 @@ class GitLabPlatform:
 
             return True
 
-    async def fetch_pr_branch(self, comment: PullRequestEvent) -> str:
+    async def fetch_pr_branch(self, event: PullRequestEvent) -> str:
         """
         Resolve the head branch for a merge request.
 
         GitLab webhooks always include the source branch, so this is a no-op.
 
         Args:
-            comment (PullRequestEvent): The event with repo and MR info.
+            event (PullRequestEvent): The event with repo and MR info.
 
         Returns:
             str: Always returns an empty string.
@@ -528,7 +528,7 @@ class GitLabPlatform:
         pr_number: int,
         findings: list[ReviewFinding],
         summary: str,
-        comment: PullRequestEvent,
+        event: PullRequestEvent,
     ) -> None:
         """
         Submit a review on a GitLab MR via summary note and diff discussions.
@@ -541,10 +541,10 @@ class GitLabPlatform:
             pr_number (int): Merge request IID.
             findings (list[ReviewFinding]): Inline review comments.
             summary (str): High-level review summary.
-            comment (PullRequestEvent): The original event that triggered the review.
+            event (PullRequestEvent): The original event that triggered the review.
         """
 
-        await self.post_reply(comment, CommentReply(body=summary))
+        await self.post_reply(event, CommentReply(body=summary))
 
         project_path: str = quote(repo_full_name, safe="")
 

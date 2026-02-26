@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from nominal_code.agent_runner import AgentResult, run_agent
 from nominal_code.bot_type import BotType
 from nominal_code.git_workspace import GitWorkspace
-from nominal_code.handlers.shared import (
+from nominal_code.handlers.common import (
     build_system_prompt,
     resolve_branch,
     resolve_guidelines,
@@ -21,35 +21,35 @@ if TYPE_CHECKING:
 logger: logging.Logger = logging.getLogger(__name__)
 
 
-async def process_comment(
-    comment: PullRequestEvent,
+async def review_and_fix(
+    event: PullRequestEvent,
     prompt: str,
     config: Config,
     platform: Platform,
     session_store: SessionStore,
 ) -> None:
     """
-    Process a comment using the worker bot: clone, run agent, post reply.
+    Review and fix code using the worker bot: clone, run agent, post reply.
 
     Args:
-        comment (PullRequestEvent): The parsed review comment.
+        event (PullRequestEvent): The parsed event that triggered the worker.
         prompt (str): The extracted prompt.
         config (Config): Application configuration.
         platform (Platform): The platform client.
         session_store (SessionStore): Agent session store.
     """
 
-    effective_comment: PullRequestEvent | None = await resolve_branch(comment, platform)
+    effective_event: PullRequestEvent | None = await resolve_branch(event, platform)
 
-    if effective_comment is None:
+    if effective_event is None:
         return
 
     workspace: GitWorkspace = GitWorkspace(
         base_dir=config.workspace_base_dir,
-        repo_full_name=effective_comment.repo_full_name,
-        pr_number=effective_comment.pr_number,
-        clone_url=effective_comment.clone_url,
-        branch=effective_comment.pr_branch,
+        repo_full_name=effective_event.repo_full_name,
+        pr_number=effective_event.pr_number,
+        clone_url=effective_event.clone_url,
+        branch=effective_event.pr_branch,
     )
 
     try:
@@ -58,7 +58,7 @@ async def process_comment(
         logger.exception("Failed to set up workspace")
 
         await platform.post_reply(
-            comment,
+            event,
             CommentReply(body="Failed to set up the git workspace."),
         )
 
@@ -67,14 +67,14 @@ async def process_comment(
     workspace.ensure_deps_dir()
 
     full_prompt: str = build_prompt(
-        effective_comment,
+        effective_event,
         prompt,
         deps_path=workspace.deps_path,
     )
     existing_session: str | None = session_store.get(
-        comment.platform,
-        comment.repo_full_name,
-        comment.pr_number,
+        event.platform,
+        event.repo_full_name,
+        event.pr_number,
         BotType.WORKER.value,
     )
 
@@ -83,7 +83,7 @@ async def process_comment(
             raise RuntimeError("Worker config is required but not configured")
 
         file_paths: list[str] = (
-            [effective_comment.file_path] if effective_comment.file_path else []
+            [effective_event.file_path] if effective_event.file_path else []
         )
 
         effective_guidelines: str = resolve_guidelines(
@@ -111,21 +111,21 @@ async def process_comment(
 
         if result.session_id:
             session_store.set(
-                comment.platform,
-                comment.repo_full_name,
-                comment.pr_number,
+                event.platform,
+                event.repo_full_name,
+                event.pr_number,
                 BotType.WORKER.value,
                 result.session_id,
             )
 
         reply: CommentReply = CommentReply(body=result.output)
 
-        await platform.post_reply(comment, reply)
+        await platform.post_reply(event, reply)
 
         logger.info(
             "Worker finished for %s#%d (turns=%d, duration=%dms)",
-            comment.repo_full_name,
-            comment.pr_number,
+            event.repo_full_name,
+            event.pr_number,
             result.num_turns,
             result.duration_ms,
         )
@@ -133,23 +133,23 @@ async def process_comment(
         logger.exception("Error running agent (worker)")
 
         await platform.post_reply(
-            comment,
+            event,
             CommentReply(body="An unexpected error occurred while running the agent."),
         )
 
 
 def build_prompt(
-    comment: PullRequestEvent,
+    event: PullRequestEvent,
     user_prompt: str,
     deps_path: str = "",
 ) -> str:
     """
-    Build a contextual prompt for the agent from the review comment.
+    Build a contextual prompt for the agent from the event.
 
     Includes file path, diff hunk, and branch context when available.
 
     Args:
-        comment (PullRequestEvent): The review comment with context.
+        event (PullRequestEvent): The event with PR context.
         user_prompt (str): The user's extracted prompt text.
         deps_path (str): Path to the shared dependencies directory.
 
@@ -159,15 +159,14 @@ def build_prompt(
 
     parts: list[str] = []
 
-    if comment.file_path:
-        parts.append(f"File: {comment.file_path}")
+    if event.file_path:
+        parts.append(f"File: {event.file_path}")
 
-    if comment.diff_hunk:
-        parts.append(f"Diff context:\n```\n{comment.diff_hunk}\n```")
+    if event.diff_hunk:
+        parts.append(f"Diff context:\n```\n{event.diff_hunk}\n```")
 
     parts.append(
-        f"Branch: {comment.pr_branch} "
-        f"(PR #{comment.pr_number} on {comment.repo_full_name})"
+        f"Branch: {event.pr_branch} (PR #{event.pr_number} on {event.repo_full_name})"
     )
 
     parts.append(f"Request: {user_prompt}")

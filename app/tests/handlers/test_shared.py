@@ -7,7 +7,7 @@ import pytest
 from nominal_code.agent_runner import AgentResult
 from nominal_code.bot_type import BotType, EventType
 from nominal_code.config import ReviewerConfig, WorkerConfig
-from nominal_code.handlers.shared import (
+from nominal_code.handlers.common import (
     build_system_prompt,
     detect_languages,
     handle_auto_trigger,
@@ -90,7 +90,7 @@ class TestHandleComment:
         session_queue = SessionQueue()
 
         await handle_comment(
-            comment=comment,
+            event=comment,
             prompt="fix this",
             config=config,
             platform=platform,
@@ -130,7 +130,7 @@ class TestHandleComment:
                 mock_ws_class.return_value = mock_ws
 
                 await handle_comment(
-                    comment=comment,
+                    event=comment,
                     prompt="fix this",
                     config=config,
                     platform=platform,
@@ -174,7 +174,7 @@ class TestHandleComment:
                 mock_ws_class.return_value = mock_ws
 
                 await handle_comment(
-                    comment=comment,
+                    event=comment,
                     prompt="fix this",
                     config=config,
                     platform=platform,

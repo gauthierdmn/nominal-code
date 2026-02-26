@@ -83,7 +83,7 @@ class ReviewFinding:
 
 
 @dataclass(frozen=True)
-class ReviewResult:
+class AgentReview:
     """
     Structured output from a reviewer bot invocation.
 

@@ -8,7 +8,7 @@ import re
 import sys
 
 from nominal_code.config import Config
-from nominal_code.handlers.reviewer import ExecuteReviewResult, execute_review
+from nominal_code.handlers.reviewer import ReviewResult, review
 from nominal_code.main import setup_logging
 from nominal_code.platforms.base import (
     CommentReply,
@@ -156,15 +156,15 @@ def build_platform(platform_name: PlatformName) -> ReviewerPlatform:
     sys.exit(1)
 
 
-def print_review(result: ExecuteReviewResult) -> None:
+def print_review(result: ReviewResult) -> None:
     """
     Format and print review results to stdout in plain text.
 
     Args:
-        result (ExecuteReviewResult): The review result to display.
+        result (ReviewResult): The review result to display.
     """
 
-    if result.review_result is None:
+    if result.agent_review is None:
         print("Review failed to produce structured output.\n")
         print("Raw output:")
         print(result.raw_output)
@@ -241,7 +241,7 @@ async def run_review(args: argparse.Namespace) -> int:
 
         return 1
 
-    comment: PullRequestEvent = PullRequestEvent(
+    event: PullRequestEvent = PullRequestEvent(
         platform=platform_name,
         repo_full_name=repo_full_name,
         pr_number=pr_number,
@@ -255,8 +255,8 @@ async def run_review(args: argparse.Namespace) -> int:
     )
 
     try:
-        result: ExecuteReviewResult = await execute_review(
-            comment=comment,
+        result: ReviewResult = await review(
+            event=event,
             prompt=args.prompt,
             config=config,
             platform=platform,
@@ -272,18 +272,18 @@ async def run_review(args: argparse.Namespace) -> int:
 
     print_review(result)
 
-    if not args.dry_run and result.review_result is not None:
+    if not args.dry_run and result.agent_review is not None:
         if result.valid_findings:
             await platform.submit_review(
                 repo_full_name=repo_full_name,
                 pr_number=pr_number,
                 findings=result.valid_findings,
                 summary=result.effective_summary,
-                comment=comment,
+                event=event,
             )
         else:
             await platform.post_reply(
-                comment,
+                event,
                 CommentReply(body=result.effective_summary),
             )
 

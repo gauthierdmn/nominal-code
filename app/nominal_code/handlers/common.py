@@ -13,10 +13,9 @@ if TYPE_CHECKING:
     from nominal_code.platforms.base import Platform, ReviewerPlatform
     from nominal_code.session import SessionQueue, SessionStore
 
+NOMINAL_CONFIG_DIR: str = ".nominal"
+REPO_GUIDELINES_PATH: str = os.path.join(NOMINAL_CONFIG_DIR, "guidelines.md")
 EYES_REACTION: str = "eyes"
-REPO_GUIDELINES_PATH: str = os.path.join(".nominal", "guidelines.md")
-NOMINAL_DIR: str = ".nominal"
-
 EXTENSION_TO_LANGUAGE: dict[str, str] = {
     ".py": "python",
     ".pyi": "python",
@@ -26,7 +25,7 @@ logger: logging.Logger = logging.getLogger(__name__)
 
 
 async def handle_comment(
-    comment: PullRequestEvent,
+    event: PullRequestEvent,
     prompt: str,
     config: Config,
     platform: Platform,
@@ -41,7 +40,7 @@ async def handle_comment(
     and enqueues the job for serial execution per PR.
 
     Args:
-        comment (PullRequestEvent): The parsed event.
+        event (PullRequestEvent): The parsed event.
         prompt (str): The extracted prompt after the @mention.
         config (Config): Application configuration.
         platform (Platform): The platform client for API calls.
@@ -50,10 +49,10 @@ async def handle_comment(
         bot_type (BotType): Which bot personality to use.
     """
 
-    if comment.author_username not in config.allowed_users:
+    if event.author_username not in config.allowed_users:
         logger.warning(
             "Ignoring comment from unauthorized user: %s",
-            comment.author_username,
+            event.author_username,
         )
 
         return
@@ -61,20 +60,20 @@ async def handle_comment(
     logger.info(
         "Processing %s comment from %s on %s#%d: %s",
         bot_type.value,
-        comment.author_username,
-        comment.repo_full_name,
-        comment.pr_number,
+        event.author_username,
+        event.repo_full_name,
+        event.pr_number,
         prompt[:100],
     )
 
-    await platform.post_reaction(comment, EYES_REACTION)
+    await platform.post_reaction(event, EYES_REACTION)
 
     async def _job() -> None:
         if bot_type == BotType.REVIEWER:
-            from nominal_code.handlers.reviewer import process_comment
+            from nominal_code.handlers.reviewer import review_and_post
 
-            await process_comment(
-                comment,
+            await review_and_post(
+                event,
                 prompt,
                 config,
                 cast("ReviewerPlatform", platform),
@@ -83,12 +82,10 @@ async def handle_comment(
 
             return
 
-        from nominal_code.handlers.worker import (
-            process_comment as worker_process,
-        )
+        from nominal_code.handlers.worker import review_and_fix
 
-        await worker_process(
-            comment,
+        await review_and_fix(
+            event,
             prompt,
             config,
             platform,
@@ -96,9 +93,9 @@ async def handle_comment(
         )
 
     await session_queue.enqueue(
-        comment.platform,
-        comment.repo_full_name,
-        comment.pr_number,
+        event.platform,
+        event.repo_full_name,
+        event.pr_number,
         bot_type.value,
         _job,
     )
@@ -139,9 +136,9 @@ async def handle_auto_trigger(
     )
 
     async def _job() -> None:
-        from nominal_code.handlers.reviewer import process_comment
+        from nominal_code.handlers.reviewer import review_and_post
 
-        await process_comment(
+        await review_and_post(
             event,
             "",
             config,
@@ -159,7 +156,7 @@ async def handle_auto_trigger(
 
 
 async def resolve_branch(
-    comment: PullRequestEvent,
+    event: PullRequestEvent,
     platform: Platform,
 ) -> PullRequestEvent | None:
     """
@@ -170,29 +167,29 @@ async def resolve_branch(
     cannot be determined.
 
     Args:
-        comment (PullRequestEvent): The event to resolve.
+        event (PullRequestEvent): The event to resolve.
         platform (Platform): The platform client for API calls.
 
     Returns:
         PullRequestEvent | None: Event with branch set, or None on failure.
     """
 
-    if comment.pr_branch:
-        return comment
+    if event.pr_branch:
+        return event
 
-    branch: str = await platform.fetch_pr_branch(comment)
+    branch: str = await platform.fetch_pr_branch(event)
 
     if branch:
-        return replace(comment, pr_branch=branch)
+        return replace(event, pr_branch=branch)
 
     logger.error(
         "Cannot determine branch for %s#%d",
-        comment.repo_full_name,
-        comment.pr_number,
+        event.repo_full_name,
+        event.pr_number,
     )
 
     await platform.post_reply(
-        comment,
+        event,
         CommentReply(body="Unable to determine the PR branch."),
     )
 
@@ -261,7 +258,12 @@ def load_repo_language_guidelines(repo_path: str, language: str) -> str:
         str: The guideline content, or empty string if not found.
     """
 
-    full_path: str = os.path.join(repo_path, NOMINAL_DIR, "languages", f"{language}.md")
+    full_path: str = os.path.join(
+        repo_path,
+        NOMINAL_CONFIG_DIR,
+        "languages",
+        f"{language}.md",
+    )
 
     if not os.path.isfile(full_path):
         return ""

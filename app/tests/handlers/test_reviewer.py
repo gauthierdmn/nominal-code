@@ -8,17 +8,17 @@ import pytest
 from nominal_code.agent_runner import AgentResult
 from nominal_code.bot_type import BotType, ChangedFile, FileStatus, ReviewFinding
 from nominal_code.config import ReviewerConfig
+from nominal_code.handlers.common import handle_comment
 from nominal_code.handlers.reviewer import (
     MAX_EXISTING_COMMENTS,
     REVIEWER_ALLOWED_TOOLS,
-    ExecuteReviewResult,
+    ReviewResult,
     build_effective_summary,
     build_reviewer_prompt,
-    execute_review,
     filter_findings,
     parse_review_output,
+    review,
 )
-from nominal_code.handlers.shared import handle_comment
 from nominal_code.platforms.base import ExistingComment, PlatformName, PullRequestEvent
 from nominal_code.session import SessionQueue, SessionStore
 
@@ -126,7 +126,7 @@ class TestReviewerProcessComment:
                 mock_ws_class.return_value = mock_ws
 
                 await handle_comment(
-                    comment=comment,
+                    event=comment,
                     prompt="review this",
                     config=config,
                     platform=platform,
@@ -175,7 +175,7 @@ class TestReviewerProcessComment:
                 mock_ws_class.return_value = mock_ws
 
                 await handle_comment(
-                    comment=comment,
+                    event=comment,
                     prompt="review",
                     config=config,
                     platform=platform,
@@ -233,7 +233,7 @@ class TestReviewerProcessComment:
                     return_value="Repo guidelines override",
                 ) as mock_resolve:
                     await handle_comment(
-                        comment=comment,
+                        event=comment,
                         prompt="review",
                         config=config,
                         platform=platform,
@@ -305,7 +305,7 @@ class TestReviewerProcessComment:
                 mock_ws_class.return_value = mock_ws
 
                 await handle_comment(
-                    comment=comment,
+                    event=comment,
                     prompt="review",
                     config=config,
                     platform=platform,
@@ -368,7 +368,7 @@ class TestReviewerProcessComment:
                 mock_ws_class.return_value = mock_ws
 
                 await handle_comment(
-                    comment=comment,
+                    event=comment,
                     prompt="review",
                     config=config,
                     platform=platform,
@@ -414,7 +414,7 @@ class TestReviewerProcessComment:
                 mock_ws_class.return_value = mock_ws
 
                 await handle_comment(
-                    comment=comment,
+                    event=comment,
                     prompt="review",
                     config=config,
                     platform=platform,
@@ -728,7 +728,7 @@ class TestBotCommentFiltering:
                 mock_ws_class.return_value = mock_ws
 
                 await handle_comment(
-                    comment=comment,
+                    event=comment,
                     prompt="review",
                     config=config,
                     platform=platform,
@@ -791,7 +791,7 @@ class TestBotCommentFiltering:
                 mock_ws_class.return_value = mock_ws
 
                 await handle_comment(
-                    comment=comment,
+                    event=comment,
                     prompt="review",
                     config=config,
                     platform=platform,
@@ -864,7 +864,7 @@ class TestBotCommentFiltering:
                     wraps=asyncio.gather,
                 ) as mock_gather:
                     await handle_comment(
-                        comment=comment,
+                        event=comment,
                         prompt="review",
                         config=config,
                         platform=platform,
@@ -1038,9 +1038,9 @@ class TestBuildEffectiveSummary:
         assert "Needs change" in result
 
 
-class TestExecuteReview:
+class TestReview:
     @pytest.mark.asyncio
-    async def test_execute_review_returns_result(self):
+    async def test_review_returns_result(self):
         config = _make_config()
         platform = _make_platform()
         platform.fetch_pr_diff = AsyncMock(
@@ -1083,22 +1083,22 @@ class TestExecuteReview:
                 mock_ws.repo_path = "/tmp/workspaces/owner/repo/pr-42"
                 mock_ws_class.return_value = mock_ws
 
-                result = await execute_review(
-                    comment=comment,
+                result = await review(
+                    event=comment,
                     prompt="review this",
                     config=config,
                     platform=platform,
                 )
 
-        assert isinstance(result, ExecuteReviewResult)
-        assert result.review_result is not None
-        assert result.review_result.summary == "Looks good"
+        assert isinstance(result, ReviewResult)
+        assert result.agent_review is not None
+        assert result.agent_review.summary == "Looks good"
         assert len(result.valid_findings) == 1
         assert result.valid_findings[0].file_path == "src/main.py"
         assert result.effective_summary == "Looks good"
 
     @pytest.mark.asyncio
-    async def test_execute_review_returns_none_result_on_bad_json(self):
+    async def test_review_returns_none_result_on_bad_json(self):
         config = _make_config()
         platform = _make_platform()
         comment = _make_comment()
@@ -1123,18 +1123,18 @@ class TestExecuteReview:
                 mock_ws.repo_path = "/tmp/workspaces/owner/repo/pr-42"
                 mock_ws_class.return_value = mock_ws
 
-                result = await execute_review(
-                    comment=comment,
+                result = await review(
+                    event=comment,
                     prompt="review",
                     config=config,
                     platform=platform,
                 )
 
-        assert result.review_result is None
+        assert result.agent_review is None
         assert result.raw_output == "not json"
 
     @pytest.mark.asyncio
-    async def test_execute_review_without_session_store(self):
+    async def test_review_without_session_store(self):
         config = _make_config()
         platform = _make_platform()
         comment = _make_comment()
@@ -1166,19 +1166,19 @@ class TestExecuteReview:
                 mock_ws.repo_path = "/tmp/workspaces/owner/repo/pr-42"
                 mock_ws_class.return_value = mock_ws
 
-                result = await execute_review(
-                    comment=comment,
+                result = await review(
+                    event=comment,
                     prompt="review",
                     config=config,
                     platform=platform,
                     session_store=None,
                 )
 
-        assert result.review_result is not None
-        assert result.review_result.summary == "OK"
+        assert result.agent_review is not None
+        assert result.agent_review.summary == "OK"
 
     @pytest.mark.asyncio
-    async def test_process_comment_still_works(self):
+    async def test_review_and_post_still_works(self):
         config = _make_config(allowed_users=["alice"])
         platform = _make_platform()
         platform.fetch_pr_diff = AsyncMock(
@@ -1222,7 +1222,7 @@ class TestExecuteReview:
                 mock_ws_class.return_value = mock_ws
 
                 await handle_comment(
-                    comment=comment,
+                    event=comment,
                     prompt="review",
                     config=config,
                     platform=platform,

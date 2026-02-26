@@ -331,7 +331,7 @@ class GitHubPlatform:
 
     async def post_reply(
         self,
-        comment: PullRequestEvent,
+        event: PullRequestEvent,
         reply: CommentReply,
     ) -> None:
         """
@@ -340,7 +340,7 @@ class GitHubPlatform:
         Uses the issue comments endpoint to reply in the PR conversation.
 
         Args:
-            comment (PullRequestEvent): The original comment to reply to.
+            event (PullRequestEvent): The original event to reply to.
             reply (CommentReply): The reply content.
         """
 
@@ -349,14 +349,14 @@ class GitHubPlatform:
         if reply.commit_sha:
             body += f"\n\n_Pushed commit: {reply.commit_sha}_"
 
-        if comment.event_type == EventType.REVIEW_COMMENT:
+        if event.event_type == EventType.REVIEW_COMMENT:
             url: str = (
-                f"/repos/{comment.repo_full_name}"
-                f"/pulls/{comment.pr_number}"
-                f"/comments/{comment.comment_id}/replies"
+                f"/repos/{event.repo_full_name}"
+                f"/pulls/{event.pr_number}"
+                f"/comments/{event.comment_id}/replies"
             )
         else:
-            url = f"/repos/{comment.repo_full_name}/issues/{comment.pr_number}/comments"
+            url = f"/repos/{event.repo_full_name}/issues/{event.pr_number}/comments"
 
         try:
             response: httpx.Response = await self._client.post(
@@ -367,13 +367,13 @@ class GitHubPlatform:
         except httpx.HTTPError:
             logger.exception(
                 "Failed to post reply to %s#%d",
-                comment.repo_full_name,
-                comment.pr_number,
+                event.repo_full_name,
+                event.pr_number,
             )
 
     async def post_reaction(
         self,
-        comment: PullRequestEvent,
+        event: PullRequestEvent,
         reaction: str,
     ) -> None:
         """
@@ -383,18 +383,18 @@ class GitHubPlatform:
         back to pull request review comment reactions.
 
         Args:
-            comment (PullRequestEvent): The comment to react to.
+            event (PullRequestEvent): The event to react to.
             reaction (str): The reaction content (e.g. ``eyes``, ``+1``).
         """
 
         endpoints: list[str] = [
             (
-                f"/repos/{comment.repo_full_name}"
-                f"/issues/comments/{comment.comment_id}/reactions"
+                f"/repos/{event.repo_full_name}"
+                f"/issues/comments/{event.comment_id}/reactions"
             ),
             (
-                f"/repos/{comment.repo_full_name}"
-                f"/pulls/comments/{comment.comment_id}/reactions"
+                f"/repos/{event.repo_full_name}"
+                f"/pulls/comments/{event.comment_id}/reactions"
             ),
         ]
 
@@ -413,8 +413,8 @@ class GitHubPlatform:
 
         logger.warning(
             "Failed to add reaction to comment %d on %s",
-            comment.comment_id,
-            comment.repo_full_name,
+            event.comment_id,
+            event.repo_full_name,
         )
 
     async def is_pr_open(self, repo_full_name: str, pr_number: int) -> bool:
@@ -449,18 +449,18 @@ class GitHubPlatform:
 
             return True
 
-    async def fetch_pr_branch(self, comment: PullRequestEvent) -> str:
+    async def fetch_pr_branch(self, event: PullRequestEvent) -> str:
         """
         Fetch the head branch name for a PR when not available from the webhook.
 
         Args:
-            comment (PullRequestEvent): The event with repo and PR info.
+            event (PullRequestEvent): The event with repo and PR info.
 
         Returns:
             str: The head branch name, or empty string on failure.
         """
 
-        url: str = f"/repos/{comment.repo_full_name}/pulls/{comment.pr_number}"
+        url: str = f"/repos/{event.repo_full_name}/pulls/{event.pr_number}"
 
         try:
             response: httpx.Response = await self._client.get(url)
@@ -471,8 +471,8 @@ class GitHubPlatform:
         except httpx.HTTPError:
             logger.exception(
                 "Failed to fetch PR branch for %s#%d",
-                comment.repo_full_name,
-                comment.pr_number,
+                event.repo_full_name,
+                event.pr_number,
             )
 
             return ""
@@ -693,7 +693,7 @@ class GitHubPlatform:
         pr_number: int,
         findings: list[ReviewFinding],
         summary: str,
-        comment: PullRequestEvent,
+        event: PullRequestEvent,
     ) -> None:
         """
         Submit a GitHub PR review with inline comments.
@@ -705,7 +705,7 @@ class GitHubPlatform:
             pr_number (int): Pull request number.
             findings (list[ReviewFinding]): Inline review comments.
             summary (str): High-level review summary.
-            comment (PullRequestEvent): The original event that triggered the review.
+            event (PullRequestEvent): The original event that triggered the review.
         """
 
         review_comments: list[dict[str, str | int]] = [
@@ -737,7 +737,7 @@ class GitHubPlatform:
                 pr_number,
             )
 
-            await self.post_reply(comment, CommentReply(body=summary))
+            await self.post_reply(event, CommentReply(body=summary))
 
     def build_reviewer_clone_url(self, repo_full_name: str) -> str:
         """
