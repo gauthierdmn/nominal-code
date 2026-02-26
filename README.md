@@ -1,0 +1,67 @@
+# Nominal Code
+
+A bot that monitors GitHub PRs and GitLab MRs for review comments mentioning it, then uses an AI agent to respond, review code, and otionally push changes. Comment `@your-bot fix this bug` on a pull request, and the bot clones the repo, runs the agent, and replies with comments and/or code commits.
+
+## Features
+
+- **Worker bot** — receives a prompt, clones the repo, runs an agent with full tool access, commits and pushes changes
+- **Reviewer bot** — fetches the PR diff, runs an agent with read-only tools, posts structured inline code reviews
+- **GitHub and GitLab** — supports both platforms simultaneously
+- **Session continuity** — multi-turn conversations within the same PR
+- **Automatic cleanup** — stale workspaces for closed/merged PRs are removed periodically
+- **Private dependencies** — agents can clone internal libraries for context
+
+## Quick Start
+
+```bash
+git clone https://github.com/your-org/nominal-code.git
+cd nominal-code/app
+uv sync
+
+# Configure (see docs/configuration.md for all options)
+export REVIEWER_BOT_USERNAME=my-reviewer
+export ALLOWED_USERS=alice,bob
+export GITHUB_TOKEN=ghp_...
+export GITHUB_WEBHOOK_SECRET=your-secret
+
+uv run nominal-code
+```
+
+## Documentation
+
+- [Getting Started](docs/getting-started.md) — from zero to a working bot
+- [Configuration](docs/configuration.md) — full environment variable reference
+- **Platforms**
+  - [GitHub](docs/platforms/github.md) — webhook setup, tokens, supported events
+  - [GitLab](docs/platforms/gitlab.md) — webhook setup, self-hosted support, differences from GitHub
+- **Bots**
+  - [Worker](docs/bots/worker.md) — full-access agent that pushes code changes
+  - [Reviewer](docs/bots/reviewer.md) — read-only agent that posts structured reviews
+- [Architecture](docs/architecture.md) — request flow, components, workspace layout
+- [Deployment](docs/deployment.md) — production setup, health checks, reverse proxy
+
+## Development
+
+```bash
+cd app
+
+# Install with dev dependencies
+uv sync
+
+# Lint and format
+uv run ruff check nominal_code/ tests/
+uv run ruff format nominal_code/ tests/
+
+# Type check
+uv run mypy nominal_code/
+
+# Run tests
+uv run pytest
+```
+
+## Security
+
+- Only users listed in `ALLOWED_USERS` can trigger the agent — comments from other users are silently ignored
+- Webhook signatures are verified when secrets are configured
+- The worker bot runs with full tool access (`bypassPermissions`)
+- The reviewer bot is restricted to read-only tools (`Read`, `Glob`, `Grep`, `Bash(git clone*)`)

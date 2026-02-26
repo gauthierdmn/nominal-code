@@ -1,0 +1,237 @@
+from __future__ import annotations
+
+import os
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path
+
+
+@dataclass(frozen=True)
+class WorkerConfig:
+    """
+    Worker bot configuration.
+
+    Attributes:
+        bot_username (str): The @mention name for the worker bot.
+        system_prompt (str): System prompt text for worker bot invocations.
+    """
+
+    bot_username: str
+    system_prompt: str
+
+
+@dataclass(frozen=True)
+class ReviewerConfig:
+    """
+    Reviewer bot configuration.
+
+    Attributes:
+        bot_username (str): The @mention name for the reviewer bot.
+        system_prompt (str): System prompt text for reviewer bot invocations.
+    """
+
+    bot_username: str
+    system_prompt: str
+
+
+@dataclass(frozen=True)
+class Config:
+    """
+    Application configuration loaded from environment variables.
+
+    Attributes:
+        worker (WorkerConfig | None): Worker bot config, or None if disabled.
+        reviewer (ReviewerConfig | None): Reviewer bot config, or None if disabled.
+        webhook_host (str): Host to bind the webhook server.
+        webhook_port (int): Port to bind the webhook server.
+        allowed_users (frozenset[str]): Usernames permitted to trigger the bots.
+        workspace_base_dir (str): Directory for cloning repositories.
+        agent_max_turns (int): Maximum agentic turns (0 for unlimited).
+        agent_model (str): Optional model override.
+        agent_cli_path (str): Path to the agent CLI binary.
+        coding_guidelines (str): Coding guidelines text appended to the
+            system prompt.
+        language_guidelines (dict[str, str]): Language-specific guidelines
+            keyed by language name (e.g. ``python``), loaded from
+            ``prompts/languages/``.
+        cleanup_interval_hours (int): Hours between workspace cleanup runs
+            (0 disables).
+    """
+
+    worker: WorkerConfig | None
+    reviewer: ReviewerConfig | None
+    webhook_host: str
+    webhook_port: int
+    allowed_users: frozenset[str]
+    workspace_base_dir: str
+    agent_max_turns: int
+    agent_model: str
+    agent_cli_path: str
+    coding_guidelines: str
+    language_guidelines: dict[str, str]
+    cleanup_interval_hours: int
+
+    @classmethod
+    def from_env(cls) -> Config:
+        """
+        Build a Config by reading environment variables.
+
+        At least one of WORKER_BOT_USERNAME or REVIEWER_BOT_USERNAME must be set.
+
+        Returns:
+            Config: A fully populated configuration instance.
+
+        Raises:
+            OSError: If a required environment variable is missing.
+            ValueError: If ALLOWED_USERS is empty or no bot is configured.
+        """
+
+        worker_bot_username: str | None = os.environ.get("WORKER_BOT_USERNAME")
+        worker: WorkerConfig | None = None
+
+        if worker_bot_username:
+            worker_system_prompt: str = _load_file_content(
+                os.environ.get("WORKER_SYSTEM_PROMPT", "prompts/system_prompt.md"),
+            )
+            worker = WorkerConfig(
+                bot_username=worker_bot_username,
+                system_prompt=worker_system_prompt,
+            )
+
+        reviewer_bot_username: str | None = os.environ.get("REVIEWER_BOT_USERNAME")
+        reviewer: ReviewerConfig | None = None
+
+        if reviewer_bot_username:
+            reviewer_system_prompt: str = _load_file_content(
+                os.environ.get("REVIEWER_SYSTEM_PROMPT", "prompts/reviewer_prompt.md"),
+            )
+            reviewer = ReviewerConfig(
+                bot_username=reviewer_bot_username,
+                system_prompt=reviewer_system_prompt,
+            )
+
+        if worker is None and reviewer is None:
+            raise ValueError(
+                "At least one of WORKER_BOT_USERNAME or REVIEWER_BOT_USERNAME "
+                "must be set",
+            )
+
+        webhook_host: str = os.environ.get("WEBHOOK_HOST", "0.0.0.0")
+        webhook_port: int = int(os.environ.get("WEBHOOK_PORT", "8080"))
+
+        users_raw: str = _require_env("ALLOWED_USERS")
+        allowed_users: frozenset[str] = frozenset(
+            user.strip() for user in users_raw.split(",") if user.strip()
+        )
+
+        if not allowed_users:
+            raise ValueError("ALLOWED_USERS must contain at least one username")
+
+        workspace_base_dir: str = os.environ.get(
+            "WORKSPACE_BASE_DIR",
+            os.path.join(tempfile.gettempdir(), "nominal-code"),
+        )
+
+        agent_max_turns: int = int(os.environ.get("AGENT_MAX_TURNS", "0"))
+        agent_model: str = os.environ.get("AGENT_MODEL", "")
+        agent_cli_path: str = os.environ.get("AGENT_CLI_PATH", "")
+        coding_guidelines: str = _load_file_content(
+            os.environ.get("CODING_GUIDELINES", "prompts/coding_guidelines.md"),
+        )
+        language_guidelines: dict[str, str] = _load_language_guidelines(
+            os.environ.get("LANGUAGE_GUIDELINES_DIR", "prompts/languages"),
+        )
+
+        cleanup_interval_hours: int = int(
+            os.environ.get("CLEANUP_INTERVAL_HOURS", "6"),
+        )
+
+        return cls(
+            worker=worker,
+            reviewer=reviewer,
+            webhook_host=webhook_host,
+            webhook_port=webhook_port,
+            allowed_users=allowed_users,
+            workspace_base_dir=workspace_base_dir,
+            agent_max_turns=agent_max_turns,
+            agent_model=agent_model,
+            agent_cli_path=agent_cli_path,
+            coding_guidelines=coding_guidelines,
+            language_guidelines=language_guidelines,
+            cleanup_interval_hours=cleanup_interval_hours,
+        )
+
+
+def _load_file_content(file_path: str) -> str:
+    """
+    Read text content from a file path.
+
+    Returns an empty string if the file does not exist, allowing the bot
+    to run without the file when the default path is absent.
+
+    Args:
+        file_path (str): Path to the file.
+
+    Returns:
+        str: The file contents, or empty string if the file is missing.
+    """
+
+    path: Path = Path(file_path)
+
+    if not path.is_file():
+        return ""
+
+    return path.read_text(encoding="utf-8").strip()
+
+
+def _load_language_guidelines(directory: str) -> dict[str, str]:
+    """
+    Load all language guideline files from a directory.
+
+    Each ``.md`` file in the directory becomes an entry keyed by its stem
+    (e.g. ``python.md`` → ``"python"``). Missing or non-directory paths
+    are silently ignored.
+
+    Args:
+        directory (str): Path to the language guidelines directory.
+
+    Returns:
+        dict[str, str]: Language name to guideline content mapping.
+    """
+
+    dir_path: Path = Path(directory)
+
+    if not dir_path.is_dir():
+        return {}
+
+    guidelines: dict[str, str] = {}
+
+    for file_path in sorted(dir_path.glob("*.md")):
+        content: str = file_path.read_text(encoding="utf-8").strip()
+
+        if content:
+            guidelines[file_path.stem] = content
+
+    return guidelines
+
+
+def _require_env(key: str) -> str:
+    """
+    Read and return a required environment variable.
+
+    Args:
+        key (str): The environment variable name.
+
+    Returns:
+        str: The variable's value.
+
+    Raises:
+        OSError: If the variable is unset or empty.
+    """
+
+    value: str | None = os.environ.get(key)
+
+    if not value:
+        raise OSError(f"Required environment variable '{key}' is not set")
+
+    return value
