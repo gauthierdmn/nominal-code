@@ -164,7 +164,8 @@ class Platform(Protocol):
             body (bytes): The raw request body.
 
         Returns:
-            CommentEvent | LifecycleEvent | None: The parsed event, or None if irrelevant.
+            CommentEvent | LifecycleEvent | None: The parsed event,
+                or None if irrelevant.
         """
 
         ...

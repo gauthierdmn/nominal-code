@@ -12,7 +12,7 @@ Minimal steps to go from zero to a working review.
 ## Install
 
 ```bash
-git clone https://github.com/your-org/nominal-code.git
+git clone https://github.com/gauthierdmn/nominal-code.git
 cd nominal-code/app
 uv sync
 ```

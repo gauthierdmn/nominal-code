@@ -27,6 +27,7 @@ The bot is configured entirely via environment variables. You can set them in a 
 | `WORKER_SYSTEM_PROMPT` | No | `system_prompt.md` | Path to a system prompt file for the worker bot |
 | `REVIEWER_SYSTEM_PROMPT` | No | `reviewer_prompt.md` | Path to a system prompt file for the reviewer bot |
 | `CODING_GUIDELINES` | No | `coding_guidelines.md` | Path to a coding guidelines file appended to the system prompt |
+| `LANGUAGE_GUIDELINES_DIR` | No | `prompts/languages` | Directory containing language-specific guideline files (e.g. `python.md`) |
 | `CLEANUP_INTERVAL_HOURS` | No | `6` | Hours between workspace cleanup runs (`0` to disable) |
 | `REVIEWER_TRIGGERS` | No | — | Comma-separated PR lifecycle events that auto-trigger the reviewer (e.g. `pr_opened,pr_push`) |
 | `LOG_LEVEL` | No | `INFO` | Python log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
@@ -51,9 +52,23 @@ Path to the system prompt used when the reviewer bot runs the agent. Defaults to
 
 Path to a coding guidelines file that gets appended to both the worker and reviewer system prompts. Defaults to `coding_guidelines.md`. This file is read once at startup and included in every agent invocation.
 
+### `LANGUAGE_GUIDELINES_DIR`
+
+Path to a directory containing language-specific guideline files. Each file should be named `{language}.md` (e.g. `python.md`). When the PR diff contains files matching a known language, the corresponding guideline file is appended to the system prompt. Defaults to `prompts/languages`.
+
+Languages are detected from file extensions in the PR diff. Currently supported: `.py` and `.pyi` (Python).
+
 ## Per-Repo Overrides
 
-Repositories can include a `.nominal/guidelines.md` file at their root. When present, its contents are appended to the system prompt for that repository — allowing teams to specify project-specific conventions, frameworks, or review criteria without changing the global configuration.
+Repositories can override the global guidelines by placing files in a `.nominal/` directory at the repository root. Per-repo overrides take priority over the built-in defaults.
+
+### General guidelines
+
+A `.nominal/guidelines.md` file replaces the global `CODING_GUIDELINES` for that repository. When present, the built-in guidelines are **not** appended — the repo file is used exclusively.
+
+### Language-specific guidelines
+
+A `.nominal/languages/{language}.md` file (e.g. `.nominal/languages/python.md`) replaces the built-in language guideline for that language. This allows teams to specify project-specific coding conventions per language without changing the global configuration.
 
 ## Auto-Trigger
 
