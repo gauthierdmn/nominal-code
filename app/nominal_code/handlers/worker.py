@@ -79,7 +79,8 @@ async def process_comment(
     )
 
     try:
-        assert config.worker is not None
+        if config.worker is None:
+            raise RuntimeError("Worker config is required but not configured")
 
         file_paths: list[str] = (
             [effective_comment.file_path] if effective_comment.file_path else []

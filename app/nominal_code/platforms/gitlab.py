@@ -19,6 +19,8 @@ from nominal_code.platforms.base import (
 )
 from nominal_code.platforms.registry import register_platform
 
+DISCUSSIONS_PER_PAGE: int = 100
+
 logger: logging.Logger = logging.getLogger(__name__)
 
 
@@ -73,6 +75,17 @@ class GitLabPlatform:
         """
 
         return "gitlab"
+
+    @property
+    def _host(self) -> str:
+        """
+        Extract the hostname from the base URL.
+
+        Returns:
+            str: The hostname without protocol scheme.
+        """
+
+        return self.base_url.replace("https://", "").replace("http://", "")
 
     def verify_webhook(self, request: web.Request, body: bytes) -> bool:
         """
@@ -131,7 +144,6 @@ class GitLabPlatform:
         user: dict[str, Any] = payload.get("user", {})
 
         repo_full_name: str = project.get("path_with_namespace", "")
-        host: str = self.base_url.replace("https://", "").replace("http://", "")
 
         diff_hunk: str = ""
         file_path: str = ""
@@ -157,7 +169,7 @@ class GitLabPlatform:
             body=object_attributes.get("note", ""),
             diff_hunk=diff_hunk,
             file_path=file_path,
-            clone_url=f"https://oauth2:{self.token}@{host}/{repo_full_name}.git",
+            clone_url=f"https://oauth2:{self.token}@{self._host}/{repo_full_name}.git",
             comment_type=CommentType.NOTE,
             discussion_id=discussion_id,
         )
@@ -312,7 +324,7 @@ class GitLabPlatform:
         while True:
             url: str = (
                 f"/projects/{project_path}/merge_requests/{pr_number}"
-                f"/discussions?per_page=100&page={page}"
+                f"/discussions?per_page={DISCUSSIONS_PER_PAGE}&page={page}"
             )
 
             try:
@@ -363,12 +375,12 @@ class GitLabPlatform:
                         ),
                     )
 
-            if len(data) < 100:
+            if len(data) < DISCUSSIONS_PER_PAGE:
                 break
 
             page += 1
 
-        comments.sort(key=lambda comment: comment.created_at)
+        comments.sort(key=lambda existing: existing.created_at)
 
         return comments
 
@@ -542,9 +554,8 @@ class GitLabPlatform:
         """
 
         effective_token: str = self.reviewer_token or self.token
-        host: str = self.base_url.replace("https://", "").replace("http://", "")
 
-        return f"https://oauth2:{effective_token}@{host}/{repo_full_name}.git"
+        return f"https://oauth2:{effective_token}@{self._host}/{repo_full_name}.git"
 
     def _build_clone_url(self, repo_full_name: str) -> str:
         """
@@ -557,9 +568,7 @@ class GitLabPlatform:
             str: The authenticated HTTPS clone URL.
         """
 
-        host: str = self.base_url.replace("https://", "").replace("http://", "")
-
-        return f"https://oauth2:{self.token}@{host}/{repo_full_name}.git"
+        return f"https://oauth2:{self.token}@{self._host}/{repo_full_name}.git"
 
 
 def _create_gitlab_platform() -> GitLabPlatform | None:

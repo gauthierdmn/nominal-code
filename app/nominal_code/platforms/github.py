@@ -444,7 +444,7 @@ class GitHubPlatform:
             await self._fetch_review_comments(repo_full_name, pr_number),
         )
 
-        comments.sort(key=lambda comment: comment.created_at)
+        comments.sort(key=lambda existing: existing.created_at)
 
         return comments
 

@@ -1,0 +1,55 @@
+site_name: Nominal Code
+site_description: AI-powered code review bot for GitHub PRs and GitLab MRs
+site_url: https://gauthierdmn.github.io/nominal-code/
+repo_url: https://github.com/gauthierdmn/nominal-code
+repo_name: gauthierdmn/nominal-code
+
+theme:
+  name: material
+  palette:
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+  features:
+    - navigation.sections
+    - navigation.expand
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - CLI Mode: cli.md
+  - Configuration: configuration.md
+  - Platforms:
+      - GitHub: platforms/github.md
+      - GitLab: platforms/gitlab.md
+  - Bots:
+      - Worker: bots/worker.md
+      - Reviewer: bots/reviewer.md
+  - Architecture: architecture.md
+  - Deployment: deployment.md
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - tables
+  - toc:
+      permalink: true

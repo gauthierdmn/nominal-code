@@ -5,6 +5,14 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+DEFAULT_REVIEWER_PROMPT_PATH: str = "prompts/reviewer_prompt.md"
+DEFAULT_WORKER_PROMPT_PATH: str = "prompts/system_prompt.md"
+DEFAULT_CODING_GUIDELINES_PATH: str = "prompts/coding_guidelines.md"
+DEFAULT_LANGUAGE_GUIDELINES_DIR: str = "prompts/languages"
+DEFAULT_WEBHOOK_HOST: str = "0.0.0.0"
+DEFAULT_WEBHOOK_PORT: int = 8080
+DEFAULT_CLEANUP_INTERVAL_HOURS: int = 6
+
 
 @dataclass(frozen=True)
 class WorkerConfig:
@@ -92,7 +100,7 @@ class Config:
         """
 
         reviewer_system_prompt: str = _load_file_content(
-            os.environ.get("REVIEWER_SYSTEM_PROMPT", "prompts/reviewer_prompt.md"),
+            os.environ.get("REVIEWER_SYSTEM_PROMPT", DEFAULT_REVIEWER_PROMPT_PATH),
         )
 
         workspace_base_dir: str = os.environ.get(
@@ -101,10 +109,10 @@ class Config:
         )
 
         coding_guidelines: str = _load_file_content(
-            os.environ.get("CODING_GUIDELINES", "prompts/coding_guidelines.md"),
+            os.environ.get("CODING_GUIDELINES", DEFAULT_CODING_GUIDELINES_PATH),
         )
         language_guidelines: dict[str, str] = _load_language_guidelines(
-            os.environ.get("LANGUAGE_GUIDELINES_DIR", "prompts/languages"),
+            os.environ.get("LANGUAGE_GUIDELINES_DIR", DEFAULT_LANGUAGE_GUIDELINES_DIR),
         )
 
         return cls(
@@ -145,7 +153,7 @@ class Config:
 
         if worker_bot_username:
             worker_system_prompt: str = _load_file_content(
-                os.environ.get("WORKER_SYSTEM_PROMPT", "prompts/system_prompt.md"),
+                os.environ.get("WORKER_SYSTEM_PROMPT", DEFAULT_WORKER_PROMPT_PATH),
             )
             worker = WorkerConfig(
                 bot_username=worker_bot_username,
@@ -157,7 +165,7 @@ class Config:
 
         if reviewer_bot_username:
             reviewer_system_prompt: str = _load_file_content(
-                os.environ.get("REVIEWER_SYSTEM_PROMPT", "prompts/reviewer_prompt.md"),
+                os.environ.get("REVIEWER_SYSTEM_PROMPT", DEFAULT_REVIEWER_PROMPT_PATH),
             )
             reviewer = ReviewerConfig(
                 bot_username=reviewer_bot_username,
@@ -170,8 +178,10 @@ class Config:
                 "must be set",
             )
 
-        webhook_host: str = os.environ.get("WEBHOOK_HOST", "0.0.0.0")
-        webhook_port: int = int(os.environ.get("WEBHOOK_PORT", "8080"))
+        webhook_host: str = os.environ.get("WEBHOOK_HOST", DEFAULT_WEBHOOK_HOST)
+        webhook_port: int = int(
+            os.environ.get("WEBHOOK_PORT", str(DEFAULT_WEBHOOK_PORT)),
+        )
 
         users_raw: str = _require_env("ALLOWED_USERS")
         allowed_users: frozenset[str] = frozenset(
@@ -190,14 +200,17 @@ class Config:
         agent_model: str = os.environ.get("AGENT_MODEL", "")
         agent_cli_path: str = os.environ.get("AGENT_CLI_PATH", "")
         coding_guidelines: str = _load_file_content(
-            os.environ.get("CODING_GUIDELINES", "prompts/coding_guidelines.md"),
+            os.environ.get("CODING_GUIDELINES", DEFAULT_CODING_GUIDELINES_PATH),
         )
         language_guidelines: dict[str, str] = _load_language_guidelines(
-            os.environ.get("LANGUAGE_GUIDELINES_DIR", "prompts/languages"),
+            os.environ.get("LANGUAGE_GUIDELINES_DIR", DEFAULT_LANGUAGE_GUIDELINES_DIR),
         )
 
         cleanup_interval_hours: int = int(
-            os.environ.get("CLEANUP_INTERVAL_HOURS", "6"),
+            os.environ.get(
+                "CLEANUP_INTERVAL_HOURS",
+                str(DEFAULT_CLEANUP_INTERVAL_HOURS),
+            ),
         )
 
         return cls(
