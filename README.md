@@ -1,4 +1,8 @@
-# Nominal Code
+<p align="center">
+  <img src="assets/nominal-code-banner.png" alt="Nominal Code" width="600">
+</p>
+
+<h1 align="center">Nominal Code</h1>
 
 [![CI](https://github.com/gauthierdmn/nominal-code/actions/workflows/ci.yml/badge.svg)](https://github.com/gauthierdmn/nominal-code/actions/workflows/ci.yml)
 [![Docs](https://github.com/gauthierdmn/nominal-code/actions/workflows/docs.yml/badge.svg)](https://gauthierdmn.github.io/nominal-code/)
