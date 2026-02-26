@@ -41,6 +41,10 @@ REVIEWER_ALLOWED_TOOLS: list[str] = [
     "Bash(git clone*)",
 ]
 
+HUNK_HEADER_PATTERN: re.Pattern[str] = re.compile(
+    r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@",
+)
+
 logger: logging.Logger = logging.getLogger(__name__)
 
 
@@ -147,7 +151,8 @@ async def execute_review(
             BotType.REVIEWER.value,
         )
 
-    assert config.reviewer is not None
+    if config.reviewer is None:
+        raise RuntimeError("Reviewer config is required but not configured")
 
     file_paths: list[str] = [changed.file_path for changed in changed_files]
 
@@ -299,7 +304,9 @@ async def process_comment(
     if effective_comment is None:
         return
 
-    assert config.reviewer is not None
+    if config.reviewer is None:
+        raise RuntimeError("Reviewer config is required but not configured")
+
     bot_username: str = config.reviewer.bot_username
 
     try:
@@ -519,11 +526,6 @@ def parse_review_output(output: str) -> ReviewResult | None:
         findings.append(ReviewFinding(file_path=path, line=line, body=body))
 
     return ReviewResult(summary=summary, findings=findings)
-
-
-HUNK_HEADER_PATTERN: re.Pattern[str] = re.compile(
-    r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@",
-)
 
 
 def _parse_diff_lines(patch: str) -> set[int]:

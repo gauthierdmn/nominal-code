@@ -9,11 +9,18 @@ import sys
 
 from nominal_code.config import Config
 from nominal_code.handlers.reviewer import ExecuteReviewResult, execute_review
-from nominal_code.platforms.base import ReviewComment, ReviewerPlatform
+from nominal_code.main import setup_logging
+from nominal_code.platforms.base import (
+    CommentReply,
+    PlatformName,
+    ReviewComment,
+    ReviewerPlatform,
+)
 
 PR_REF_PATTERN: re.Pattern[str] = re.compile(
     r"^(?P<repo>[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+)#(?P<number>\d+)$",
 )
+CLI_AUTHOR_USERNAME: str = "cli"
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -78,8 +85,8 @@ def build_cli_parser() -> argparse.ArgumentParser:
 
     review_parser.add_argument(
         "--platform",
-        choices=["github", "gitlab"],
-        default="github",
+        choices=[name.value for name in PlatformName],
+        default=PlatformName.GITHUB.value,
         help="Platform type (default: github).",
     )
 
@@ -105,14 +112,14 @@ def build_cli_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def build_platform(platform_name: str) -> ReviewerPlatform:
+def build_platform(platform_name: PlatformName) -> ReviewerPlatform:
     """
     Construct a platform instance for CLI use from environment tokens.
 
     No webhook secret is required since CLI mode does not receive webhooks.
 
     Args:
-        platform_name (str): Either ``"github"`` or ``"gitlab"``.
+        platform_name (PlatformName): The target platform.
 
     Returns:
         ReviewerPlatform: The constructed platform client.
@@ -121,7 +128,7 @@ def build_platform(platform_name: str) -> ReviewerPlatform:
         SystemExit: If the required token environment variable is not set.
     """
 
-    if platform_name == "github":
+    if platform_name == PlatformName.GITHUB:
         token: str = os.environ.get("GITHUB_TOKEN", "")
 
         if not token:
@@ -131,7 +138,8 @@ def build_platform(platform_name: str) -> ReviewerPlatform:
         from nominal_code.platforms.github import GitHubPlatform
 
         return GitHubPlatform(token=token)
-    if platform_name == "gitlab":
+
+    if platform_name == PlatformName.GITLAB:
         token = os.environ.get("GITLAB_TOKEN", "")
 
         if not token:
@@ -143,6 +151,7 @@ def build_platform(platform_name: str) -> ReviewerPlatform:
         base_url: str = os.environ.get("GITLAB_BASE_URL", "https://gitlab.com")
 
         return GitLabPlatform(token=token, base_url=base_url)
+
     logger.error("Unsupported platform: %s", platform_name)
     sys.exit(1)
 
@@ -205,11 +214,12 @@ async def run_review(args: argparse.Namespace) -> int:
         max_turns=args.max_turns,
     )
 
-    platform: ReviewerPlatform = build_platform(args.platform)
+    platform_name: PlatformName = PlatformName(args.platform)
+    platform: ReviewerPlatform = build_platform(platform_name)
 
     branch: str = await platform.fetch_pr_branch(
         ReviewComment(
-            platform=args.platform,
+            platform=platform_name,
             repo_full_name=repo_full_name,
             pr_number=pr_number,
             pr_branch="",
@@ -232,12 +242,12 @@ async def run_review(args: argparse.Namespace) -> int:
         return 1
 
     comment: ReviewComment = ReviewComment(
-        platform=args.platform,
+        platform=platform_name,
         repo_full_name=repo_full_name,
         pr_number=pr_number,
         pr_branch=branch,
         comment_id=0,
-        author_username="cli",
+        author_username=CLI_AUTHOR_USERNAME,
         body="",
         diff_hunk="",
         file_path="",
@@ -272,8 +282,6 @@ async def run_review(args: argparse.Namespace) -> int:
                 comment=comment,
             )
         else:
-            from nominal_code.platforms.base import CommentReply
-
             await platform.post_reply(
                 comment,
                 CommentReply(body=result.effective_summary),
@@ -289,9 +297,7 @@ def cli_main() -> None:
     Entry point for the ``review`` CLI subcommand.
     """
 
-    from nominal_code.main import _setup_logging
-
-    _setup_logging()
+    setup_logging()
 
     parser: argparse.ArgumentParser = build_cli_parser()
     args: argparse.Namespace = parser.parse_args()

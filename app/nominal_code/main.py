@@ -14,8 +14,10 @@ from nominal_code.session import SessionQueue, SessionStore
 from nominal_code.webhook_server import create_app
 from nominal_code.workspace_cleanup import WorkspaceCleaner
 
+logger: logging.Logger = logging.getLogger(__name__)
 
-def _setup_logging() -> None:
+
+def setup_logging() -> None:
     """
     Configure root logging with a timestamped format.
 
@@ -37,8 +39,6 @@ async def _async_main() -> None:
     """
     Async core: load config, build platforms, create app, and start server.
     """
-
-    logger: logging.Logger = logging.getLogger(__name__)
 
     logger.info("Loading configuration from environment")
 
@@ -137,7 +137,7 @@ def main() -> None:
 
         return
 
-    _setup_logging()
+    setup_logging()
 
     try:
         asyncio.run(_async_main())

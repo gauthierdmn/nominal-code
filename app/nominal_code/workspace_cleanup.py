@@ -112,7 +112,7 @@ class WorkspaceCleaner:
                     repo_full_name: str = f"{owner_dir.name}/{repo_dir.name}"
 
                     delete_tasks.append(
-                        asyncio.ensure_future(
+                        asyncio.create_task(
                             self._maybe_delete(
                                 pr_dir,
                                 repo_full_name,

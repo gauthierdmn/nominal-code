@@ -164,8 +164,8 @@ def load_repo_guidelines(repo_path: str) -> str:
     if not os.path.isfile(full_path):
         return ""
 
-    with open(full_path, encoding="utf-8") as file:
-        return file.read().strip()
+    with open(full_path, encoding="utf-8") as guidelines_file:
+        return guidelines_file.read().strip()
 
 
 def detect_languages(file_paths: list[str]) -> list[str]:
@@ -212,8 +212,8 @@ def load_repo_language_guidelines(repo_path: str, language: str) -> str:
     if not os.path.isfile(full_path):
         return ""
 
-    with open(full_path, encoding="utf-8") as file:
-        return file.read().strip()
+    with open(full_path, encoding="utf-8") as guidelines_file:
+        return guidelines_file.read().strip()
 
 
 def resolve_guidelines(

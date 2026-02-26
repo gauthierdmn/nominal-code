@@ -54,7 +54,7 @@ class SessionStore:
         session_id: str,
     ) -> None:
         """
-        Store a agent session ID for a PR/MR thread.
+        Store an agent session ID for a PR/MR thread.
 
         Args:
             platform (str): The platform identifier.
