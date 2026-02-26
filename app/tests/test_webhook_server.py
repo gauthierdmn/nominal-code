@@ -7,7 +7,7 @@ import pytest_asyncio
 
 from nominal_code.bot_type import BotType, EventType
 from nominal_code.config import ReviewerConfig, WorkerConfig
-from nominal_code.platforms.base import PlatformName, PullRequestEvent
+from nominal_code.platforms.base import CommentEvent, LifecycleEvent, PlatformName
 from nominal_code.session import SessionQueue, SessionStore
 from nominal_code.webhook_server import create_app
 
@@ -109,18 +109,16 @@ class TestGitHubWebhook:
 
     @pytest.mark.asyncio
     async def test_github_webhook_no_mention(self, client, app):
-        comment = PullRequestEvent(
+        comment = CommentEvent(
             platform=PlatformName.GITHUB,
             repo_full_name="owner/repo",
             pr_number=1,
             pr_branch="main",
+            clone_url="",
+            event_type=EventType.ISSUE_COMMENT,
             comment_id=100,
             author_username="alice",
             body="just a normal comment",
-            diff_hunk="",
-            file_path="",
-            clone_url="",
-            event_type=EventType.ISSUE_COMMENT,
         )
         app["platforms"]["github"].parse_event.return_value = comment
 
@@ -138,18 +136,16 @@ class TestGitHubWebhook:
 
     @pytest.mark.asyncio
     async def test_github_webhook_worker_mention(self, client, app):
-        comment = PullRequestEvent(
+        comment = CommentEvent(
             platform=PlatformName.GITHUB,
             repo_full_name="owner/repo",
             pr_number=1,
             pr_branch="main",
+            clone_url="",
+            event_type=EventType.ISSUE_COMMENT,
             comment_id=100,
             author_username="alice",
             body="@claude-worker fix the bug",
-            diff_hunk="",
-            file_path="",
-            clone_url="",
-            event_type=EventType.ISSUE_COMMENT,
         )
         app["platforms"]["github"].parse_event.return_value = comment
 
@@ -176,18 +172,16 @@ class TestGitHubWebhook:
 
     @pytest.mark.asyncio
     async def test_github_webhook_reviewer_mention(self, client, app):
-        comment = PullRequestEvent(
+        comment = CommentEvent(
             platform=PlatformName.GITHUB,
             repo_full_name="owner/repo",
             pr_number=1,
             pr_branch="main",
+            clone_url="",
+            event_type=EventType.ISSUE_COMMENT,
             comment_id=100,
             author_username="alice",
             body="@claude-reviewer review this PR",
-            diff_hunk="",
-            file_path="",
-            clone_url="",
-            event_type=EventType.ISSUE_COMMENT,
         )
         app["platforms"]["github"].parse_event.return_value = comment
 
@@ -218,18 +212,16 @@ class TestGitHubWebhook:
         client,
         app,
     ):
-        comment = PullRequestEvent(
+        comment = CommentEvent(
             platform=PlatformName.GITHUB,
             repo_full_name="owner/repo",
             pr_number=1,
             pr_branch="main",
+            clone_url="",
+            event_type=EventType.ISSUE_COMMENT,
             comment_id=100,
             author_username="alice",
             body="@claude-worker @claude-reviewer do stuff",
-            diff_hunk="",
-            file_path="",
-            clone_url="",
-            event_type=EventType.ISSUE_COMMENT,
         )
         app["platforms"]["github"].parse_event.return_value = comment
 
@@ -264,18 +256,16 @@ class TestSingleBotConfig:
         )
         client = await aiohttp_client(app)
 
-        comment = PullRequestEvent(
+        comment = CommentEvent(
             platform=PlatformName.GITHUB,
             repo_full_name="owner/repo",
             pr_number=1,
             pr_branch="main",
+            clone_url="",
+            event_type=EventType.ISSUE_COMMENT,
             comment_id=100,
             author_username="alice",
             body="@claude-worker fix the bug",
-            diff_hunk="",
-            file_path="",
-            clone_url="",
-            event_type=EventType.ISSUE_COMMENT,
         )
         app["platforms"]["github"].parse_event.return_value = comment
 
@@ -305,18 +295,16 @@ class TestSingleBotConfig:
         )
         client = await aiohttp_client(app)
 
-        comment = PullRequestEvent(
+        comment = CommentEvent(
             platform=PlatformName.GITHUB,
             repo_full_name="owner/repo",
             pr_number=1,
             pr_branch="main",
+            clone_url="",
+            event_type=EventType.ISSUE_COMMENT,
             comment_id=100,
             author_username="alice",
             body="@claude-reviewer review this PR",
-            diff_hunk="",
-            file_path="",
-            clone_url="",
-            event_type=EventType.ISSUE_COMMENT,
         )
         app["platforms"]["github"].parse_event.return_value = comment
 
@@ -351,16 +339,11 @@ class TestAutoTrigger:
         )
         client = await aiohttp_client(app)
 
-        event = PullRequestEvent(
+        event = LifecycleEvent(
             platform=PlatformName.GITHUB,
             repo_full_name="owner/repo",
             pr_number=1,
             pr_branch="feature",
-            comment_id=0,
-            author_username="",
-            body="",
-            diff_hunk="",
-            file_path="",
             clone_url="",
             event_type=EventType.PR_OPENED,
             pr_title="Add new feature",
@@ -405,16 +388,11 @@ class TestAutoTrigger:
         )
         client = await aiohttp_client(app)
 
-        event = PullRequestEvent(
+        event = LifecycleEvent(
             platform=PlatformName.GITHUB,
             repo_full_name="owner/repo",
             pr_number=1,
             pr_branch="feature",
-            comment_id=0,
-            author_username="",
-            body="",
-            diff_hunk="",
-            file_path="",
             clone_url="",
             event_type=EventType.PR_OPENED,
             pr_title="New feature",
@@ -451,16 +429,11 @@ class TestAutoTrigger:
         )
         client = await aiohttp_client(app)
 
-        event = PullRequestEvent(
+        event = LifecycleEvent(
             platform=PlatformName.GITHUB,
             repo_full_name="owner/repo",
             pr_number=1,
             pr_branch="feature",
-            comment_id=0,
-            author_username="",
-            body="",
-            diff_hunk="",
-            file_path="",
             clone_url="",
             event_type=EventType.PR_PUSH,
             pr_title="Push event",

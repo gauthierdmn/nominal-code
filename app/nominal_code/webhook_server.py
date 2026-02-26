@@ -9,7 +9,7 @@ from aiohttp import web
 from nominal_code.bot_type import COMMENT_EVENT_TYPES, BotType
 from nominal_code.handlers import enqueue_job
 from nominal_code.mention import extract_mention
-from nominal_code.platforms.base import PullRequestEvent
+from nominal_code.platforms.base import CommentEvent, LifecycleEvent
 
 if TYPE_CHECKING:
     from nominal_code.config import Config
@@ -119,7 +119,7 @@ async def _handle_webhook(
 
         return web.Response(status=401, text="Invalid signature")
 
-    event: PullRequestEvent | None = platform.parse_event(request, body)
+    event: CommentEvent | LifecycleEvent | None = platform.parse_event(request, body)
 
     if event is None:
         return web.json_response({"status": "ignored"})
@@ -128,11 +128,16 @@ async def _handle_webhook(
         if config.reviewer is None:
             return web.json_response({"status": "ignored"})
 
+        if not isinstance(event, LifecycleEvent):
+            return web.json_response({"status": "ignored"})
+
+        lifecycle_event: LifecycleEvent = event
+
         async def _auto_trigger_job() -> None:
             from nominal_code.handlers.reviewer import review_and_post
 
             await review_and_post(
-                event,
+                lifecycle_event,
                 "",
                 config,
                 cast("ReviewerPlatform", platform),
@@ -140,7 +145,7 @@ async def _handle_webhook(
             )
 
         await enqueue_job(
-            event=event,
+            event=lifecycle_event,
             bot_type=BotType.REVIEWER,
             config=config,
             platform=platform,
@@ -153,14 +158,19 @@ async def _handle_webhook(
     if event.event_type not in COMMENT_EVENT_TYPES:
         return web.json_response({"status": "ignored"})
 
+    if not isinstance(event, CommentEvent):
+        return web.json_response({"status": "ignored"})
+
+    comment_event: CommentEvent = event
+
     worker_prompt: str | None = None
     reviewer_prompt: str | None = None
 
     if config.worker is not None:
-        worker_prompt = extract_mention(event.body, config.worker.bot_username)
+        worker_prompt = extract_mention(comment_event.body, config.worker.bot_username)
 
     if config.reviewer is not None:
-        reviewer_prompt = extract_mention(event.body, config.reviewer.bot_username)
+        reviewer_prompt = extract_mention(comment_event.body, config.reviewer.bot_username)
 
     if worker_prompt is not None:
         bot_type: BotType = BotType.WORKER
@@ -170,7 +180,7 @@ async def _handle_webhook(
             from nominal_code.handlers.worker import review_and_fix
 
             await review_and_fix(
-                event,
+                comment_event,
                 prompt,
                 config,
                 platform,
@@ -185,7 +195,7 @@ async def _handle_webhook(
             from nominal_code.handlers.reviewer import review_and_post
 
             await review_and_post(
-                event,
+                comment_event,
                 prompt,
                 config,
                 cast("ReviewerPlatform", platform),
@@ -196,7 +206,7 @@ async def _handle_webhook(
         return web.json_response({"status": "no_mention"})
 
     await enqueue_job(
-        event=event,
+        event=comment_event,
         bot_type=bot_type,
         config=config,
         platform=platform,

@@ -7,7 +7,7 @@ from nominal_code.agent_runner import AgentResult
 from nominal_code.bot_type import EventType
 from nominal_code.config import WorkerConfig
 from nominal_code.handlers.worker import build_prompt, review_and_fix
-from nominal_code.platforms.base import PlatformName, PullRequestEvent
+from nominal_code.platforms.base import CommentEvent, PlatformName
 from nominal_code.session import SessionStore
 
 
@@ -39,18 +39,18 @@ def _make_comment(
     diff_hunk="",
     file_path="",
 ):
-    return PullRequestEvent(
+    return CommentEvent(
         platform=platform,
         repo_full_name=repo,
         pr_number=pr_number,
         pr_branch=branch,
+        clone_url="https://token@github.com/owner/repo.git",
+        event_type=EventType.ISSUE_COMMENT,
         comment_id=100,
         author_username=author,
         body=body,
         diff_hunk=diff_hunk,
         file_path=file_path,
-        clone_url="https://token@github.com/owner/repo.git",
-        event_type=EventType.ISSUE_COMMENT,
     )
 
 

@@ -19,7 +19,7 @@ from nominal_code.handlers.reviewer import (
     review,
     review_and_post,
 )
-from nominal_code.platforms.base import ExistingComment, PlatformName, PullRequestEvent
+from nominal_code.platforms.base import CommentEvent, ExistingComment, PlatformName
 from nominal_code.session import SessionStore
 
 
@@ -51,18 +51,18 @@ def _make_comment(
     diff_hunk="",
     file_path="",
 ):
-    return PullRequestEvent(
+    return CommentEvent(
         platform=platform,
         repo_full_name=repo,
         pr_number=pr_number,
         pr_branch=branch,
+        clone_url="https://token@github.com/owner/repo.git",
+        event_type=EventType.ISSUE_COMMENT,
         comment_id=100,
         author_username=author,
         body=body,
         diff_hunk=diff_hunk,
         file_path=file_path,
-        clone_url="https://token@github.com/owner/repo.git",
-        event_type=EventType.ISSUE_COMMENT,
     )
 
 

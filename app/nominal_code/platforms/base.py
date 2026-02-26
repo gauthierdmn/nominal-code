@@ -22,43 +22,61 @@ class PlatformName(StrEnum):
 @dataclass(frozen=True)
 class PullRequestEvent:
     """
-    Normalized event from either GitHub or GitLab.
+    Base normalized event from either GitHub or GitLab.
 
-    Represents both comment events (triggered by @mentions) and lifecycle
-    events (triggered by PR state changes like opened, push, reopened).
+    Contains the shared identity fields common to both comment and
+    lifecycle events. Use ``CommentEvent`` or ``LifecycleEvent`` for
+    the full event shape.
 
     Attributes:
         platform (PlatformName): Source platform identifier.
         repo_full_name (str): Full repository name (e.g. ``owner/repo``).
         pr_number (int): Pull request or merge request number.
         pr_branch (str): The head branch name of the PR/MR.
-        comment_id (int): Unique comment identifier on the platform, or 0
-            for lifecycle events.
-        author_username (str): Username of the comment author, or empty
-            for lifecycle events.
-        body (str): The raw comment body text, or empty for lifecycle events.
-        diff_hunk (str): The diff hunk context around the comment.
-        file_path (str): File path the comment is attached to.
         clone_url (str): Authenticated clone URL for the repository.
         event_type (EventType): The event type that produced this event.
-        discussion_id (str): GitLab discussion ID for threaded replies.
-        pr_title (str): Pull request title, populated for lifecycle events.
-        pr_author (str): Pull request author username, populated for
-            lifecycle events.
     """
 
     platform: PlatformName
     repo_full_name: str
     pr_number: int
     pr_branch: str
-    comment_id: int
-    author_username: str
-    body: str
-    diff_hunk: str
-    file_path: str
     clone_url: str
     event_type: EventType
+
+
+@dataclass(frozen=True)
+class CommentEvent(PullRequestEvent):
+    """
+    A comment event triggered by an @mention on a PR/MR.
+
+    Attributes:
+        comment_id (int): Unique comment identifier on the platform.
+        author_username (str): Username of the comment author.
+        body (str): The raw comment body text.
+        diff_hunk (str): The diff hunk context around the comment.
+        file_path (str): File path the comment is attached to.
+        discussion_id (str): GitLab discussion ID for threaded replies.
+    """
+
+    comment_id: int = 0
+    author_username: str = ""
+    body: str = ""
+    diff_hunk: str = ""
+    file_path: str = ""
     discussion_id: str = ""
+
+
+@dataclass(frozen=True)
+class LifecycleEvent(PullRequestEvent):
+    """
+    A lifecycle event triggered by PR state changes (opened, push, reopened).
+
+    Attributes:
+        pr_title (str): Pull request title.
+        pr_author (str): Pull request author username.
+    """
+
     pr_title: str = ""
     pr_author: str = ""
 
@@ -131,9 +149,13 @@ class Platform(Protocol):
 
         ...
 
-    def parse_event(self, request: web.Request, body: bytes) -> PullRequestEvent | None:
+    def parse_event(
+        self,
+        request: web.Request,
+        body: bytes,
+    ) -> CommentEvent | LifecycleEvent | None:
         """
-        Parse a webhook payload into a PullRequestEvent.
+        Parse a webhook payload into a CommentEvent or LifecycleEvent.
 
         Returns None if the event type is not relevant.
 
@@ -142,7 +164,7 @@ class Platform(Protocol):
             body (bytes): The raw request body.
 
         Returns:
-            PullRequestEvent | None: The parsed event, or None if irrelevant.
+            CommentEvent | LifecycleEvent | None: The parsed event, or None if irrelevant.
         """
 
         ...
@@ -164,14 +186,14 @@ class Platform(Protocol):
 
     async def post_reaction(
         self,
-        event: PullRequestEvent,
+        event: CommentEvent,
         reaction: str,
     ) -> None:
         """
         Add a reaction/emoji to a comment on the platform.
 
         Args:
-            event (PullRequestEvent): The event to react to.
+            event (CommentEvent): The comment event to react to.
             reaction (str): The reaction name (e.g. ``eyes``, ``+1``).
         """
 
@@ -191,7 +213,7 @@ class Platform(Protocol):
 
         ...
 
-    async def fetch_pr_branch(self, event: PullRequestEvent) -> str:
+    async def fetch_pr_branch(self, repo_full_name: str, pr_number: int) -> str:
         """
         Resolve the head branch name when the webhook payload lacks it.
 
@@ -199,7 +221,8 @@ class Platform(Protocol):
         return an empty string.
 
         Args:
-            event (PullRequestEvent): The event with repo and PR info.
+            repo_full_name (str): Full repository name (e.g. ``owner/repo``).
+            pr_number (int): Pull request or merge request number.
 
         Returns:
             str: The head branch name, or empty string if unavailable.

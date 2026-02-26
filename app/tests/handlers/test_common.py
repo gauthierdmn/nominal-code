@@ -13,7 +13,7 @@ from nominal_code.handlers.common import (
     load_repo_language_guidelines,
     resolve_guidelines,
 )
-from nominal_code.platforms.base import PlatformName, PullRequestEvent
+from nominal_code.platforms.base import CommentEvent, LifecycleEvent, PlatformName
 from nominal_code.session import SessionQueue
 
 
@@ -48,18 +48,18 @@ def _make_comment(
     diff_hunk="",
     file_path="",
 ):
-    return PullRequestEvent(
+    return CommentEvent(
         platform=platform,
         repo_full_name=repo,
         pr_number=pr_number,
         pr_branch=branch,
+        clone_url="https://token@github.com/owner/repo.git",
+        event_type=EventType.ISSUE_COMMENT,
         comment_id=100,
         author_username=author,
         body=body,
         diff_hunk=diff_hunk,
         file_path=file_path,
-        clone_url="https://token@github.com/owner/repo.git",
-        event_type=EventType.ISSUE_COMMENT,
     )
 
 
@@ -125,16 +125,11 @@ class TestEnqueueJob:
         session_queue = SessionQueue()
         mock_job = AsyncMock()
 
-        event = PullRequestEvent(
+        event = LifecycleEvent(
             platform=PlatformName.GITHUB,
             repo_full_name="owner/repo",
             pr_number=1,
             pr_branch="feature",
-            comment_id=0,
-            author_username="",
-            body="",
-            diff_hunk="",
-            file_path="",
             clone_url="",
             event_type=EventType.PR_OPENED,
             pr_title="Add feature",

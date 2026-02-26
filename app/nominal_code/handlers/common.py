@@ -7,7 +7,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from nominal_code.bot_type import BotType
-from nominal_code.platforms.base import CommentReply, PullRequestEvent
+from nominal_code.platforms.base import CommentEvent, CommentReply, LifecycleEvent, PullRequestEvent
 
 if TYPE_CHECKING:
     from nominal_code.config import Config
@@ -26,7 +26,7 @@ logger: logging.Logger = logging.getLogger(__name__)
 
 
 async def enqueue_job(
-    event: PullRequestEvent,
+    event: CommentEvent | LifecycleEvent,
     bot_type: BotType,
     config: Config,
     platform: Platform,
@@ -36,13 +36,12 @@ async def enqueue_job(
     """
     Pre-flight checks and enqueue a caller-provided job closure.
 
-    For comment-triggered events (``author_username`` is set): validates
-    the author against allowed users, logs the event, and posts an eyes
-    reaction. For auto-trigger events (``author_username`` is empty):
-    logs with event type/title/author and skips auth and reaction.
+    For comment events: validates the author against allowed users, logs
+    the event, and posts an eyes reaction.
+    For lifecycle events: logs with event type/title/author and skips auth and reaction.
 
     Args:
-        event (PullRequestEvent): The parsed event.
+        event (CommentEvent | LifecycleEvent): The parsed event.
         bot_type (BotType): Which bot personality to use.
         config (Config): Application configuration.
         platform (Platform): The platform client for API calls.
@@ -50,7 +49,7 @@ async def enqueue_job(
         job (Callable[[], Awaitable[None]]): The async job to enqueue.
     """
 
-    if event.author_username:
+    if isinstance(event, CommentEvent):
         if event.author_username not in config.allowed_users:
             logger.warning(
                 "Ignoring comment from unauthorized user: %s",
@@ -110,7 +109,10 @@ async def resolve_branch(
     if event.pr_branch:
         return event
 
-    branch: str = await platform.fetch_pr_branch(event)
+    branch: str = await platform.fetch_pr_branch(
+        event.repo_full_name,
+        event.pr_number,
+    )
 
     if branch:
         return replace(event, pr_branch=branch)

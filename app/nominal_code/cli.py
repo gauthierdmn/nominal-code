@@ -218,21 +218,7 @@ async def run_review(args: argparse.Namespace) -> int:
     platform_name: PlatformName = PlatformName(args.platform)
     platform: ReviewerPlatform = build_platform(platform_name)
 
-    branch: str = await platform.fetch_pr_branch(
-        PullRequestEvent(
-            platform=platform_name,
-            repo_full_name=repo_full_name,
-            pr_number=pr_number,
-            pr_branch="",
-            comment_id=0,
-            author_username="",
-            body="",
-            diff_hunk="",
-            file_path="",
-            clone_url="",
-            event_type=EventType.PR_OPENED,
-        ),
-    )
+    branch: str = await platform.fetch_pr_branch(repo_full_name, pr_number)
 
     if not branch:
         logger.error(
@@ -248,11 +234,6 @@ async def run_review(args: argparse.Namespace) -> int:
         repo_full_name=repo_full_name,
         pr_number=pr_number,
         pr_branch=branch,
-        comment_id=0,
-        author_username=CLI_AUTHOR_USERNAME,
-        body="",
-        diff_hunk="",
-        file_path="",
         clone_url="",
         event_type=EventType.PR_OPENED,
     )

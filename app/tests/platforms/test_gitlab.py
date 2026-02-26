@@ -7,9 +7,10 @@ import pytest
 
 from nominal_code.bot_type import EventType, FileStatus, ReviewFinding
 from nominal_code.platforms.base import (
+    CommentEvent,
     CommentReply,
+    LifecycleEvent,
     PlatformName,
-    PullRequestEvent,
 )
 from nominal_code.platforms.gitlab import (
     GitLabPlatform,
@@ -49,18 +50,16 @@ def _make_request(headers=None):
 
 
 def _make_comment():
-    return PullRequestEvent(
+    return CommentEvent(
         platform=PlatformName.GITLAB,
         repo_full_name="group/repo",
         pr_number=10,
         pr_branch="feature",
+        clone_url="",
+        event_type=EventType.NOTE,
         comment_id=500,
         author_username="alice",
         body="test",
-        diff_hunk="",
-        file_path="",
-        clone_url="",
-        event_type=EventType.NOTE,
     )
 
 
@@ -212,8 +211,7 @@ class TestParseMergeRequest:
         assert result.pr_branch == "feature"
         assert result.pr_title == "New feature"
         assert result.pr_author == "alice"
-        assert result.comment_id == 0
-        assert result.body == ""
+        assert isinstance(result, LifecycleEvent)
 
     def test_parse_mr_reopen(self, platform):
         payload = {
@@ -314,20 +312,7 @@ class TestParseMergeRequest:
 class TestFetchPrBranch:
     @pytest.mark.asyncio
     async def test_fetch_pr_branch_returns_empty(self, platform):
-        comment = PullRequestEvent(
-            platform=PlatformName.GITLAB,
-            repo_full_name="group/repo",
-            pr_number=10,
-            pr_branch="",
-            comment_id=500,
-            author_username="alice",
-            body="test",
-            diff_hunk="",
-            file_path="",
-            clone_url="",
-            event_type=EventType.NOTE,
-        )
-        result = await platform.fetch_pr_branch(comment)
+        result = await platform.fetch_pr_branch("group/repo", 10)
 
         assert result == ""
 
@@ -350,18 +335,16 @@ class TestBuildReviewerCloneUrl:
 class TestPostReply:
     @pytest.mark.asyncio
     async def test_post_reply_with_discussion_id_uses_threaded_endpoint(self, platform):
-        comment = PullRequestEvent(
+        comment = CommentEvent(
             platform=PlatformName.GITLAB,
             repo_full_name="group/repo",
             pr_number=10,
             pr_branch="feature",
+            clone_url="",
+            event_type=EventType.NOTE,
             comment_id=500,
             author_username="alice",
             body="test",
-            diff_hunk="",
-            file_path="",
-            clone_url="",
-            event_type=EventType.NOTE,
             discussion_id="abc123def456",
         )
         reply = CommentReply(body="Fixed!")
@@ -384,18 +367,16 @@ class TestPostReply:
 
     @pytest.mark.asyncio
     async def test_post_reply_without_discussion_id_uses_notes_endpoint(self, platform):
-        comment = PullRequestEvent(
+        comment = CommentEvent(
             platform=PlatformName.GITLAB,
             repo_full_name="group/repo",
             pr_number=10,
             pr_branch="feature",
+            clone_url="",
+            event_type=EventType.NOTE,
             comment_id=500,
             author_username="alice",
             body="test",
-            diff_hunk="",
-            file_path="",
-            clone_url="",
-            event_type=EventType.NOTE,
             discussion_id="",
         )
         reply = CommentReply(body="Fixed!")
@@ -420,18 +401,16 @@ class TestPostReply:
 class TestPostReaction:
     @pytest.mark.asyncio
     async def test_post_reaction_success(self, platform):
-        comment = PullRequestEvent(
+        comment = CommentEvent(
             platform=PlatformName.GITLAB,
             repo_full_name="group/repo",
             pr_number=10,
             pr_branch="feature",
+            clone_url="",
+            event_type=EventType.NOTE,
             comment_id=500,
             author_username="alice",
             body="test",
-            diff_hunk="",
-            file_path="",
-            clone_url="",
-            event_type=EventType.NOTE,
         )
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()

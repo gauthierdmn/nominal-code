@@ -12,8 +12,10 @@ from aiohttp import web
 
 from nominal_code.bot_type import ChangedFile, EventType, FileStatus, ReviewFinding
 from nominal_code.platforms.base import (
+    CommentEvent,
     CommentReply,
     ExistingComment,
+    LifecycleEvent,
     PlatformName,
     PullRequestEvent,
 )
@@ -121,9 +123,9 @@ class GitHubPlatform:
         self,
         request: web.Request,
         body: bytes,
-    ) -> PullRequestEvent | None:
+    ) -> CommentEvent | LifecycleEvent | None:
         """
-        Parse a GitHub webhook payload into a PullRequestEvent.
+        Parse a GitHub webhook payload into a CommentEvent or LifecycleEvent.
 
         Handles comment events:
         - ``issue_comment`` (created, on PRs only)
@@ -138,7 +140,7 @@ class GitHubPlatform:
             body (bytes): The raw request body.
 
         Returns:
-            PullRequestEvent | None: Parsed event, or None if not relevant.
+            CommentEvent | LifecycleEvent | None: Parsed event, or None if not relevant.
         """
 
         event_header: str = request.headers.get("X-GitHub-Event", "")
@@ -161,7 +163,7 @@ class GitHubPlatform:
     def _parse_issue_comment(
         self,
         payload: dict[str, Any],
-    ) -> PullRequestEvent | None:
+    ) -> CommentEvent | None:
         """
         Parse an ``issue_comment`` event payload.
 
@@ -171,7 +173,7 @@ class GitHubPlatform:
             payload (dict[str, Any]): The webhook payload.
 
         Returns:
-            PullRequestEvent | None: Parsed comment, or None if not relevant.
+            CommentEvent | None: Parsed comment, or None if not relevant.
         """
 
         if payload.get("action") != "created":
@@ -186,24 +188,22 @@ class GitHubPlatform:
         repo_full_name: str = repo.get("full_name", "")
         pr_number: int = issue.get("number", 0)
 
-        return PullRequestEvent(
+        return CommentEvent(
             platform=PlatformName.GITHUB,
             repo_full_name=repo_full_name,
             pr_number=pr_number,
             pr_branch="",
+            clone_url=self._build_clone_url(repo_full_name),
+            event_type=EventType.ISSUE_COMMENT,
             comment_id=comment.get("id", 0),
             author_username=comment.get("user", {}).get("login", ""),
             body=comment.get("body", ""),
-            diff_hunk="",
-            file_path="",
-            clone_url=self._build_clone_url(repo_full_name),
-            event_type=EventType.ISSUE_COMMENT,
         )
 
     def _parse_review_comment(
         self,
         payload: dict[str, Any],
-    ) -> PullRequestEvent | None:
+    ) -> CommentEvent | None:
         """
         Parse a ``pull_request_review_comment`` event payload.
 
@@ -213,7 +213,7 @@ class GitHubPlatform:
             payload (dict[str, Any]): The webhook payload.
 
         Returns:
-            PullRequestEvent | None: Parsed comment, or None if not relevant.
+            CommentEvent | None: Parsed comment, or None if not relevant.
         """
 
         if payload.get("action") != "created":
@@ -224,24 +224,24 @@ class GitHubPlatform:
         repo: dict[str, Any] = payload.get("repository", {})
         repo_full_name: str = repo.get("full_name", "")
 
-        return PullRequestEvent(
+        return CommentEvent(
             platform=PlatformName.GITHUB,
             repo_full_name=repo_full_name,
             pr_number=pull_request.get("number", 0),
             pr_branch=pull_request.get("head", {}).get("ref", ""),
+            clone_url=self._build_clone_url(repo_full_name),
+            event_type=EventType.REVIEW_COMMENT,
             comment_id=comment.get("id", 0),
             author_username=comment.get("user", {}).get("login", ""),
             body=comment.get("body", ""),
             diff_hunk=comment.get("diff_hunk", ""),
             file_path=comment.get("path", ""),
-            clone_url=self._build_clone_url(repo_full_name),
-            event_type=EventType.REVIEW_COMMENT,
         )
 
     def _parse_review(
         self,
         payload: dict[str, Any],
-    ) -> PullRequestEvent | None:
+    ) -> CommentEvent | None:
         """
         Parse a ``pull_request_review`` event payload.
 
@@ -251,7 +251,7 @@ class GitHubPlatform:
             payload (dict[str, Any]): The webhook payload.
 
         Returns:
-            PullRequestEvent | None: Parsed comment, or None if not relevant.
+            CommentEvent | None: Parsed comment, or None if not relevant.
         """
 
         if payload.get("action") != "submitted":
@@ -267,24 +267,22 @@ class GitHubPlatform:
         repo: dict[str, Any] = payload.get("repository", {})
         repo_full_name: str = repo.get("full_name", "")
 
-        return PullRequestEvent(
+        return CommentEvent(
             platform=PlatformName.GITHUB,
             repo_full_name=repo_full_name,
             pr_number=pull_request.get("number", 0),
             pr_branch=pull_request.get("head", {}).get("ref", ""),
+            clone_url=self._build_clone_url(repo_full_name),
+            event_type=EventType.REVIEW,
             comment_id=review.get("id", 0),
             author_username=review.get("user", {}).get("login", ""),
             body=review_body,
-            diff_hunk="",
-            file_path="",
-            clone_url=self._build_clone_url(repo_full_name),
-            event_type=EventType.REVIEW,
         )
 
     def _parse_pull_request(
         self,
         payload: dict[str, Any],
-    ) -> PullRequestEvent | None:
+    ) -> LifecycleEvent | None:
         """
         Parse a ``pull_request`` lifecycle event payload.
 
@@ -296,7 +294,7 @@ class GitHubPlatform:
             payload (dict[str, Any]): The webhook payload.
 
         Returns:
-            PullRequestEvent | None: Parsed event, or None if not relevant.
+            LifecycleEvent | None: Parsed event, or None if not relevant.
         """
 
         action: str = payload.get("action", "")
@@ -313,16 +311,11 @@ class GitHubPlatform:
         repo: dict[str, Any] = payload.get("repository", {})
         repo_full_name: str = repo.get("full_name", "")
 
-        return PullRequestEvent(
+        return LifecycleEvent(
             platform=PlatformName.GITHUB,
             repo_full_name=repo_full_name,
             pr_number=pull_request.get("number", 0),
             pr_branch=pull_request.get("head", {}).get("ref", ""),
-            comment_id=0,
-            author_username="",
-            body="",
-            diff_hunk="",
-            file_path="",
             clone_url=self._build_clone_url(repo_full_name),
             event_type=event_type,
             pr_title=pull_request.get("title", ""),
@@ -349,7 +342,10 @@ class GitHubPlatform:
         if reply.commit_sha:
             body += f"\n\n_Pushed commit: {reply.commit_sha}_"
 
-        if event.event_type == EventType.REVIEW_COMMENT:
+        if (
+            isinstance(event, CommentEvent)
+            and event.event_type == EventType.REVIEW_COMMENT
+        ):
             url: str = (
                 f"/repos/{event.repo_full_name}"
                 f"/pulls/{event.pr_number}"
@@ -373,7 +369,7 @@ class GitHubPlatform:
 
     async def post_reaction(
         self,
-        event: PullRequestEvent,
+        event: CommentEvent,
         reaction: str,
     ) -> None:
         """
@@ -383,7 +379,7 @@ class GitHubPlatform:
         back to pull request review comment reactions.
 
         Args:
-            event (PullRequestEvent): The event to react to.
+            event (CommentEvent): The comment event to react to.
             reaction (str): The reaction content (e.g. ``eyes``, ``+1``).
         """
 
@@ -449,18 +445,19 @@ class GitHubPlatform:
 
             return True
 
-    async def fetch_pr_branch(self, event: PullRequestEvent) -> str:
+    async def fetch_pr_branch(self, repo_full_name: str, pr_number: int) -> str:
         """
         Fetch the head branch name for a PR when not available from the webhook.
 
         Args:
-            event (PullRequestEvent): The event with repo and PR info.
+            repo_full_name (str): Full repository name (e.g. ``owner/repo``).
+            pr_number (int): Pull request number.
 
         Returns:
             str: The head branch name, or empty string on failure.
         """
 
-        url: str = f"/repos/{event.repo_full_name}/pulls/{event.pr_number}"
+        url: str = f"/repos/{repo_full_name}/pulls/{pr_number}"
 
         try:
             response: httpx.Response = await self._client.get(url)
@@ -471,8 +468,8 @@ class GitHubPlatform:
         except httpx.HTTPError:
             logger.exception(
                 "Failed to fetch PR branch for %s#%d",
-                event.repo_full_name,
-                event.pr_number,
+                repo_full_name,
+                pr_number,
             )
 
             return ""

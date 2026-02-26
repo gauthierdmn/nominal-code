@@ -33,14 +33,12 @@ if TYPE_CHECKING:
 
 MAX_REVIEW_RETRIES: int = 2
 MAX_EXISTING_COMMENTS: int = 50
-
 REVIEWER_ALLOWED_TOOLS: list[str] = [
     "Read",
     "Glob",
     "Grep",
     "Bash(git clone*)",
 ]
-
 HUNK_HEADER_PATTERN: re.Pattern[str] = re.compile(
     r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@",
 )
@@ -527,64 +525,6 @@ def parse_review_output(output: str) -> AgentReview | None:
     return AgentReview(summary=summary, findings=findings)
 
 
-def _parse_diff_lines(patch: str) -> set[int]:
-    """
-    Extract the set of new-side line numbers present in a unified diff.
-
-    Parses hunk headers and walks the diff lines to collect every line
-    number on the RIGHT side (additions and context lines).
-
-    Args:
-        patch (str): Unified diff text for a single file.
-
-    Returns:
-        set[int]: Line numbers that appear on the new side of the diff.
-    """
-
-    lines: set[int] = set()
-    current_line: int = 0
-
-    for raw_line in patch.splitlines():
-        header_match: re.Match[str] | None = HUNK_HEADER_PATTERN.match(raw_line)
-
-        if header_match:
-            current_line = int(header_match.group(1))
-            continue
-
-        if current_line == 0:
-            continue
-
-        if raw_line.startswith("-"):
-            continue
-
-        lines.add(current_line)
-        current_line += 1
-
-    return lines
-
-
-def _build_diff_index(
-    changed_files: list[ChangedFile],
-) -> dict[str, set[int]]:
-    """
-    Build a mapping from file path to the set of valid diff line numbers.
-
-    Args:
-        changed_files (list[ChangedFile]): Files changed in the PR.
-
-    Returns:
-        dict[str, set[int]]: File paths mapped to their valid new-side lines.
-    """
-
-    index: dict[str, set[int]] = {}
-
-    for changed_file in changed_files:
-        if changed_file.patch:
-            index[changed_file.file_path] = _parse_diff_lines(changed_file.patch)
-
-    return index
-
-
 def filter_findings(
     findings: list[ReviewFinding],
     changed_files: list[ChangedFile],
@@ -665,3 +605,61 @@ def build_retry_prompt(previous_output: str) -> str:
         '[{"path": "...", "line": N, "body": "..."}]}\n\n'
         f"Your previous output was:\n{previous_output}"
     )
+
+
+def _parse_diff_lines(patch: str) -> set[int]:
+    """
+    Extract the set of new-side line numbers present in a unified diff.
+
+    Parses hunk headers and walks the diff lines to collect every line
+    number on the RIGHT side (additions and context lines).
+
+    Args:
+        patch (str): Unified diff text for a single file.
+
+    Returns:
+        set[int]: Line numbers that appear on the new side of the diff.
+    """
+
+    lines: set[int] = set()
+    current_line: int = 0
+
+    for raw_line in patch.splitlines():
+        header_match: re.Match[str] | None = HUNK_HEADER_PATTERN.match(raw_line)
+
+        if header_match:
+            current_line = int(header_match.group(1))
+            continue
+
+        if current_line == 0:
+            continue
+
+        if raw_line.startswith("-"):
+            continue
+
+        lines.add(current_line)
+        current_line += 1
+
+    return lines
+
+
+def _build_diff_index(
+    changed_files: list[ChangedFile],
+) -> dict[str, set[int]]:
+    """
+    Build a mapping from file path to the set of valid diff line numbers.
+
+    Args:
+        changed_files (list[ChangedFile]): Files changed in the PR.
+
+    Returns:
+        dict[str, set[int]]: File paths mapped to their valid new-side lines.
+    """
+
+    index: dict[str, set[int]] = {}
+
+    for changed_file in changed_files:
+        if changed_file.patch:
+            index[changed_file.file_path] = _parse_diff_lines(changed_file.patch)
+
+    return index

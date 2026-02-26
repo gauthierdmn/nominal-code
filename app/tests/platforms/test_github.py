@@ -9,9 +9,10 @@ import pytest
 
 from nominal_code.bot_type import EventType, FileStatus, ReviewFinding
 from nominal_code.platforms.base import (
+    CommentEvent,
     CommentReply,
+    LifecycleEvent,
     PlatformName,
-    PullRequestEvent,
 )
 from nominal_code.platforms.github import (
     GitHubPlatform,
@@ -52,18 +53,16 @@ def _sign(secret, body):
 
 
 def _make_comment(event_type=EventType.ISSUE_COMMENT):
-    return PullRequestEvent(
+    return CommentEvent(
         platform=PlatformName.GITHUB,
         repo_full_name="owner/repo",
         pr_number=42,
         pr_branch="main",
+        clone_url="",
+        event_type=event_type,
         comment_id=100,
         author_username="alice",
         body="test",
-        diff_hunk="",
-        file_path="",
-        clone_url="",
-        event_type=event_type,
     )
 
 
@@ -252,8 +251,7 @@ class TestParsePullRequest:
         assert result.pr_branch == "feature-branch"
         assert result.pr_title == "Add new feature"
         assert result.pr_author == "alice"
-        assert result.comment_id == 0
-        assert result.body == ""
+        assert isinstance(result, LifecycleEvent)
 
     def test_parse_pr_synchronize(self, platform):
         payload = {
@@ -374,18 +372,16 @@ class TestBuildReviewerCloneUrl:
 class TestPostReply:
     @pytest.mark.asyncio
     async def test_post_reply_issue_comment_uses_issues_endpoint(self, platform):
-        comment = PullRequestEvent(
+        comment = CommentEvent(
             platform=PlatformName.GITHUB,
             repo_full_name="owner/repo",
             pr_number=42,
             pr_branch="main",
+            clone_url="",
+            event_type=EventType.ISSUE_COMMENT,
             comment_id=100,
             author_username="alice",
             body="test",
-            diff_hunk="",
-            file_path="",
-            clone_url="",
-            event_type=EventType.ISSUE_COMMENT,
         )
         reply = CommentReply(body="Fixed it!")
         mock_response = MagicMock()
@@ -407,18 +403,18 @@ class TestPostReply:
 
     @pytest.mark.asyncio
     async def test_post_reply_review_comment_uses_threaded_endpoint(self, platform):
-        comment = PullRequestEvent(
+        comment = CommentEvent(
             platform=PlatformName.GITHUB,
             repo_full_name="owner/repo",
             pr_number=42,
             pr_branch="main",
+            clone_url="",
+            event_type=EventType.REVIEW_COMMENT,
             comment_id=200,
             author_username="bob",
             body="test",
             diff_hunk="@@ -1,3 +1,5 @@",
             file_path="src/main.py",
-            clone_url="",
-            event_type=EventType.REVIEW_COMMENT,
         )
         reply = CommentReply(body="Refactored!")
         mock_response = MagicMock()
@@ -440,18 +436,16 @@ class TestPostReply:
 
     @pytest.mark.asyncio
     async def test_post_reply_review_uses_issues_endpoint(self, platform):
-        comment = PullRequestEvent(
+        comment = CommentEvent(
             platform=PlatformName.GITHUB,
             repo_full_name="owner/repo",
             pr_number=42,
             pr_branch="main",
+            clone_url="",
+            event_type=EventType.REVIEW,
             comment_id=300,
             author_username="charlie",
             body="test",
-            diff_hunk="",
-            file_path="",
-            clone_url="",
-            event_type=EventType.REVIEW,
         )
         reply = CommentReply(body="Done!")
         mock_response = MagicMock()
@@ -473,18 +467,16 @@ class TestPostReply:
 
     @pytest.mark.asyncio
     async def test_post_reply_with_commit_sha(self, platform):
-        comment = PullRequestEvent(
+        comment = CommentEvent(
             platform=PlatformName.GITHUB,
             repo_full_name="owner/repo",
             pr_number=42,
             pr_branch="main",
+            clone_url="",
+            event_type=EventType.ISSUE_COMMENT,
             comment_id=100,
             author_username="alice",
             body="test",
-            diff_hunk="",
-            file_path="",
-            clone_url="",
-            event_type=EventType.ISSUE_COMMENT,
         )
         reply = CommentReply(body="Done", commit_sha="abc123")
         mock_response = MagicMock()
@@ -508,18 +500,16 @@ class TestPostReply:
 class TestPostReaction:
     @pytest.mark.asyncio
     async def test_post_reaction_success_first_endpoint(self, platform):
-        comment = PullRequestEvent(
+        comment = CommentEvent(
             platform=PlatformName.GITHUB,
             repo_full_name="owner/repo",
             pr_number=42,
             pr_branch="main",
+            clone_url="",
+            event_type=EventType.ISSUE_COMMENT,
             comment_id=100,
             author_username="alice",
             body="test",
-            diff_hunk="",
-            file_path="",
-            clone_url="",
-            event_type=EventType.ISSUE_COMMENT,
         )
         mock_response = MagicMock()
         mock_response.status_code = 201

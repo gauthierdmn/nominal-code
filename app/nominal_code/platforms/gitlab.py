@@ -11,8 +11,10 @@ from aiohttp import web
 
 from nominal_code.bot_type import ChangedFile, EventType, FileStatus, ReviewFinding
 from nominal_code.platforms.base import (
+    CommentEvent,
     CommentReply,
     ExistingComment,
+    LifecycleEvent,
     PlatformName,
     PullRequestEvent,
 )
@@ -113,9 +115,9 @@ class GitLabPlatform:
         self,
         request: web.Request,
         body: bytes,
-    ) -> PullRequestEvent | None:
+    ) -> CommentEvent | LifecycleEvent | None:
         """
-        Parse a GitLab webhook payload into a PullRequestEvent.
+        Parse a GitLab webhook payload into a CommentEvent or LifecycleEvent.
 
         Handles Note Hook events on merge requests and Merge Request Hook
         events for lifecycle actions (open, update with oldrev, reopen).
@@ -125,7 +127,7 @@ class GitLabPlatform:
             body (bytes): The raw request body.
 
         Returns:
-            PullRequestEvent | None: Parsed event, or None if not relevant.
+            CommentEvent | LifecycleEvent | None: Parsed event, or None if not relevant.
         """
 
         payload: dict[str, Any] = json.loads(body)
@@ -142,7 +144,7 @@ class GitLabPlatform:
     def _parse_note(
         self,
         payload: dict[str, Any],
-    ) -> PullRequestEvent | None:
+    ) -> CommentEvent | None:
         """
         Parse a Note Hook event on a merge request.
 
@@ -150,7 +152,7 @@ class GitLabPlatform:
             payload (dict[str, Any]): The webhook payload.
 
         Returns:
-            PullRequestEvent | None: Parsed comment, or None if not relevant.
+            CommentEvent | None: Parsed comment, or None if not relevant.
         """
 
         object_attributes: dict[str, Any] = payload.get(
@@ -167,7 +169,6 @@ class GitLabPlatform:
 
         repo_full_name: str = project.get("path_with_namespace", "")
 
-        diff_hunk: str = ""
         file_path: str = ""
         position: dict[str, Any] = object_attributes.get("position", {})
 
@@ -181,25 +182,24 @@ class GitLabPlatform:
             object_attributes.get("discussion_id", ""),
         )
 
-        return PullRequestEvent(
+        return CommentEvent(
             platform=PlatformName.GITLAB,
             repo_full_name=repo_full_name,
             pr_number=merge_request.get("iid", 0),
             pr_branch=merge_request.get("source_branch", ""),
+            clone_url=f"https://oauth2:{self.token}@{self._host}/{repo_full_name}.git",
+            event_type=EventType.NOTE,
             comment_id=object_attributes.get("id", 0),
             author_username=user.get("username", ""),
             body=object_attributes.get("note", ""),
-            diff_hunk=diff_hunk,
             file_path=file_path,
-            clone_url=f"https://oauth2:{self.token}@{self._host}/{repo_full_name}.git",
-            event_type=EventType.NOTE,
             discussion_id=discussion_id,
         )
 
     def _parse_merge_request(
         self,
         payload: dict[str, Any],
-    ) -> PullRequestEvent | None:
+    ) -> LifecycleEvent | None:
         """
         Parse a Merge Request Hook lifecycle event.
 
@@ -210,7 +210,7 @@ class GitLabPlatform:
             payload (dict[str, Any]): The webhook payload.
 
         Returns:
-            PullRequestEvent | None: Parsed event, or None if not relevant.
+            LifecycleEvent | None: Parsed event, or None if not relevant.
         """
 
         object_attributes: dict[str, Any] = payload.get(
@@ -234,16 +234,11 @@ class GitLabPlatform:
         project: dict[str, Any] = payload.get("project", {})
         repo_full_name: str = project.get("path_with_namespace", "")
 
-        return PullRequestEvent(
+        return LifecycleEvent(
             platform=PlatformName.GITLAB,
             repo_full_name=repo_full_name,
             pr_number=object_attributes.get("iid", 0),
             pr_branch=object_attributes.get("source_branch", ""),
-            comment_id=0,
-            author_username="",
-            body="",
-            diff_hunk="",
-            file_path="",
             clone_url=f"https://oauth2:{self.token}@{self._host}/{repo_full_name}.git",
             event_type=event_type,
             pr_title=object_attributes.get("title", ""),
@@ -270,7 +265,7 @@ class GitLabPlatform:
 
         project_path: str = quote(event.repo_full_name, safe="")
 
-        if event.discussion_id:
+        if isinstance(event, CommentEvent) and event.discussion_id:
             url: str = (
                 f"/projects/{project_path}"
                 f"/merge_requests/{event.pr_number}"
@@ -294,14 +289,14 @@ class GitLabPlatform:
 
     async def post_reaction(
         self,
-        event: PullRequestEvent,
+        event: CommentEvent,
         reaction: str,
     ) -> None:
         """
         Add an award emoji to a GitLab MR note.
 
         Args:
-            event (PullRequestEvent): The event to react to.
+            event (CommentEvent): The comment event to react to.
             reaction (str): The emoji name (e.g. ``eyes``, ``thumbsup``).
         """
 
@@ -358,14 +353,15 @@ class GitLabPlatform:
 
             return True
 
-    async def fetch_pr_branch(self, event: PullRequestEvent) -> str:
+    async def fetch_pr_branch(self, repo_full_name: str, pr_number: int) -> str:
         """
         Resolve the head branch for a merge request.
 
         GitLab webhooks always include the source branch, so this is a no-op.
 
         Args:
-            event (PullRequestEvent): The event with repo and MR info.
+            repo_full_name (str): Full repository name (e.g. ``group/repo``).
+            pr_number (int): Merge request IID.
 
         Returns:
             str: Always returns an empty string.

@@ -11,7 +11,7 @@ from nominal_code.handlers.common import (
     resolve_branch,
     resolve_guidelines,
 )
-from nominal_code.platforms.base import CommentReply, PullRequestEvent
+from nominal_code.platforms.base import CommentEvent, CommentReply
 
 if TYPE_CHECKING:
     from nominal_code.config import Config
@@ -22,7 +22,7 @@ logger: logging.Logger = logging.getLogger(__name__)
 
 
 async def review_and_fix(
-    event: PullRequestEvent,
+    event: CommentEvent,
     prompt: str,
     config: Config,
     platform: Platform,
@@ -32,14 +32,14 @@ async def review_and_fix(
     Review and fix code using the worker bot: clone, run agent, post reply.
 
     Args:
-        event (PullRequestEvent): The parsed event that triggered the worker.
+        event (CommentEvent): The comment event that triggered the worker.
         prompt (str): The extracted prompt.
         config (Config): Application configuration.
         platform (Platform): The platform client.
         session_store (SessionStore): Agent session store.
     """
 
-    effective_event: PullRequestEvent | None = await resolve_branch(event, platform)
+    effective_event: CommentEvent | None = await resolve_branch(event, platform)  # type: ignore[assignment]
 
     if effective_event is None:
         return
@@ -139,7 +139,7 @@ async def review_and_fix(
 
 
 def build_prompt(
-    event: PullRequestEvent,
+    event: CommentEvent,
     user_prompt: str,
     deps_path: str = "",
 ) -> str:
@@ -149,7 +149,7 @@ def build_prompt(
     Includes file path, diff hunk, and branch context when available.
 
     Args:
-        event (PullRequestEvent): The event with PR context.
+        event (CommentEvent): The comment event with PR context.
         user_prompt (str): The user's extracted prompt text.
         deps_path (str): Path to the shared dependencies directory.
 
