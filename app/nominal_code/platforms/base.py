@@ -40,8 +40,7 @@ class PullRequestEvent:
         diff_hunk (str): The diff hunk context around the comment.
         file_path (str): File path the comment is attached to.
         clone_url (str): Authenticated clone URL for the repository.
-        event_type (EventType | None): The event type that produced this event,
-            or None when unset.
+        event_type (EventType): The event type that produced this event.
         discussion_id (str): GitLab discussion ID for threaded replies.
         pr_title (str): Pull request title, populated for lifecycle events.
         pr_author (str): Pull request author username, populated for
@@ -58,7 +57,7 @@ class PullRequestEvent:
     diff_hunk: str
     file_path: str
     clone_url: str
-    event_type: EventType | None = None
+    event_type: EventType
     discussion_id: str = ""
     pr_title: str = ""
     pr_author: str = ""

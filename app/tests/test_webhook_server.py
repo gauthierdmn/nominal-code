@@ -120,6 +120,7 @@ class TestGitHubWebhook:
             diff_hunk="",
             file_path="",
             clone_url="",
+            event_type=EventType.ISSUE_COMMENT,
         )
         app["platforms"]["github"].parse_event.return_value = comment
 
@@ -148,11 +149,12 @@ class TestGitHubWebhook:
             diff_hunk="",
             file_path="",
             clone_url="",
+            event_type=EventType.ISSUE_COMMENT,
         )
         app["platforms"]["github"].parse_event.return_value = comment
 
         with patch(
-            "nominal_code.webhook_server.handle_comment",
+            "nominal_code.webhook_server.enqueue_job",
             new_callable=AsyncMock,
         ) as mock_handle:
             response = await client.post(
@@ -170,7 +172,7 @@ class TestGitHubWebhook:
             call_kwargs = mock_handle.call_args.kwargs
 
             assert call_kwargs["bot_type"] == BotType.WORKER
-            assert call_kwargs["prompt"] == "fix the bug"
+            assert callable(call_kwargs["job"])
 
     @pytest.mark.asyncio
     async def test_github_webhook_reviewer_mention(self, client, app):
@@ -185,11 +187,12 @@ class TestGitHubWebhook:
             diff_hunk="",
             file_path="",
             clone_url="",
+            event_type=EventType.ISSUE_COMMENT,
         )
         app["platforms"]["github"].parse_event.return_value = comment
 
         with patch(
-            "nominal_code.webhook_server.handle_comment",
+            "nominal_code.webhook_server.enqueue_job",
             new_callable=AsyncMock,
         ) as mock_handle:
             response = await client.post(
@@ -207,7 +210,7 @@ class TestGitHubWebhook:
             call_kwargs = mock_handle.call_args.kwargs
 
             assert call_kwargs["bot_type"] == BotType.REVIEWER
-            assert call_kwargs["prompt"] == "review this PR"
+            assert callable(call_kwargs["job"])
 
     @pytest.mark.asyncio
     async def test_github_webhook_worker_takes_precedence_over_reviewer(
@@ -226,11 +229,12 @@ class TestGitHubWebhook:
             diff_hunk="",
             file_path="",
             clone_url="",
+            event_type=EventType.ISSUE_COMMENT,
         )
         app["platforms"]["github"].parse_event.return_value = comment
 
         with patch(
-            "nominal_code.webhook_server.handle_comment",
+            "nominal_code.webhook_server.enqueue_job",
             new_callable=AsyncMock,
         ) as mock_handle:
             response = await client.post(
@@ -271,6 +275,7 @@ class TestSingleBotConfig:
             diff_hunk="",
             file_path="",
             clone_url="",
+            event_type=EventType.ISSUE_COMMENT,
         )
         app["platforms"]["github"].parse_event.return_value = comment
 
@@ -311,6 +316,7 @@ class TestSingleBotConfig:
             diff_hunk="",
             file_path="",
             clone_url="",
+            event_type=EventType.ISSUE_COMMENT,
         )
         app["platforms"]["github"].parse_event.return_value = comment
 
@@ -363,7 +369,7 @@ class TestAutoTrigger:
         app["platforms"]["github"].parse_event.return_value = event
 
         with patch(
-            "nominal_code.webhook_server.handle_auto_trigger",
+            "nominal_code.webhook_server.enqueue_job",
             new_callable=AsyncMock,
         ) as mock_auto:
             response = await client.post(

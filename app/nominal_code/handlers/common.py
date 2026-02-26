@@ -2,16 +2,17 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Awaitable, Callable
 from dataclasses import replace
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from nominal_code.bot_type import BotType
 from nominal_code.platforms.base import CommentReply, PullRequestEvent
 
 if TYPE_CHECKING:
     from nominal_code.config import Config
-    from nominal_code.platforms.base import Platform, ReviewerPlatform
-    from nominal_code.session import SessionQueue, SessionStore
+    from nominal_code.platforms.base import Platform
+    from nominal_code.session import SessionQueue
 
 NOMINAL_CONFIG_DIR: str = ".nominal"
 REPO_GUIDELINES_PATH: str = os.path.join(NOMINAL_CONFIG_DIR, "guidelines.md")
@@ -24,72 +25,58 @@ EXTENSION_TO_LANGUAGE: dict[str, str] = {
 logger: logging.Logger = logging.getLogger(__name__)
 
 
-async def handle_comment(
+async def enqueue_job(
     event: PullRequestEvent,
-    prompt: str,
+    bot_type: BotType,
     config: Config,
     platform: Platform,
-    session_store: SessionStore,
     session_queue: SessionQueue,
-    bot_type: BotType = BotType.WORKER,
+    job: Callable[[], Awaitable[None]],
 ) -> None:
     """
-    Dispatch a comment event for processing by the agent.
+    Pre-flight checks and enqueue a caller-provided job closure.
 
-    Validates the author against allowed users, acknowledges with a reaction,
-    and enqueues the job for serial execution per PR.
+    For comment-triggered events (``author_username`` is set): validates
+    the author against allowed users, logs the event, and posts an eyes
+    reaction. For auto-trigger events (``author_username`` is empty):
+    logs with event type/title/author and skips auth and reaction.
 
     Args:
         event (PullRequestEvent): The parsed event.
-        prompt (str): The extracted prompt after the @mention.
+        bot_type (BotType): Which bot personality to use.
         config (Config): Application configuration.
         platform (Platform): The platform client for API calls.
-        session_store (SessionStore): Agent session store.
         session_queue (SessionQueue): Per-PR job queue.
-        bot_type (BotType): Which bot personality to use.
+        job (Callable[[], Awaitable[None]]): The async job to enqueue.
     """
 
-    if event.author_username not in config.allowed_users:
-        logger.warning(
-            "Ignoring comment from unauthorized user: %s",
-            event.author_username,
-        )
-
-        return
-
-    logger.info(
-        "Processing %s comment from %s on %s#%d: %s",
-        bot_type.value,
-        event.author_username,
-        event.repo_full_name,
-        event.pr_number,
-        prompt[:100],
-    )
-
-    await platform.post_reaction(event, EYES_REACTION)
-
-    async def _job() -> None:
-        if bot_type == BotType.REVIEWER:
-            from nominal_code.handlers.reviewer import review_and_post
-
-            await review_and_post(
-                event,
-                prompt,
-                config,
-                cast("ReviewerPlatform", platform),
-                session_store,
+    if event.author_username:
+        if event.author_username not in config.allowed_users:
+            logger.warning(
+                "Ignoring comment from unauthorized user: %s",
+                event.author_username,
             )
 
             return
 
-        from nominal_code.handlers.worker import review_and_fix
+        logger.info(
+            "Processing %s comment from %s on %s#%d: %s",
+            bot_type.value,
+            event.author_username,
+            event.repo_full_name,
+            event.pr_number,
+            event.body[:100],
+        )
 
-        await review_and_fix(
-            event,
-            prompt,
-            config,
-            platform,
-            session_store,
+        await platform.post_reaction(event, EYES_REACTION)
+    else:
+        logger.info(
+            "Auto-trigger %s reviewer on %s#%d (title=%s, author=%s)",
+            event.event_type,
+            event.repo_full_name,
+            event.pr_number,
+            event.pr_title[:80],
+            event.pr_author,
         )
 
     await session_queue.enqueue(
@@ -97,61 +84,7 @@ async def handle_comment(
         event.repo_full_name,
         event.pr_number,
         bot_type.value,
-        _job,
-    )
-
-
-async def handle_auto_trigger(
-    event: PullRequestEvent,
-    config: Config,
-    platform: Platform,
-    session_store: SessionStore,
-    session_queue: SessionQueue,
-) -> None:
-    """
-    Dispatch a PR lifecycle event for automatic reviewer processing.
-
-    Unlike comment-triggered reviews, auto-triggers skip allowed-users
-    checks and reaction posting since there is no comment author or
-    comment to react to.
-
-    Args:
-        event (PullRequestEvent): The parsed lifecycle event.
-        config (Config): Application configuration.
-        platform (Platform): The platform client for API calls.
-        session_store (SessionStore): Agent session store.
-        session_queue (SessionQueue): Per-PR job queue.
-    """
-
-    if config.reviewer is None:
-        return
-
-    logger.info(
-        "Auto-trigger %s reviewer on %s#%d (title=%s, author=%s)",
-        event.event_type,
-        event.repo_full_name,
-        event.pr_number,
-        event.pr_title[:80],
-        event.pr_author,
-    )
-
-    async def _job() -> None:
-        from nominal_code.handlers.reviewer import review_and_post
-
-        await review_and_post(
-            event,
-            "",
-            config,
-            cast("ReviewerPlatform", platform),
-            session_store,
-        )
-
-    await session_queue.enqueue(
-        event.platform,
-        event.repo_full_name,
-        event.pr_number,
-        BotType.REVIEWER.value,
-        _job,
+        job,
     )
 
 

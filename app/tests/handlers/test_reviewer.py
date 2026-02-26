@@ -6,9 +6,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from nominal_code.agent_runner import AgentResult
-from nominal_code.bot_type import BotType, ChangedFile, FileStatus, ReviewFinding
+from nominal_code.bot_type import ChangedFile, EventType, FileStatus, ReviewFinding
 from nominal_code.config import ReviewerConfig
-from nominal_code.handlers.common import handle_comment
 from nominal_code.handlers.reviewer import (
     MAX_EXISTING_COMMENTS,
     REVIEWER_ALLOWED_TOOLS,
@@ -18,9 +17,10 @@ from nominal_code.handlers.reviewer import (
     filter_findings,
     parse_review_output,
     review,
+    review_and_post,
 )
 from nominal_code.platforms.base import ExistingComment, PlatformName, PullRequestEvent
-from nominal_code.session import SessionQueue, SessionStore
+from nominal_code.session import SessionStore
 
 
 def _make_config(allowed_users=None):
@@ -62,6 +62,7 @@ def _make_comment(
         diff_hunk=diff_hunk,
         file_path=file_path,
         clone_url="https://token@github.com/owner/repo.git",
+        event_type=EventType.ISSUE_COMMENT,
     )
 
 
@@ -96,7 +97,6 @@ class TestReviewerProcessComment:
         )
         comment = _make_comment(author="alice")
         session_store = SessionStore()
-        session_queue = SessionQueue()
 
         review_json = json.dumps(
             {
@@ -125,17 +125,13 @@ class TestReviewerProcessComment:
                 mock_ws.repo_path = "/tmp/workspaces/owner/repo/pr-42"
                 mock_ws_class.return_value = mock_ws
 
-                await handle_comment(
+                await review_and_post(
                     event=comment,
                     prompt="review this",
                     config=config,
                     platform=platform,
                     session_store=session_store,
-                    session_queue=session_queue,
-                    bot_type=BotType.REVIEWER,
                 )
-
-                await asyncio.sleep(0.1)
 
             platform.fetch_pr_diff.assert_called_once_with("owner/repo", 42)
 
@@ -145,7 +141,6 @@ class TestReviewerProcessComment:
         platform = _make_platform()
         comment = _make_comment(author="alice")
         session_store = SessionStore()
-        session_queue = SessionQueue()
 
         review_json = json.dumps(
             {
@@ -174,17 +169,13 @@ class TestReviewerProcessComment:
                 mock_ws.repo_path = "/tmp/workspaces/owner/repo/pr-42"
                 mock_ws_class.return_value = mock_ws
 
-                await handle_comment(
+                await review_and_post(
                     event=comment,
                     prompt="review",
                     config=config,
                     platform=platform,
                     session_store=session_store,
-                    session_queue=session_queue,
-                    bot_type=BotType.REVIEWER,
                 )
-
-                await asyncio.sleep(0.1)
 
             mock_run.assert_called_once()
             call_kwargs = mock_run.call_args.kwargs
@@ -199,7 +190,6 @@ class TestReviewerProcessComment:
         platform = _make_platform()
         comment = _make_comment(author="alice")
         session_store = SessionStore()
-        session_queue = SessionQueue()
 
         review_json = json.dumps(
             {
@@ -232,17 +222,13 @@ class TestReviewerProcessComment:
                     "nominal_code.handlers.reviewer.resolve_guidelines",
                     return_value="Repo guidelines override",
                 ) as mock_resolve:
-                    await handle_comment(
+                    await review_and_post(
                         event=comment,
                         prompt="review",
                         config=config,
                         platform=platform,
                         session_store=session_store,
-                        session_queue=session_queue,
-                        bot_type=BotType.REVIEWER,
                     )
-
-                    await asyncio.sleep(0.1)
 
                     mock_resolve.assert_called_once_with(
                         "/tmp/workspaces/owner/repo/pr-42",
@@ -273,7 +259,6 @@ class TestReviewerProcessComment:
         )
         comment = _make_comment(author="alice")
         session_store = SessionStore()
-        session_queue = SessionQueue()
 
         review_json = json.dumps(
             {
@@ -304,17 +289,13 @@ class TestReviewerProcessComment:
                 mock_ws.repo_path = "/tmp/workspaces/owner/repo/pr-42"
                 mock_ws_class.return_value = mock_ws
 
-                await handle_comment(
+                await review_and_post(
                     event=comment,
                     prompt="review",
                     config=config,
                     platform=platform,
                     session_store=session_store,
-                    session_queue=session_queue,
-                    bot_type=BotType.REVIEWER,
                 )
-
-                await asyncio.sleep(0.1)
 
             platform.submit_review.assert_called_once()
             call_kwargs = platform.submit_review.call_args.kwargs
@@ -329,7 +310,6 @@ class TestReviewerProcessComment:
         platform = _make_platform()
         comment = _make_comment(author="alice")
         session_store = SessionStore()
-        session_queue = SessionQueue()
 
         valid_json = json.dumps(
             {
@@ -367,17 +347,13 @@ class TestReviewerProcessComment:
                 mock_ws.repo_path = "/tmp/workspaces/owner/repo/pr-42"
                 mock_ws_class.return_value = mock_ws
 
-                await handle_comment(
+                await review_and_post(
                     event=comment,
                     prompt="review",
                     config=config,
                     platform=platform,
                     session_store=session_store,
-                    session_queue=session_queue,
-                    bot_type=BotType.REVIEWER,
                 )
-
-                await asyncio.sleep(0.1)
 
             assert mock_run.call_count == 2
             platform.submit_review.assert_not_called()
@@ -389,7 +365,6 @@ class TestReviewerProcessComment:
         platform = _make_platform()
         comment = _make_comment(author="alice")
         session_store = SessionStore()
-        session_queue = SessionQueue()
 
         bad_result = AgentResult(
             output="still not json",
@@ -413,17 +388,13 @@ class TestReviewerProcessComment:
                 mock_ws.repo_path = "/tmp/workspaces/owner/repo/pr-42"
                 mock_ws_class.return_value = mock_ws
 
-                await handle_comment(
+                await review_and_post(
                     event=comment,
                     prompt="review",
                     config=config,
                     platform=platform,
                     session_store=session_store,
-                    session_queue=session_queue,
-                    bot_type=BotType.REVIEWER,
                 )
-
-                await asyncio.sleep(0.1)
 
             assert mock_run.call_count == 3
             platform.submit_review.assert_not_called()
@@ -698,7 +669,6 @@ class TestBotCommentFiltering:
         )
         comment = _make_comment(author="alice")
         session_store = SessionStore()
-        session_queue = SessionQueue()
 
         review_json = json.dumps(
             {
@@ -727,17 +697,13 @@ class TestBotCommentFiltering:
                 mock_ws.repo_path = "/tmp/workspaces/owner/repo/pr-42"
                 mock_ws_class.return_value = mock_ws
 
-                await handle_comment(
+                await review_and_post(
                     event=comment,
                     prompt="review",
                     config=config,
                     platform=platform,
                     session_store=session_store,
-                    session_queue=session_queue,
-                    bot_type=BotType.REVIEWER,
                 )
-
-                await asyncio.sleep(0.1)
 
             call_kwargs = mock_run.call_args.kwargs
             prompt_text = call_kwargs["prompt"]
@@ -761,7 +727,6 @@ class TestBotCommentFiltering:
         )
         comment = _make_comment(author="alice")
         session_store = SessionStore()
-        session_queue = SessionQueue()
 
         review_json = json.dumps(
             {
@@ -790,17 +755,13 @@ class TestBotCommentFiltering:
                 mock_ws.repo_path = "/tmp/workspaces/owner/repo/pr-42"
                 mock_ws_class.return_value = mock_ws
 
-                await handle_comment(
+                await review_and_post(
                     event=comment,
                     prompt="review",
                     config=config,
                     platform=platform,
                     session_store=session_store,
-                    session_queue=session_queue,
-                    bot_type=BotType.REVIEWER,
                 )
-
-                await asyncio.sleep(0.1)
 
             call_kwargs = mock_run.call_args.kwargs
             prompt_text = call_kwargs["prompt"]
@@ -814,7 +775,6 @@ class TestBotCommentFiltering:
         platform = _make_platform()
         comment = _make_comment(author="alice")
         session_store = SessionStore()
-        session_queue = SessionQueue()
 
         review_json = json.dumps(
             {
@@ -863,17 +823,13 @@ class TestBotCommentFiltering:
                     "nominal_code.handlers.reviewer.asyncio.gather",
                     wraps=asyncio.gather,
                 ) as mock_gather:
-                    await handle_comment(
+                    await review_and_post(
                         event=comment,
                         prompt="review",
                         config=config,
                         platform=platform,
                         session_store=session_store,
-                        session_queue=session_queue,
-                        bot_type=BotType.REVIEWER,
                     )
-
-                    await asyncio.sleep(0.1)
 
                     mock_gather.assert_called_once()
                     gather_args = mock_gather.call_args.args
@@ -1192,7 +1148,6 @@ class TestReview:
         )
         comment = _make_comment(author="alice")
         session_store = SessionStore()
-        session_queue = SessionQueue()
 
         review_json = json.dumps(
             {
@@ -1221,17 +1176,13 @@ class TestReview:
                 mock_ws.repo_path = "/tmp/workspaces/owner/repo/pr-42"
                 mock_ws_class.return_value = mock_ws
 
-                await handle_comment(
+                await review_and_post(
                     event=comment,
                     prompt="review",
                     config=config,
                     platform=platform,
                     session_store=session_store,
-                    session_queue=session_queue,
-                    bot_type=BotType.REVIEWER,
                 )
-
-                await asyncio.sleep(0.1)
 
             platform.post_reply.assert_called_once()
             reply_body = platform.post_reply.call_args.args[1].body

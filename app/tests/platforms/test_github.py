@@ -519,6 +519,7 @@ class TestPostReaction:
             diff_hunk="",
             file_path="",
             clone_url="",
+            event_type=EventType.ISSUE_COMMENT,
         )
         mock_response = MagicMock()
         mock_response.status_code = 201

@@ -2,18 +2,18 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from aiohttp import web
 
 from nominal_code.bot_type import COMMENT_EVENT_TYPES, BotType
-from nominal_code.handlers import handle_auto_trigger, handle_comment
+from nominal_code.handlers import enqueue_job
 from nominal_code.mention import extract_mention
 from nominal_code.platforms.base import PullRequestEvent
 
 if TYPE_CHECKING:
     from nominal_code.config import Config
-    from nominal_code.platforms.base import Platform
+    from nominal_code.platforms.base import Platform, ReviewerPlatform
     from nominal_code.session import SessionQueue, SessionStore
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -124,18 +124,33 @@ async def _handle_webhook(
     if event is None:
         return web.json_response({"status": "ignored"})
 
-    if event.event_type is not None and event.event_type in config.reviewer_triggers:
-        await handle_auto_trigger(
+    if event.event_type in config.reviewer_triggers:
+        if config.reviewer is None:
+            return web.json_response({"status": "ignored"})
+
+        async def _auto_trigger_job() -> None:
+            from nominal_code.handlers.reviewer import review_and_post
+
+            await review_and_post(
+                event,
+                "",
+                config,
+                cast("ReviewerPlatform", platform),
+                session_store,
+            )
+
+        await enqueue_job(
             event=event,
+            bot_type=BotType.REVIEWER,
             config=config,
             platform=platform,
-            session_store=session_store,
             session_queue=session_queue,
+            job=_auto_trigger_job,
         )
 
         return web.json_response({"status": "accepted"})
 
-    if event.event_type is not None and event.event_type not in COMMENT_EVENT_TYPES:
+    if event.event_type not in COMMENT_EVENT_TYPES:
         return web.json_response({"status": "ignored"})
 
     worker_prompt: str | None = None
@@ -150,20 +165,43 @@ async def _handle_webhook(
     if worker_prompt is not None:
         bot_type: BotType = BotType.WORKER
         prompt: str = worker_prompt
+
+        async def _job() -> None:
+            from nominal_code.handlers.worker import review_and_fix
+
+            await review_and_fix(
+                event,
+                prompt,
+                config,
+                platform,
+                session_store,
+            )
+
     elif reviewer_prompt is not None:
         bot_type = BotType.REVIEWER
         prompt = reviewer_prompt
+
+        async def _job() -> None:
+            from nominal_code.handlers.reviewer import review_and_post
+
+            await review_and_post(
+                event,
+                prompt,
+                config,
+                cast("ReviewerPlatform", platform),
+                session_store,
+            )
+
     else:
         return web.json_response({"status": "no_mention"})
 
-    await handle_comment(
+    await enqueue_job(
         event=event,
-        prompt=prompt,
+        bot_type=bot_type,
         config=config,
         platform=platform,
-        session_store=session_store,
         session_queue=session_queue,
-        bot_type=bot_type,
+        job=_job,
     )
 
     return web.json_response({"status": "accepted"})

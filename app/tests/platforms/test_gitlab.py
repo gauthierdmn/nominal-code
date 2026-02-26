@@ -325,6 +325,7 @@ class TestFetchPrBranch:
             diff_hunk="",
             file_path="",
             clone_url="",
+            event_type=EventType.NOTE,
         )
         result = await platform.fetch_pr_branch(comment)
 
@@ -430,6 +431,7 @@ class TestPostReaction:
             diff_hunk="",
             file_path="",
             clone_url="",
+            event_type=EventType.NOTE,
         )
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()

@@ -7,6 +7,7 @@ import os
 import re
 import sys
 
+from nominal_code.bot_type import EventType
 from nominal_code.config import Config
 from nominal_code.handlers.reviewer import ReviewResult, review
 from nominal_code.main import setup_logging
@@ -229,6 +230,7 @@ async def run_review(args: argparse.Namespace) -> int:
             diff_hunk="",
             file_path="",
             clone_url="",
+            event_type=EventType.PR_OPENED,
         ),
     )
 
@@ -252,6 +254,7 @@ async def run_review(args: argparse.Namespace) -> int:
         diff_hunk="",
         file_path="",
         clone_url="",
+        event_type=EventType.PR_OPENED,
     )
 
     try:

@@ -1,3 +1,3 @@
-from nominal_code.handlers.common import handle_auto_trigger, handle_comment
+from nominal_code.handlers.common import enqueue_job
 
-__all__: list[str] = ["handle_auto_trigger", "handle_comment"]
+__all__: list[str] = ["enqueue_job"]
