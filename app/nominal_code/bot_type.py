@@ -13,6 +13,29 @@ class BotType(StrEnum):
     REVIEWER = "reviewer"
 
 
+class DiffSide(StrEnum):
+    """
+    Which side of a diff a review comment applies to.
+    """
+
+    LEFT = "LEFT"
+    RIGHT = "RIGHT"
+
+
+class FileStatus(StrEnum):
+    """
+    Change type for a file in a pull request or merge request.
+    """
+
+    ADDED = "added"
+    MODIFIED = "modified"
+    REMOVED = "removed"
+    RENAMED = "renamed"
+    COPIED = "copied"
+    CHANGED = "changed"
+    UNCHANGED = "unchanged"
+
+
 @dataclass(frozen=True)
 class ReviewFinding:
     """
@@ -22,13 +45,13 @@ class ReviewFinding:
         file_path (str): File path relative to repository root.
         line (int): Line number in the new version of the file.
         body (str): The review comment text.
-        side (str): Which side of the diff the comment applies to.
+        side (DiffSide): Which side of the diff the comment applies to.
     """
 
     file_path: str
     line: int
     body: str
-    side: str = "RIGHT"
+    side: DiffSide = DiffSide.RIGHT
 
 
 @dataclass(frozen=True)
@@ -52,10 +75,10 @@ class ChangedFile:
 
     Attributes:
         file_path (str): File path relative to repository root.
-        status (str): Change type (added, modified, removed, renamed).
+        status (FileStatus): Change type (added, modified, removed, renamed, etc.).
         patch (str): Unified diff text for the file.
     """
 
     file_path: str
-    status: str
+    status: FileStatus
     patch: str

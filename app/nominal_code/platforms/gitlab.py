@@ -9,10 +9,12 @@ from urllib.parse import quote
 import httpx
 from aiohttp import web
 
-from nominal_code.bot_type import ChangedFile, ReviewFinding
+from nominal_code.bot_type import ChangedFile, FileStatus, ReviewFinding
 from nominal_code.platforms.base import (
     CommentReply,
+    CommentType,
     ExistingComment,
+    PlatformName,
     ReviewComment,
 )
 from nominal_code.platforms.registry import register_platform
@@ -146,7 +148,7 @@ class GitLabPlatform:
         )
 
         return ReviewComment(
-            platform="gitlab",
+            platform=PlatformName.GITLAB,
             repo_full_name=repo_full_name,
             pr_number=merge_request.get("iid", 0),
             pr_branch=merge_request.get("source_branch", ""),
@@ -156,7 +158,7 @@ class GitLabPlatform:
             diff_hunk=diff_hunk,
             file_path=file_path,
             clone_url=f"https://oauth2:{self.token}@{host}/{repo_full_name}.git",
-            comment_type="note",
+            comment_type=CommentType.NOTE,
             discussion_id=discussion_id,
         )
 
@@ -414,13 +416,13 @@ class GitLabPlatform:
             deleted_file: bool = entry.get("deleted_file", False)
 
             if new_file:
-                status = "added"
+                status: FileStatus = FileStatus.ADDED
             elif deleted_file:
-                status = "removed"
+                status = FileStatus.REMOVED
             elif renamed:
-                status = "renamed"
+                status = FileStatus.RENAMED
             else:
-                status = "modified"
+                status = FileStatus.MODIFIED
 
             files.append(
                 ChangedFile(

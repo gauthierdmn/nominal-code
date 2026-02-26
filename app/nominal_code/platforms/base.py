@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import TYPE_CHECKING, Protocol
 
 from aiohttp import web
@@ -9,13 +10,33 @@ if TYPE_CHECKING:
     from nominal_code.bot_type import ChangedFile, ReviewFinding
 
 
+class PlatformName(StrEnum):
+    """
+    Supported source-control platform identifiers.
+    """
+
+    GITHUB = "github"
+    GITLAB = "gitlab"
+
+
+class CommentType(StrEnum):
+    """
+    Event type that produced a review comment.
+    """
+
+    ISSUE_COMMENT = "issue_comment"
+    REVIEW_COMMENT = "review_comment"
+    REVIEW = "review"
+    NOTE = "note"
+
+
 @dataclass(frozen=True)
 class ReviewComment:
     """
     Normalized review comment from either GitHub or GitLab.
 
     Attributes:
-        platform (str): Source platform identifier (``github`` or ``gitlab``).
+        platform (PlatformName): Source platform identifier.
         repo_full_name (str): Full repository name (e.g. ``owner/repo``).
         pr_number (int): Pull request or merge request number.
         pr_branch (str): The head branch name of the PR/MR.
@@ -25,12 +46,12 @@ class ReviewComment:
         diff_hunk (str): The diff hunk context around the comment.
         file_path (str): File path the comment is attached to.
         clone_url (str): Authenticated clone URL for the repository.
-        comment_type (str): Event type that produced this comment
-            (e.g. ``review_comment``, ``issue_comment``, ``review``, ``note``).
+        comment_type (CommentType | None): Event type that produced this comment,
+            or None when unset.
         discussion_id (str): GitLab discussion ID for threaded replies.
     """
 
-    platform: str
+    platform: PlatformName
     repo_full_name: str
     pr_number: int
     pr_branch: str
@@ -40,7 +61,7 @@ class ReviewComment:
     diff_hunk: str
     file_path: str
     clone_url: str
-    comment_type: str = ""
+    comment_type: CommentType | None = None
     discussion_id: str = ""
 
 

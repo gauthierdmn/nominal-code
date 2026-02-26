@@ -7,8 +7,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nominal_code.bot_type import ReviewFinding
-from nominal_code.platforms.base import CommentReply, ReviewComment
+from nominal_code.bot_type import FileStatus, ReviewFinding
+from nominal_code.platforms.base import (
+    CommentReply,
+    CommentType,
+    PlatformName,
+    ReviewComment,
+)
 from nominal_code.platforms.github import (
     GitHubPlatform,
     _create_github_platform,
@@ -47,9 +52,9 @@ def _sign(secret, body):
     return f"sha256={sig}"
 
 
-def _make_comment(comment_type="issue_comment"):
+def _make_comment(comment_type=CommentType.ISSUE_COMMENT):
     return ReviewComment(
-        platform="github",
+        platform=PlatformName.GITHUB,
         repo_full_name="owner/repo",
         pr_number=42,
         pr_branch="main",
@@ -121,7 +126,7 @@ class TestParseWebhook:
         assert result.comment_id == 100
         assert result.author_username == "alice"
         assert result.body == "@claude-bot fix this"
-        assert result.comment_type == "issue_comment"
+        assert result.comment_type == CommentType.ISSUE_COMMENT
 
     def test_parse_issue_comment_not_on_pr(self, platform):
         payload = {
@@ -177,7 +182,7 @@ class TestParseWebhook:
         assert result.pr_branch == "feature-branch"
         assert result.diff_hunk == "@@ -1,3 +1,5 @@"
         assert result.file_path == "src/main.py"
-        assert result.comment_type == "review_comment"
+        assert result.comment_type == CommentType.REVIEW_COMMENT
 
     def test_parse_review_submitted(self, platform):
         payload = {
@@ -200,7 +205,7 @@ class TestParseWebhook:
         assert result is not None
         assert result.pr_number == 5
         assert result.body == "@claude-bot looks good but fix the typo"
-        assert result.comment_type == "review"
+        assert result.comment_type == CommentType.REVIEW
 
     def test_parse_review_empty_body(self, platform):
         payload = {
@@ -253,7 +258,7 @@ class TestPostReply:
     @pytest.mark.asyncio
     async def test_post_reply_issue_comment_uses_issues_endpoint(self, platform):
         comment = ReviewComment(
-            platform="github",
+            platform=PlatformName.GITHUB,
             repo_full_name="owner/repo",
             pr_number=42,
             pr_branch="main",
@@ -263,7 +268,7 @@ class TestPostReply:
             diff_hunk="",
             file_path="",
             clone_url="",
-            comment_type="issue_comment",
+            comment_type=CommentType.ISSUE_COMMENT,
         )
         reply = CommentReply(body="Fixed it!")
         mock_response = MagicMock()
@@ -286,7 +291,7 @@ class TestPostReply:
     @pytest.mark.asyncio
     async def test_post_reply_review_comment_uses_threaded_endpoint(self, platform):
         comment = ReviewComment(
-            platform="github",
+            platform=PlatformName.GITHUB,
             repo_full_name="owner/repo",
             pr_number=42,
             pr_branch="main",
@@ -296,7 +301,7 @@ class TestPostReply:
             diff_hunk="@@ -1,3 +1,5 @@",
             file_path="src/main.py",
             clone_url="",
-            comment_type="review_comment",
+            comment_type=CommentType.REVIEW_COMMENT,
         )
         reply = CommentReply(body="Refactored!")
         mock_response = MagicMock()
@@ -319,7 +324,7 @@ class TestPostReply:
     @pytest.mark.asyncio
     async def test_post_reply_review_uses_issues_endpoint(self, platform):
         comment = ReviewComment(
-            platform="github",
+            platform=PlatformName.GITHUB,
             repo_full_name="owner/repo",
             pr_number=42,
             pr_branch="main",
@@ -329,7 +334,7 @@ class TestPostReply:
             diff_hunk="",
             file_path="",
             clone_url="",
-            comment_type="review",
+            comment_type=CommentType.REVIEW,
         )
         reply = CommentReply(body="Done!")
         mock_response = MagicMock()
@@ -352,7 +357,7 @@ class TestPostReply:
     @pytest.mark.asyncio
     async def test_post_reply_with_commit_sha(self, platform):
         comment = ReviewComment(
-            platform="github",
+            platform=PlatformName.GITHUB,
             repo_full_name="owner/repo",
             pr_number=42,
             pr_branch="main",
@@ -362,7 +367,7 @@ class TestPostReply:
             diff_hunk="",
             file_path="",
             clone_url="",
-            comment_type="issue_comment",
+            comment_type=CommentType.ISSUE_COMMENT,
         )
         reply = CommentReply(body="Done", commit_sha="abc123")
         mock_response = MagicMock()
@@ -387,7 +392,7 @@ class TestPostReaction:
     @pytest.mark.asyncio
     async def test_post_reaction_success_first_endpoint(self, platform):
         comment = ReviewComment(
-            platform="github",
+            platform=PlatformName.GITHUB,
             repo_full_name="owner/repo",
             pr_number=42,
             pr_branch="main",
@@ -490,7 +495,7 @@ class TestFetchPrDiff:
 
         assert len(files) == 2
         assert files[0].file_path == "src/main.py"
-        assert files[0].status == "modified"
+        assert files[0].status == FileStatus.MODIFIED
         assert files[1].file_path == "src/new.py"
 
     @pytest.mark.asyncio

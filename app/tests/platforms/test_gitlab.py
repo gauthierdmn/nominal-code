@@ -5,8 +5,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nominal_code.bot_type import ReviewFinding
-from nominal_code.platforms.base import CommentReply, ReviewComment
+from nominal_code.bot_type import FileStatus, ReviewFinding
+from nominal_code.platforms.base import (
+    CommentReply,
+    CommentType,
+    PlatformName,
+    ReviewComment,
+)
 from nominal_code.platforms.gitlab import (
     GitLabPlatform,
     _create_gitlab_platform,
@@ -46,7 +51,7 @@ def _make_request(headers=None):
 
 def _make_comment():
     return ReviewComment(
-        platform="gitlab",
+        platform=PlatformName.GITLAB,
         repo_full_name="group/repo",
         pr_number=10,
         pr_branch="feature",
@@ -56,7 +61,7 @@ def _make_comment():
         diff_hunk="",
         file_path="",
         clone_url="",
-        comment_type="note",
+        comment_type=CommentType.NOTE,
     )
 
 
@@ -133,7 +138,7 @@ class TestParseWebhook:
         assert result.comment_id == 500
         assert result.author_username == "alice"
         assert result.body == "@claude-bot fix this"
-        assert result.comment_type == "note"
+        assert result.comment_type == CommentType.NOTE
         assert result.discussion_id == "abc123def456"
 
     def test_parse_mr_note_without_discussion_id(self, platform):
@@ -188,7 +193,7 @@ class TestFetchPrBranch:
     @pytest.mark.asyncio
     async def test_fetch_pr_branch_returns_empty(self, platform):
         comment = ReviewComment(
-            platform="gitlab",
+            platform=PlatformName.GITLAB,
             repo_full_name="group/repo",
             pr_number=10,
             pr_branch="",
@@ -223,7 +228,7 @@ class TestPostReply:
     @pytest.mark.asyncio
     async def test_post_reply_with_discussion_id_uses_threaded_endpoint(self, platform):
         comment = ReviewComment(
-            platform="gitlab",
+            platform=PlatformName.GITLAB,
             repo_full_name="group/repo",
             pr_number=10,
             pr_branch="feature",
@@ -233,7 +238,7 @@ class TestPostReply:
             diff_hunk="",
             file_path="",
             clone_url="",
-            comment_type="note",
+            comment_type=CommentType.NOTE,
             discussion_id="abc123def456",
         )
         reply = CommentReply(body="Fixed!")
@@ -257,7 +262,7 @@ class TestPostReply:
     @pytest.mark.asyncio
     async def test_post_reply_without_discussion_id_uses_notes_endpoint(self, platform):
         comment = ReviewComment(
-            platform="gitlab",
+            platform=PlatformName.GITLAB,
             repo_full_name="group/repo",
             pr_number=10,
             pr_branch="feature",
@@ -267,7 +272,7 @@ class TestPostReply:
             diff_hunk="",
             file_path="",
             clone_url="",
-            comment_type="note",
+            comment_type=CommentType.NOTE,
             discussion_id="",
         )
         reply = CommentReply(body="Fixed!")
@@ -293,7 +298,7 @@ class TestPostReaction:
     @pytest.mark.asyncio
     async def test_post_reaction_success(self, platform):
         comment = ReviewComment(
-            platform="gitlab",
+            platform=PlatformName.GITLAB,
             repo_full_name="group/repo",
             pr_number=10,
             pr_branch="feature",
@@ -407,9 +412,9 @@ class TestFetchPrDiff:
 
         assert len(files) == 2
         assert files[0].file_path == "src/main.py"
-        assert files[0].status == "modified"
+        assert files[0].status == FileStatus.MODIFIED
         assert files[1].file_path == "src/new.py"
-        assert files[1].status == "added"
+        assert files[1].status == FileStatus.ADDED
 
     @pytest.mark.asyncio
     async def test_fetch_pr_diff_deleted_file(self, platform):
@@ -434,7 +439,7 @@ class TestFetchPrDiff:
             mock_get.return_value = mock_response
             files = await platform.fetch_pr_diff("group/repo", 10)
 
-        assert files[0].status == "removed"
+        assert files[0].status == FileStatus.REMOVED
 
     @pytest.mark.asyncio
     async def test_fetch_pr_diff_renamed_file(self, platform):
@@ -459,7 +464,7 @@ class TestFetchPrDiff:
             mock_get.return_value = mock_response
             files = await platform.fetch_pr_diff("group/repo", 10)
 
-        assert files[0].status == "renamed"
+        assert files[0].status == FileStatus.RENAMED
         assert files[0].file_path == "new_name.py"
 
     @pytest.mark.asyncio
