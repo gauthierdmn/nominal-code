@@ -59,6 +59,14 @@ If the agent's output is not valid JSON, the bot retries up to 2 times with a co
 
 When findings exist, they are posted as a native code review with inline comments on the specific lines. If there are no findings, only the summary is posted as a plain comment.
 
+## Cross-File Review
+
+The reviewer is not limited to the lines changed in the PR. It actively checks for knock-on effects elsewhere in the repository — for example, callers that were not updated after a function signature change, or stale references to a renamed config key.
+
+Findings that target lines within the diff are posted as native inline comments. Findings that reference files or lines outside the diff are automatically folded into the general review body under an **Additional notes (not in diff)** section, since the GitHub/GitLab API only supports inline comments on diff lines.
+
+This means no review feedback is lost, regardless of where in the codebase the issue is found.
+
 ## Existing Discussion Context
 
 Before running the agent, the reviewer fetches all existing comments on the PR to avoid duplicating previously raised issues:

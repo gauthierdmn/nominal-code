@@ -6,12 +6,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from nominal_code.agent_runner import AgentResult
-from nominal_code.bot_type import BotType, ChangedFile, FileStatus
+from nominal_code.bot_type import BotType, ChangedFile, FileStatus, ReviewFinding
 from nominal_code.config import ReviewerConfig
 from nominal_code.handlers.reviewer import (
     MAX_EXISTING_COMMENTS,
     REVIEWER_ALLOWED_TOOLS,
+    build_effective_summary,
     build_reviewer_prompt,
+    filter_findings,
     parse_review_output,
 )
 from nominal_code.handlers.shared import handle_comment
@@ -255,6 +257,18 @@ class TestReviewerProcessComment:
     async def test_reviewer_calls_submit_review(self):
         config = _make_config(allowed_users=["alice"])
         platform = _make_platform()
+        platform.fetch_pr_diff = AsyncMock(
+            return_value=[
+                ChangedFile(
+                    file_path="src/main.py",
+                    status=FileStatus.MODIFIED,
+                    patch=(
+                        "@@ -8,6 +8,7 @@\n context\n context"
+                        "\n+new line\n context\n context\n context"
+                    ),
+                ),
+            ],
+        )
         comment = _make_comment(author="alice")
         session_store = SessionStore()
         session_queue = SessionQueue()
@@ -871,3 +885,152 @@ class TestBotCommentFiltering:
             expected = {"fetch_pr_diff", "fetch_pr_comments", "ensure_ready"}
 
             assert set(call_order) == expected
+
+
+class TestFilterFindings:
+    def test_filter_findings_keeps_valid_in_diff(self):
+        changed_files = [
+            ChangedFile(
+                file_path="src/main.py",
+                status=FileStatus.MODIFIED,
+                patch="@@ -1,3 +1,4 @@\n context\n+added\n context\n context",
+            ),
+        ]
+        findings = [
+            ReviewFinding(file_path="src/main.py", line=2, body="Issue here"),
+        ]
+        valid, rejected = filter_findings(findings, changed_files)
+
+        assert len(valid) == 1
+        assert len(rejected) == 0
+
+    def test_filter_findings_rejects_line_outside_diff(self):
+        changed_files = [
+            ChangedFile(
+                file_path="src/main.py",
+                status=FileStatus.MODIFIED,
+                patch="@@ -1,3 +1,4 @@\n context\n+added\n context\n context",
+            ),
+        ]
+        findings = [
+            ReviewFinding(file_path="src/main.py", line=100, body="Not in diff"),
+        ]
+        valid, rejected = filter_findings(findings, changed_files)
+
+        assert len(valid) == 0
+        assert len(rejected) == 1
+
+    def test_filter_findings_rejects_file_not_in_diff(self):
+        changed_files = [
+            ChangedFile(
+                file_path="src/main.py",
+                status=FileStatus.MODIFIED,
+                patch="@@ -1,3 +1,4 @@\n context\n+added\n context\n context",
+            ),
+        ]
+        findings = [
+            ReviewFinding(file_path="src/other.py", line=5, body="Not in PR"),
+        ]
+        valid, rejected = filter_findings(findings, changed_files)
+
+        assert len(valid) == 0
+        assert len(rejected) == 1
+
+    def test_filter_findings_splits_mixed(self):
+        changed_files = [
+            ChangedFile(
+                file_path="src/main.py",
+                status=FileStatus.MODIFIED,
+                patch="@@ -1,3 +1,4 @@\n context\n+added\n context\n context",
+            ),
+        ]
+        findings = [
+            ReviewFinding(file_path="src/main.py", line=1, body="Valid"),
+            ReviewFinding(file_path="src/main.py", line=999, body="Invalid line"),
+            ReviewFinding(file_path="src/other.py", line=5, body="Invalid file"),
+        ]
+        valid, rejected = filter_findings(findings, changed_files)
+
+        assert len(valid) == 1
+        assert valid[0].body == "Valid"
+        assert len(rejected) == 2
+
+    def test_filter_findings_empty_findings(self):
+        changed_files = [
+            ChangedFile(
+                file_path="src/main.py",
+                status=FileStatus.MODIFIED,
+                patch="@@ -1 +1 @@\n+new",
+            ),
+        ]
+        valid, rejected = filter_findings([], changed_files)
+
+        assert valid == []
+        assert rejected == []
+
+    def test_filter_findings_multiple_hunks(self):
+        patch = (
+            "@@ -1,3 +1,3 @@\n-old\n+new\n context\n context\n"
+            "@@ -20,3 +20,4 @@\n context\n+added\n context\n context"
+        )
+        changed_files = [
+            ChangedFile(file_path="a.py", status=FileStatus.MODIFIED, patch=patch),
+        ]
+        findings = [
+            ReviewFinding(file_path="a.py", line=1, body="In first hunk"),
+            ReviewFinding(file_path="a.py", line=21, body="In second hunk"),
+            ReviewFinding(file_path="a.py", line=10, body="Between hunks"),
+        ]
+        valid, rejected = filter_findings(findings, changed_files)
+
+        assert len(valid) == 2
+        assert len(rejected) == 1
+        assert rejected[0].body == "Between hunks"
+
+    def test_filter_findings_deletion_lines_excluded(self):
+        changed_files = [
+            ChangedFile(
+                file_path="a.py",
+                status=FileStatus.MODIFIED,
+                patch="@@ -1,3 +1,2 @@\n context\n-deleted\n context",
+            ),
+        ]
+        findings = [
+            ReviewFinding(file_path="a.py", line=1, body="Context line ok"),
+            ReviewFinding(file_path="a.py", line=2, body="After deletion ok"),
+        ]
+        valid, rejected = filter_findings(findings, changed_files)
+
+        assert len(valid) == 2
+        assert len(rejected) == 0
+
+
+class TestBuildEffectiveSummary:
+    def test_build_effective_summary_no_rejected(self):
+        result = build_effective_summary("All good", [])
+
+        assert result == "All good"
+
+    def test_build_effective_summary_with_rejected(self):
+        rejected = [
+            ReviewFinding(file_path="src/other.py", line=5, body="Missing update"),
+            ReviewFinding(file_path="src/utils.py", line=20, body="Stale reference"),
+        ]
+        result = build_effective_summary("Found issues", rejected)
+
+        assert result.startswith("Found issues")
+        assert "Additional notes" in result
+        assert "not in diff" in result
+        assert "**src/other.py:5**" in result
+        assert "Missing update" in result
+        assert "**src/utils.py:20**" in result
+        assert "Stale reference" in result
+
+    def test_build_effective_summary_single_rejected(self):
+        rejected = [
+            ReviewFinding(file_path="a.py", line=1, body="Needs change"),
+        ]
+        result = build_effective_summary("Summary", rejected)
+
+        assert "**a.py:1**" in result
+        assert "Needs change" in result
