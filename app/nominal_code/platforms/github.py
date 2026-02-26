@@ -10,10 +10,12 @@ from typing import Any
 import httpx
 from aiohttp import web
 
-from nominal_code.bot_type import ChangedFile, ReviewFinding
+from nominal_code.bot_type import ChangedFile, FileStatus, ReviewFinding
 from nominal_code.platforms.base import (
     CommentReply,
+    CommentType,
     ExistingComment,
+    PlatformName,
     ReviewComment,
 )
 from nominal_code.platforms.registry import register_platform
@@ -172,7 +174,7 @@ class GitHubPlatform:
         pr_number: int = issue.get("number", 0)
 
         return ReviewComment(
-            platform="github",
+            platform=PlatformName.GITHUB,
             repo_full_name=repo_full_name,
             pr_number=pr_number,
             pr_branch="",
@@ -182,7 +184,7 @@ class GitHubPlatform:
             diff_hunk="",
             file_path="",
             clone_url=self._build_clone_url(repo_full_name),
-            comment_type="issue_comment",
+            comment_type=CommentType.ISSUE_COMMENT,
         )
 
     def _parse_review_comment(
@@ -210,7 +212,7 @@ class GitHubPlatform:
         repo_full_name: str = repo.get("full_name", "")
 
         return ReviewComment(
-            platform="github",
+            platform=PlatformName.GITHUB,
             repo_full_name=repo_full_name,
             pr_number=pull_request.get("number", 0),
             pr_branch=pull_request.get("head", {}).get("ref", ""),
@@ -220,7 +222,7 @@ class GitHubPlatform:
             diff_hunk=comment.get("diff_hunk", ""),
             file_path=comment.get("path", ""),
             clone_url=self._build_clone_url(repo_full_name),
-            comment_type="review_comment",
+            comment_type=CommentType.REVIEW_COMMENT,
         )
 
     def _parse_review(
@@ -253,7 +255,7 @@ class GitHubPlatform:
         repo_full_name: str = repo.get("full_name", "")
 
         return ReviewComment(
-            platform="github",
+            platform=PlatformName.GITHUB,
             repo_full_name=repo_full_name,
             pr_number=pull_request.get("number", 0),
             pr_branch=pull_request.get("head", {}).get("ref", ""),
@@ -263,7 +265,7 @@ class GitHubPlatform:
             diff_hunk="",
             file_path="",
             clone_url=self._build_clone_url(repo_full_name),
-            comment_type="review",
+            comment_type=CommentType.REVIEW,
         )
 
     async def post_reply(
@@ -286,7 +288,7 @@ class GitHubPlatform:
         if reply.commit_sha:
             body += f"\n\n_Pushed commit: {reply.commit_sha}_"
 
-        if comment.comment_type == "review_comment":
+        if comment.comment_type == CommentType.REVIEW_COMMENT:
             url: str = (
                 f"/repos/{comment.repo_full_name}"
                 f"/pulls/{comment.pr_number}"
@@ -612,7 +614,7 @@ class GitHubPlatform:
                 files.append(
                     ChangedFile(
                         file_path=entry.get("filename", ""),
-                        status=entry.get("status", ""),
+                        status=FileStatus(entry.get("status", "modified")),
                         patch=entry.get("patch", ""),
                     ),
                 )
