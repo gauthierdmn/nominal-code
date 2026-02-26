@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import logging
 import os
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+
+from nominal_code.models import EventType
+
+logger: logging.Logger = logging.getLogger(__name__)
 
 DEFAULT_REVIEWER_PROMPT_PATH: str = "prompts/reviewer_prompt.md"
 DEFAULT_WORKER_PROMPT_PATH: str = "prompts/system_prompt.md"
@@ -64,6 +69,8 @@ class Config:
             ``prompts/languages/``.
         cleanup_interval_hours (int): Hours between workspace cleanup runs
             (0 disables).
+        reviewer_triggers (frozenset[EventType]): PR lifecycle event types
+            that auto-trigger the reviewer bot. Empty means disabled.
     """
 
     worker: WorkerConfig | None
@@ -78,6 +85,7 @@ class Config:
     coding_guidelines: str
     language_guidelines: dict[str, str]
     cleanup_interval_hours: int
+    reviewer_triggers: frozenset[EventType] = frozenset()
 
     @classmethod
     def for_cli(
@@ -213,6 +221,10 @@ class Config:
             ),
         )
 
+        reviewer_triggers: frozenset[EventType] = _parse_reviewer_triggers(
+            os.environ.get("REVIEWER_TRIGGERS", ""),
+        )
+
         return cls(
             worker=worker,
             reviewer=reviewer,
@@ -226,7 +238,40 @@ class Config:
             coding_guidelines=coding_guidelines,
             language_guidelines=language_guidelines,
             cleanup_interval_hours=cleanup_interval_hours,
+            reviewer_triggers=reviewer_triggers,
         )
+
+
+def _parse_reviewer_triggers(raw: str) -> frozenset[EventType]:
+    """
+    Parse a comma-separated string of event type names into a frozenset.
+
+    Invalid names are logged as warnings and skipped.
+
+    Args:
+        raw (str): Comma-separated event type names (e.g. ``pr_opened,pr_push``).
+
+    Returns:
+        frozenset[EventType]: The parsed event types.
+    """
+
+    if not raw.strip():
+        return frozenset()
+
+    triggers: set[EventType] = set()
+
+    for token in raw.split(","):
+        name: str = token.strip()
+
+        if not name:
+            continue
+
+        try:
+            triggers.add(EventType(name))
+        except ValueError:
+            logger.warning("Ignoring unknown REVIEWER_TRIGGERS value: %s", name)
+
+    return frozenset(triggers)
 
 
 def _load_file_content(file_path: str) -> str:

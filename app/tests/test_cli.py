@@ -4,14 +4,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nominal_code.bot_type import ReviewFinding, ReviewResult
 from nominal_code.cli import (
     build_cli_parser,
     parse_pr_ref,
     print_review,
     run_review,
 )
-from nominal_code.handlers.reviewer import ExecuteReviewResult
+from nominal_code.models import AgentReview, ReviewFinding
+from nominal_code.review.handler import ReviewResult
 
 
 class TestParsePrRef:
@@ -105,8 +105,8 @@ class TestBuildCliParser:
 
 class TestPrintReview:
     def test_print_review_with_findings(self, capsys):
-        result = ExecuteReviewResult(
-            review_result=ReviewResult(
+        result = ReviewResult(
+            agent_review=AgentReview(
                 summary="Found issues",
                 findings=[
                     ReviewFinding(file_path="a.py", line=10, body="Bug here"),
@@ -128,8 +128,8 @@ class TestPrintReview:
         assert "Bug here" in captured.out
 
     def test_print_review_no_findings(self, capsys):
-        result = ExecuteReviewResult(
-            review_result=ReviewResult(summary="All good"),
+        result = ReviewResult(
+            agent_review=AgentReview(summary="All good"),
             valid_findings=[],
             rejected_findings=[],
             effective_summary="All good",
@@ -143,8 +143,8 @@ class TestPrintReview:
         assert "No issues found" in captured.out
 
     def test_print_review_failed_parse(self, capsys):
-        result = ExecuteReviewResult(
-            review_result=None,
+        result = ReviewResult(
+            agent_review=None,
             valid_findings=[],
             rejected_findings=[],
             effective_summary="",
@@ -158,8 +158,8 @@ class TestPrintReview:
         assert "broken output" in captured.out
 
     def test_print_review_with_rejected_findings(self, capsys):
-        result = ExecuteReviewResult(
-            review_result=ReviewResult(
+        result = ReviewResult(
+            agent_review=AgentReview(
                 summary="Review",
                 findings=[
                     ReviewFinding(file_path="a.py", line=10, body="Valid"),
@@ -215,8 +215,8 @@ class TestRunReview:
         mock_platform.submit_review = AsyncMock()
         mock_platform.post_reply = AsyncMock()
 
-        review_result = ExecuteReviewResult(
-            review_result=ReviewResult(summary="Looks good"),
+        review_result = ReviewResult(
+            agent_review=AgentReview(summary="Looks good"),
             valid_findings=[],
             rejected_findings=[],
             effective_summary="Looks good",
@@ -228,7 +228,7 @@ class TestRunReview:
             return_value=mock_platform,
         ):
             with patch(
-                "nominal_code.cli.execute_review",
+                "nominal_code.cli.review",
                 new_callable=AsyncMock,
                 return_value=review_result,
             ):
@@ -254,8 +254,8 @@ class TestRunReview:
         mock_platform.submit_review = AsyncMock()
         mock_platform.post_reply = AsyncMock()
 
-        review_result = ExecuteReviewResult(
-            review_result=ReviewResult(
+        review_result = ReviewResult(
+            agent_review=AgentReview(
                 summary="Issues found",
                 findings=[
                     ReviewFinding(file_path="a.py", line=1, body="Fix this"),
@@ -274,7 +274,7 @@ class TestRunReview:
             return_value=mock_platform,
         ):
             with patch(
-                "nominal_code.cli.execute_review",
+                "nominal_code.cli.review",
                 new_callable=AsyncMock,
                 return_value=review_result,
             ):
@@ -321,8 +321,8 @@ class TestRunReview:
         mock_platform.submit_review = AsyncMock()
         mock_platform.post_reply = AsyncMock()
 
-        review_result = ExecuteReviewResult(
-            review_result=ReviewResult(summary="All clear"),
+        review_result = ReviewResult(
+            agent_review=AgentReview(summary="All clear"),
             valid_findings=[],
             rejected_findings=[],
             effective_summary="All clear",
@@ -334,7 +334,7 @@ class TestRunReview:
             return_value=mock_platform,
         ):
             with patch(
-                "nominal_code.cli.execute_review",
+                "nominal_code.cli.review",
                 new_callable=AsyncMock,
                 return_value=review_result,
             ):

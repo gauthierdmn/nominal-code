@@ -5,22 +5,22 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nominal_code.agent_runner import AgentResult
-from nominal_code.bot_type import BotType, ChangedFile, FileStatus, ReviewFinding
+from nominal_code.agent.runner import AgentResult
+from nominal_code.agent.session import SessionStore
 from nominal_code.config import ReviewerConfig
-from nominal_code.handlers.reviewer import (
+from nominal_code.models import ChangedFile, EventType, FileStatus, ReviewFinding
+from nominal_code.platforms.base import CommentEvent, ExistingComment, PlatformName
+from nominal_code.review.handler import (
     MAX_EXISTING_COMMENTS,
     REVIEWER_ALLOWED_TOOLS,
-    ExecuteReviewResult,
+    ReviewResult,
     build_effective_summary,
     build_reviewer_prompt,
-    execute_review,
     filter_findings,
     parse_review_output,
+    review,
+    review_and_post,
 )
-from nominal_code.handlers.shared import handle_comment
-from nominal_code.platforms.base import ExistingComment, PlatformName, ReviewComment
-from nominal_code.session import SessionQueue, SessionStore
 
 
 def _make_config(allowed_users=None):
@@ -51,17 +51,18 @@ def _make_comment(
     diff_hunk="",
     file_path="",
 ):
-    return ReviewComment(
+    return CommentEvent(
         platform=platform,
         repo_full_name=repo,
         pr_number=pr_number,
         pr_branch=branch,
+        clone_url="https://token@github.com/owner/repo.git",
+        event_type=EventType.ISSUE_COMMENT,
         comment_id=100,
         author_username=author,
         body=body,
         diff_hunk=diff_hunk,
         file_path=file_path,
-        clone_url="https://token@github.com/owner/repo.git",
     )
 
 
@@ -96,7 +97,6 @@ class TestReviewerProcessComment:
         )
         comment = _make_comment(author="alice")
         session_store = SessionStore()
-        session_queue = SessionQueue()
 
         review_json = json.dumps(
             {
@@ -106,7 +106,7 @@ class TestReviewerProcessComment:
         )
 
         with patch(
-            "nominal_code.handlers.reviewer.run_agent",
+            "nominal_code.agent.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -118,24 +118,20 @@ class TestReviewerProcessComment:
             )
 
             with patch(
-                "nominal_code.handlers.reviewer.GitWorkspace",
+                "nominal_code.workspace.setup.GitWorkspace",
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
                 mock_ws.repo_path = "/tmp/workspaces/owner/repo/pr-42"
                 mock_ws_class.return_value = mock_ws
 
-                await handle_comment(
-                    comment=comment,
+                await review_and_post(
+                    event=comment,
                     prompt="review this",
                     config=config,
                     platform=platform,
                     session_store=session_store,
-                    session_queue=session_queue,
-                    bot_type=BotType.REVIEWER,
                 )
-
-                await asyncio.sleep(0.1)
 
             platform.fetch_pr_diff.assert_called_once_with("owner/repo", 42)
 
@@ -145,7 +141,6 @@ class TestReviewerProcessComment:
         platform = _make_platform()
         comment = _make_comment(author="alice")
         session_store = SessionStore()
-        session_queue = SessionQueue()
 
         review_json = json.dumps(
             {
@@ -155,7 +150,7 @@ class TestReviewerProcessComment:
         )
 
         with patch(
-            "nominal_code.handlers.reviewer.run_agent",
+            "nominal_code.agent.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -167,24 +162,20 @@ class TestReviewerProcessComment:
             )
 
             with patch(
-                "nominal_code.handlers.reviewer.GitWorkspace",
+                "nominal_code.workspace.setup.GitWorkspace",
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
                 mock_ws.repo_path = "/tmp/workspaces/owner/repo/pr-42"
                 mock_ws_class.return_value = mock_ws
 
-                await handle_comment(
-                    comment=comment,
+                await review_and_post(
+                    event=comment,
                     prompt="review",
                     config=config,
                     platform=platform,
                     session_store=session_store,
-                    session_queue=session_queue,
-                    bot_type=BotType.REVIEWER,
                 )
-
-                await asyncio.sleep(0.1)
 
             mock_run.assert_called_once()
             call_kwargs = mock_run.call_args.kwargs
@@ -199,7 +190,6 @@ class TestReviewerProcessComment:
         platform = _make_platform()
         comment = _make_comment(author="alice")
         session_store = SessionStore()
-        session_queue = SessionQueue()
 
         review_json = json.dumps(
             {
@@ -209,7 +199,7 @@ class TestReviewerProcessComment:
         )
 
         with patch(
-            "nominal_code.handlers.reviewer.run_agent",
+            "nominal_code.agent.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -221,7 +211,7 @@ class TestReviewerProcessComment:
             )
 
             with patch(
-                "nominal_code.handlers.reviewer.GitWorkspace",
+                "nominal_code.workspace.setup.GitWorkspace",
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
@@ -229,20 +219,16 @@ class TestReviewerProcessComment:
                 mock_ws_class.return_value = mock_ws
 
                 with patch(
-                    "nominal_code.handlers.reviewer.resolve_guidelines",
+                    "nominal_code.agent.prompts.resolve_guidelines",
                     return_value="Repo guidelines override",
                 ) as mock_resolve:
-                    await handle_comment(
-                        comment=comment,
+                    await review_and_post(
+                        event=comment,
                         prompt="review",
                         config=config,
                         platform=platform,
                         session_store=session_store,
-                        session_queue=session_queue,
-                        bot_type=BotType.REVIEWER,
                     )
-
-                    await asyncio.sleep(0.1)
 
                     mock_resolve.assert_called_once_with(
                         "/tmp/workspaces/owner/repo/pr-42",
@@ -273,7 +259,6 @@ class TestReviewerProcessComment:
         )
         comment = _make_comment(author="alice")
         session_store = SessionStore()
-        session_queue = SessionQueue()
 
         review_json = json.dumps(
             {
@@ -285,7 +270,7 @@ class TestReviewerProcessComment:
         )
 
         with patch(
-            "nominal_code.handlers.reviewer.run_agent",
+            "nominal_code.agent.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -297,24 +282,20 @@ class TestReviewerProcessComment:
             )
 
             with patch(
-                "nominal_code.handlers.reviewer.GitWorkspace",
+                "nominal_code.workspace.setup.GitWorkspace",
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
                 mock_ws.repo_path = "/tmp/workspaces/owner/repo/pr-42"
                 mock_ws_class.return_value = mock_ws
 
-                await handle_comment(
-                    comment=comment,
+                await review_and_post(
+                    event=comment,
                     prompt="review",
                     config=config,
                     platform=platform,
                     session_store=session_store,
-                    session_queue=session_queue,
-                    bot_type=BotType.REVIEWER,
                 )
-
-                await asyncio.sleep(0.1)
 
             platform.submit_review.assert_called_once()
             call_kwargs = platform.submit_review.call_args.kwargs
@@ -329,7 +310,6 @@ class TestReviewerProcessComment:
         platform = _make_platform()
         comment = _make_comment(author="alice")
         session_store = SessionStore()
-        session_queue = SessionQueue()
 
         valid_json = json.dumps(
             {
@@ -339,7 +319,7 @@ class TestReviewerProcessComment:
         )
 
         with patch(
-            "nominal_code.handlers.reviewer.run_agent",
+            "nominal_code.agent.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.side_effect = [
@@ -360,24 +340,20 @@ class TestReviewerProcessComment:
             ]
 
             with patch(
-                "nominal_code.handlers.reviewer.GitWorkspace",
+                "nominal_code.workspace.setup.GitWorkspace",
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
                 mock_ws.repo_path = "/tmp/workspaces/owner/repo/pr-42"
                 mock_ws_class.return_value = mock_ws
 
-                await handle_comment(
-                    comment=comment,
+                await review_and_post(
+                    event=comment,
                     prompt="review",
                     config=config,
                     platform=platform,
                     session_store=session_store,
-                    session_queue=session_queue,
-                    bot_type=BotType.REVIEWER,
                 )
-
-                await asyncio.sleep(0.1)
 
             assert mock_run.call_count == 2
             platform.submit_review.assert_not_called()
@@ -389,7 +365,6 @@ class TestReviewerProcessComment:
         platform = _make_platform()
         comment = _make_comment(author="alice")
         session_store = SessionStore()
-        session_queue = SessionQueue()
 
         bad_result = AgentResult(
             output="still not json",
@@ -400,30 +375,26 @@ class TestReviewerProcessComment:
         )
 
         with patch(
-            "nominal_code.handlers.reviewer.run_agent",
+            "nominal_code.agent.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = bad_result
 
             with patch(
-                "nominal_code.handlers.reviewer.GitWorkspace",
+                "nominal_code.workspace.setup.GitWorkspace",
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
                 mock_ws.repo_path = "/tmp/workspaces/owner/repo/pr-42"
                 mock_ws_class.return_value = mock_ws
 
-                await handle_comment(
-                    comment=comment,
+                await review_and_post(
+                    event=comment,
                     prompt="review",
                     config=config,
                     platform=platform,
                     session_store=session_store,
-                    session_queue=session_queue,
-                    bot_type=BotType.REVIEWER,
                 )
-
-                await asyncio.sleep(0.1)
 
             assert mock_run.call_count == 3
             platform.submit_review.assert_not_called()
@@ -698,7 +669,6 @@ class TestBotCommentFiltering:
         )
         comment = _make_comment(author="alice")
         session_store = SessionStore()
-        session_queue = SessionQueue()
 
         review_json = json.dumps(
             {
@@ -708,7 +678,7 @@ class TestBotCommentFiltering:
         )
 
         with patch(
-            "nominal_code.handlers.reviewer.run_agent",
+            "nominal_code.agent.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -720,24 +690,20 @@ class TestBotCommentFiltering:
             )
 
             with patch(
-                "nominal_code.handlers.reviewer.GitWorkspace",
+                "nominal_code.workspace.setup.GitWorkspace",
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
                 mock_ws.repo_path = "/tmp/workspaces/owner/repo/pr-42"
                 mock_ws_class.return_value = mock_ws
 
-                await handle_comment(
-                    comment=comment,
+                await review_and_post(
+                    event=comment,
                     prompt="review",
                     config=config,
                     platform=platform,
                     session_store=session_store,
-                    session_queue=session_queue,
-                    bot_type=BotType.REVIEWER,
                 )
-
-                await asyncio.sleep(0.1)
 
             call_kwargs = mock_run.call_args.kwargs
             prompt_text = call_kwargs["prompt"]
@@ -761,7 +727,6 @@ class TestBotCommentFiltering:
         )
         comment = _make_comment(author="alice")
         session_store = SessionStore()
-        session_queue = SessionQueue()
 
         review_json = json.dumps(
             {
@@ -771,7 +736,7 @@ class TestBotCommentFiltering:
         )
 
         with patch(
-            "nominal_code.handlers.reviewer.run_agent",
+            "nominal_code.agent.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -783,24 +748,20 @@ class TestBotCommentFiltering:
             )
 
             with patch(
-                "nominal_code.handlers.reviewer.GitWorkspace",
+                "nominal_code.workspace.setup.GitWorkspace",
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
                 mock_ws.repo_path = "/tmp/workspaces/owner/repo/pr-42"
                 mock_ws_class.return_value = mock_ws
 
-                await handle_comment(
-                    comment=comment,
+                await review_and_post(
+                    event=comment,
                     prompt="review",
                     config=config,
                     platform=platform,
                     session_store=session_store,
-                    session_queue=session_queue,
-                    bot_type=BotType.REVIEWER,
                 )
-
-                await asyncio.sleep(0.1)
 
             call_kwargs = mock_run.call_args.kwargs
             prompt_text = call_kwargs["prompt"]
@@ -814,7 +775,6 @@ class TestBotCommentFiltering:
         platform = _make_platform()
         comment = _make_comment(author="alice")
         session_store = SessionStore()
-        session_queue = SessionQueue()
 
         review_json = json.dumps(
             {
@@ -840,7 +800,7 @@ class TestBotCommentFiltering:
         platform.fetch_pr_comments = AsyncMock(side_effect=track_fetch_comments)
 
         with patch(
-            "nominal_code.handlers.reviewer.run_agent",
+            "nominal_code.agent.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -852,7 +812,7 @@ class TestBotCommentFiltering:
             )
 
             with patch(
-                "nominal_code.handlers.reviewer.GitWorkspace",
+                "nominal_code.workspace.setup.GitWorkspace",
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock(side_effect=track_ensure_ready)
@@ -860,20 +820,16 @@ class TestBotCommentFiltering:
                 mock_ws_class.return_value = mock_ws
 
                 with patch(
-                    "nominal_code.handlers.reviewer.asyncio.gather",
+                    "nominal_code.review.handler.asyncio.gather",
                     wraps=asyncio.gather,
                 ) as mock_gather:
-                    await handle_comment(
-                        comment=comment,
+                    await review_and_post(
+                        event=comment,
                         prompt="review",
                         config=config,
                         platform=platform,
                         session_store=session_store,
-                        session_queue=session_queue,
-                        bot_type=BotType.REVIEWER,
                     )
-
-                    await asyncio.sleep(0.1)
 
                     mock_gather.assert_called_once()
                     gather_args = mock_gather.call_args.args
@@ -1038,9 +994,9 @@ class TestBuildEffectiveSummary:
         assert "Needs change" in result
 
 
-class TestExecuteReview:
+class TestReview:
     @pytest.mark.asyncio
-    async def test_execute_review_returns_result(self):
+    async def test_review_returns_result(self):
         config = _make_config()
         platform = _make_platform()
         platform.fetch_pr_diff = AsyncMock(
@@ -1064,7 +1020,7 @@ class TestExecuteReview:
         )
 
         with patch(
-            "nominal_code.handlers.reviewer.run_agent",
+            "nominal_code.agent.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -1076,35 +1032,35 @@ class TestExecuteReview:
             )
 
             with patch(
-                "nominal_code.handlers.reviewer.GitWorkspace",
+                "nominal_code.workspace.setup.GitWorkspace",
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
                 mock_ws.repo_path = "/tmp/workspaces/owner/repo/pr-42"
                 mock_ws_class.return_value = mock_ws
 
-                result = await execute_review(
-                    comment=comment,
+                result = await review(
+                    event=comment,
                     prompt="review this",
                     config=config,
                     platform=platform,
                 )
 
-        assert isinstance(result, ExecuteReviewResult)
-        assert result.review_result is not None
-        assert result.review_result.summary == "Looks good"
+        assert isinstance(result, ReviewResult)
+        assert result.agent_review is not None
+        assert result.agent_review.summary == "Looks good"
         assert len(result.valid_findings) == 1
         assert result.valid_findings[0].file_path == "src/main.py"
         assert result.effective_summary == "Looks good"
 
     @pytest.mark.asyncio
-    async def test_execute_review_returns_none_result_on_bad_json(self):
+    async def test_review_returns_none_result_on_bad_json(self):
         config = _make_config()
         platform = _make_platform()
         comment = _make_comment()
 
         with patch(
-            "nominal_code.handlers.reviewer.run_agent",
+            "nominal_code.agent.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -1116,25 +1072,25 @@ class TestExecuteReview:
             )
 
             with patch(
-                "nominal_code.handlers.reviewer.GitWorkspace",
+                "nominal_code.workspace.setup.GitWorkspace",
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
                 mock_ws.repo_path = "/tmp/workspaces/owner/repo/pr-42"
                 mock_ws_class.return_value = mock_ws
 
-                result = await execute_review(
-                    comment=comment,
+                result = await review(
+                    event=comment,
                     prompt="review",
                     config=config,
                     platform=platform,
                 )
 
-        assert result.review_result is None
+        assert result.agent_review is None
         assert result.raw_output == "not json"
 
     @pytest.mark.asyncio
-    async def test_execute_review_without_session_store(self):
+    async def test_review_without_session_store(self):
         config = _make_config()
         platform = _make_platform()
         comment = _make_comment()
@@ -1147,7 +1103,7 @@ class TestExecuteReview:
         )
 
         with patch(
-            "nominal_code.handlers.reviewer.run_agent",
+            "nominal_code.agent.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -1159,26 +1115,26 @@ class TestExecuteReview:
             )
 
             with patch(
-                "nominal_code.handlers.reviewer.GitWorkspace",
+                "nominal_code.workspace.setup.GitWorkspace",
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
                 mock_ws.repo_path = "/tmp/workspaces/owner/repo/pr-42"
                 mock_ws_class.return_value = mock_ws
 
-                result = await execute_review(
-                    comment=comment,
+                result = await review(
+                    event=comment,
                     prompt="review",
                     config=config,
                     platform=platform,
                     session_store=None,
                 )
 
-        assert result.review_result is not None
-        assert result.review_result.summary == "OK"
+        assert result.agent_review is not None
+        assert result.agent_review.summary == "OK"
 
     @pytest.mark.asyncio
-    async def test_process_comment_still_works(self):
+    async def test_review_and_post_still_works(self):
         config = _make_config(allowed_users=["alice"])
         platform = _make_platform()
         platform.fetch_pr_diff = AsyncMock(
@@ -1192,7 +1148,6 @@ class TestExecuteReview:
         )
         comment = _make_comment(author="alice")
         session_store = SessionStore()
-        session_queue = SessionQueue()
 
         review_json = json.dumps(
             {
@@ -1202,7 +1157,7 @@ class TestExecuteReview:
         )
 
         with patch(
-            "nominal_code.handlers.reviewer.run_agent",
+            "nominal_code.agent.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -1214,24 +1169,20 @@ class TestExecuteReview:
             )
 
             with patch(
-                "nominal_code.handlers.reviewer.GitWorkspace",
+                "nominal_code.workspace.setup.GitWorkspace",
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
                 mock_ws.repo_path = "/tmp/workspaces/owner/repo/pr-42"
                 mock_ws_class.return_value = mock_ws
 
-                await handle_comment(
-                    comment=comment,
+                await review_and_post(
+                    event=comment,
                     prompt="review",
                     config=config,
                     platform=platform,
                     session_store=session_store,
-                    session_queue=session_queue,
-                    bot_type=BotType.REVIEWER,
                 )
-
-                await asyncio.sleep(0.1)
 
             platform.post_reply.assert_called_once()
             reply_body = platform.post_reply.call_args.args[1].body

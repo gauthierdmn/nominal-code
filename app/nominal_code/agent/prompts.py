@@ -1,148 +1,18 @@
 from __future__ import annotations
 
-import logging
 import os
-from dataclasses import replace
-from typing import TYPE_CHECKING, cast
-
-from nominal_code.bot_type import BotType
-from nominal_code.platforms.base import CommentReply, ReviewComment
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from nominal_code.config import Config
-    from nominal_code.platforms.base import Platform, ReviewerPlatform
-    from nominal_code.session import SessionQueue, SessionStore
+    from nominal_code.workspace.git import GitWorkspace
 
-EYES_REACTION: str = "eyes"
-REPO_GUIDELINES_PATH: str = os.path.join(".nominal", "guidelines.md")
-NOMINAL_DIR: str = ".nominal"
-
+NOMINAL_CONFIG_DIR: str = ".nominal"
+REPO_GUIDELINES_PATH: str = os.path.join(NOMINAL_CONFIG_DIR, "guidelines.md")
 EXTENSION_TO_LANGUAGE: dict[str, str] = {
     ".py": "python",
     ".pyi": "python",
 }
-
-logger: logging.Logger = logging.getLogger(__name__)
-
-
-async def handle_comment(
-    comment: ReviewComment,
-    prompt: str,
-    config: Config,
-    platform: Platform,
-    session_store: SessionStore,
-    session_queue: SessionQueue,
-    bot_type: BotType = BotType.WORKER,
-) -> None:
-    """
-    Dispatch a review comment for processing by the agent.
-
-    Validates the author against allowed users, acknowledges with a reaction,
-    and enqueues the job for serial execution per PR.
-
-    Args:
-        comment (ReviewComment): The parsed review comment.
-        prompt (str): The extracted prompt after the @mention.
-        config (Config): Application configuration.
-        platform (Platform): The platform client for API calls.
-        session_store (SessionStore): Agent session store.
-        session_queue (SessionQueue): Per-PR job queue.
-        bot_type (BotType): Which bot personality to use.
-    """
-
-    if comment.author_username not in config.allowed_users:
-        logger.warning(
-            "Ignoring comment from unauthorized user: %s",
-            comment.author_username,
-        )
-
-        return
-
-    logger.info(
-        "Processing %s comment from %s on %s#%d: %s",
-        bot_type.value,
-        comment.author_username,
-        comment.repo_full_name,
-        comment.pr_number,
-        prompt[:100],
-    )
-
-    await platform.post_reaction(comment, EYES_REACTION)
-
-    async def _job() -> None:
-        if bot_type == BotType.REVIEWER:
-            from nominal_code.handlers.reviewer import process_comment
-
-            await process_comment(
-                comment,
-                prompt,
-                config,
-                cast("ReviewerPlatform", platform),
-                session_store,
-            )
-
-            return
-
-        from nominal_code.handlers.worker import (
-            process_comment as worker_process,
-        )
-
-        await worker_process(
-            comment,
-            prompt,
-            config,
-            platform,
-            session_store,
-        )
-
-    await session_queue.enqueue(
-        comment.platform,
-        comment.repo_full_name,
-        comment.pr_number,
-        bot_type.value,
-        _job,
-    )
-
-
-async def resolve_branch(
-    comment: ReviewComment,
-    platform: Platform,
-) -> ReviewComment | None:
-    """
-    Return comment with resolved branch, or None on failure.
-
-    If the comment already has a branch, returns it unchanged. Otherwise
-    fetches the branch from the platform. Returns None if the branch
-    cannot be determined.
-
-    Args:
-        comment (ReviewComment): The review comment to resolve.
-        platform (Platform): The platform client for API calls.
-
-    Returns:
-        ReviewComment | None: Comment with branch set, or None on failure.
-    """
-
-    if comment.pr_branch:
-        return comment
-
-    branch: str = await platform.fetch_pr_branch(comment)
-
-    if branch:
-        return replace(comment, pr_branch=branch)
-
-    logger.error(
-        "Cannot determine branch for %s#%d",
-        comment.repo_full_name,
-        comment.pr_number,
-    )
-
-    await platform.post_reply(
-        comment,
-        CommentReply(body="Unable to determine the PR branch."),
-    )
-
-    return None
 
 
 def load_repo_guidelines(repo_path: str) -> str:
@@ -207,7 +77,12 @@ def load_repo_language_guidelines(repo_path: str, language: str) -> str:
         str: The guideline content, or empty string if not found.
     """
 
-    full_path: str = os.path.join(repo_path, NOMINAL_DIR, "languages", f"{language}.md")
+    full_path: str = os.path.join(
+        repo_path,
+        NOMINAL_CONFIG_DIR,
+        "languages",
+        f"{language}.md",
+    )
 
     if not os.path.isfile(full_path):
         return ""
@@ -282,3 +157,35 @@ def build_system_prompt(system_prompt: str, guidelines: str) -> str:
     parts: list[str] = [part for part in (system_prompt, guidelines) if part]
 
     return "\n\n".join(parts)
+
+
+def resolve_system_prompt(
+    workspace: GitWorkspace,
+    config: Config,
+    bot_system_prompt: str,
+    file_paths: list[str],
+) -> str:
+    """
+    Resolve guidelines and compose the full system prompt.
+
+    Combines ``resolve_guidelines`` and ``build_system_prompt`` into a single
+    call to avoid duplicating the pattern in every handler.
+
+    Args:
+        workspace (GitWorkspace): The workspace with the cloned repo.
+        config (Config): Application configuration.
+        bot_system_prompt (str): The bot-specific base system prompt.
+        file_paths (list[str]): File paths used to detect relevant languages.
+
+    Returns:
+        str: The combined system prompt with guidelines.
+    """
+
+    effective_guidelines: str = resolve_guidelines(
+        workspace.repo_path,
+        config.coding_guidelines,
+        config.language_guidelines,
+        file_paths,
+    )
+
+    return build_system_prompt(bot_system_prompt, effective_guidelines)

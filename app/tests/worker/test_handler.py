@@ -1,16 +1,14 @@
 # type: ignore
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nominal_code.agent_runner import AgentResult
-from nominal_code.bot_type import BotType
+from nominal_code.agent.runner import AgentResult
+from nominal_code.agent.session import SessionStore
 from nominal_code.config import WorkerConfig
-from nominal_code.handlers.shared import handle_comment
-from nominal_code.handlers.worker import build_prompt
-from nominal_code.platforms.base import PlatformName, ReviewComment
-from nominal_code.session import SessionQueue, SessionStore
+from nominal_code.models import EventType
+from nominal_code.platforms.base import CommentEvent, PlatformName
+from nominal_code.worker.handler import build_prompt, review_and_fix
 
 
 def _make_config(allowed_users=None):
@@ -41,17 +39,18 @@ def _make_comment(
     diff_hunk="",
     file_path="",
 ):
-    return ReviewComment(
+    return CommentEvent(
         platform=platform,
         repo_full_name=repo,
         pr_number=pr_number,
         pr_branch=branch,
+        clone_url="https://token@github.com/owner/repo.git",
+        event_type=EventType.ISSUE_COMMENT,
         comment_id=100,
         author_username=author,
         body=body,
         diff_hunk=diff_hunk,
         file_path=file_path,
-        clone_url="https://token@github.com/owner/repo.git",
     )
 
 
@@ -71,10 +70,9 @@ class TestWorkerProcessComment:
         platform = _make_platform()
         comment = _make_comment(author="alice")
         session_store = SessionStore()
-        session_queue = SessionQueue()
 
         with patch(
-            "nominal_code.handlers.worker.run_agent",
+            "nominal_code.agent.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -86,24 +84,20 @@ class TestWorkerProcessComment:
             )
 
             with patch(
-                "nominal_code.handlers.worker.GitWorkspace",
+                "nominal_code.workspace.setup.GitWorkspace",
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
                 mock_ws.repo_path = "/tmp/workspaces/owner/repo/pr-42"
                 mock_ws_class.return_value = mock_ws
 
-                await handle_comment(
-                    comment=comment,
+                await review_and_fix(
+                    event=comment,
                     prompt="fix this",
                     config=config,
                     platform=platform,
                     session_store=session_store,
-                    session_queue=session_queue,
-                    bot_type=BotType.WORKER,
                 )
-
-                await asyncio.sleep(0.1)
 
             mock_run.assert_called_once()
             call_kwargs = mock_run.call_args.kwargs
@@ -118,10 +112,9 @@ class TestWorkerProcessComment:
         platform = _make_platform()
         comment = _make_comment(author="alice")
         session_store = SessionStore()
-        session_queue = SessionQueue()
 
         with patch(
-            "nominal_code.handlers.worker.run_agent",
+            "nominal_code.agent.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -133,7 +126,7 @@ class TestWorkerProcessComment:
             )
 
             with patch(
-                "nominal_code.handlers.worker.GitWorkspace",
+                "nominal_code.workspace.setup.GitWorkspace",
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
@@ -141,20 +134,16 @@ class TestWorkerProcessComment:
                 mock_ws_class.return_value = mock_ws
 
                 with patch(
-                    "nominal_code.handlers.worker.resolve_guidelines",
+                    "nominal_code.agent.prompts.resolve_guidelines",
                     return_value="Repo guidelines override",
                 ) as mock_resolve:
-                    await handle_comment(
-                        comment=comment,
+                    await review_and_fix(
+                        event=comment,
                         prompt="fix this",
                         config=config,
                         platform=platform,
                         session_store=session_store,
-                        session_queue=session_queue,
-                        bot_type=BotType.WORKER,
                     )
-
-                    await asyncio.sleep(0.1)
 
                     mock_resolve.assert_called_once_with(
                         "/tmp/workspaces/owner/repo/pr-42",

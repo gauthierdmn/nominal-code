@@ -2,19 +2,19 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from aiohttp import web
 
-from nominal_code.bot_type import BotType
-from nominal_code.handlers import handle_comment
-from nominal_code.mention import extract_mention
-from nominal_code.platforms.base import ReviewComment
+from nominal_code.models import COMMENT_EVENT_TYPES, BotType
+from nominal_code.platforms.base import CommentEvent, LifecycleEvent
+from nominal_code.webhooks.dispatch import enqueue_job
+from nominal_code.webhooks.mention import extract_mention
 
 if TYPE_CHECKING:
+    from nominal_code.agent.session import SessionQueue, SessionStore
     from nominal_code.config import Config
-    from nominal_code.platforms.base import Platform
-    from nominal_code.session import SessionQueue, SessionStore
+    from nominal_code.platforms.base import Platform, ReviewerPlatform
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -97,7 +97,7 @@ async def _handle_webhook(
     """
     Common webhook handler for all platforms.
 
-    Checks configured bot usernames and dispatches accordingly.
+    Dispatches auto-trigger lifecycle events and comment-based mentions.
 
     Args:
         request (web.Request): The incoming webhook request.
@@ -119,37 +119,101 @@ async def _handle_webhook(
 
         return web.Response(status=401, text="Invalid signature")
 
-    comment: ReviewComment | None = platform.parse_webhook(request, body)
+    event: CommentEvent | LifecycleEvent | None = platform.parse_event(request, body)
 
-    if comment is None:
+    if event is None:
         return web.json_response({"status": "ignored"})
+
+    if event.event_type in config.reviewer_triggers:
+        if config.reviewer is None:
+            return web.json_response({"status": "ignored"})
+
+        if not isinstance(event, LifecycleEvent):
+            return web.json_response({"status": "ignored"})
+
+        lifecycle_event: LifecycleEvent = event
+
+        async def _auto_trigger_job() -> None:
+            from nominal_code.review.handler import review_and_post
+
+            await review_and_post(
+                lifecycle_event,
+                "",
+                config,
+                cast("ReviewerPlatform", platform),
+                session_store,
+            )
+
+        await enqueue_job(
+            event=lifecycle_event,
+            bot_type=BotType.REVIEWER,
+            config=config,
+            platform=platform,
+            session_queue=session_queue,
+            job=_auto_trigger_job,
+        )
+
+        return web.json_response({"status": "accepted"})
+
+    if event.event_type not in COMMENT_EVENT_TYPES:
+        return web.json_response({"status": "ignored"})
+
+    if not isinstance(event, CommentEvent):
+        return web.json_response({"status": "ignored"})
+
+    comment_event: CommentEvent = event
 
     worker_prompt: str | None = None
     reviewer_prompt: str | None = None
 
     if config.worker is not None:
-        worker_prompt = extract_mention(comment.body, config.worker.bot_username)
+        worker_prompt = extract_mention(comment_event.body, config.worker.bot_username)
 
     if config.reviewer is not None:
-        reviewer_prompt = extract_mention(comment.body, config.reviewer.bot_username)
+        reviewer_prompt = extract_mention(
+            comment_event.body, config.reviewer.bot_username
+        )
 
     if worker_prompt is not None:
         bot_type: BotType = BotType.WORKER
         prompt: str = worker_prompt
+
+        async def _job() -> None:
+            from nominal_code.worker.handler import review_and_fix
+
+            await review_and_fix(
+                comment_event,
+                prompt,
+                config,
+                platform,
+                session_store,
+            )
+
     elif reviewer_prompt is not None:
         bot_type = BotType.REVIEWER
         prompt = reviewer_prompt
+
+        async def _job() -> None:
+            from nominal_code.review.handler import review_and_post
+
+            await review_and_post(
+                comment_event,
+                prompt,
+                config,
+                cast("ReviewerPlatform", platform),
+                session_store,
+            )
+
     else:
         return web.json_response({"status": "no_mention"})
 
-    await handle_comment(
-        comment=comment,
-        prompt=prompt,
+    await enqueue_job(
+        event=comment_event,
+        bot_type=bot_type,
         config=config,
         platform=platform,
-        session_store=session_store,
         session_queue=session_queue,
-        bot_type=bot_type,
+        job=_job,
     )
 
     return web.json_response({"status": "accepted"})

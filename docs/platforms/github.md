@@ -10,6 +10,7 @@
    - **Issue comments** — triggers on PR conversation comments
    - **Pull request review comments** — triggers on inline code review comments
    - **Pull request reviews** — triggers on review submissions with a body
+   - **Pull requests** — required if using `REVIEWER_TRIGGERS` for auto-triggered reviews on PR open/push/reopen
 6. Click **Add webhook**.
 
 ## Token Requirements
@@ -31,6 +32,8 @@ The reviewer still uses `GITHUB_TOKEN` for API calls (posting reviews, fetching 
 
 ## Supported Event Types
 
+### Comment Events
+
 | GitHub Event | Trigger |
 |---|---|
 | `issue_comment` (action: `created`) | A new comment on a PR conversation |
@@ -38,6 +41,19 @@ The reviewer still uses `GITHUB_TOKEN` for API calls (posting reviews, fetching 
 | `pull_request_review` (action: `submitted`) | A review is submitted with a non-empty body |
 
 Comments on issues (not PRs) are ignored. Events without an `@mention` of the bot are also ignored.
+
+### Lifecycle Events (Auto-Trigger)
+
+These events are only processed when `REVIEWER_TRIGGERS` includes the corresponding event type. See [Auto-Trigger](../configuration.md#auto-trigger).
+
+| GitHub Event | Action | Event Type | Notes |
+|---|---|---|---|
+| `pull_request` | `opened` | `pr_opened` | New PR created |
+| `pull_request` | `synchronize` | `pr_push` | New commits pushed |
+| `pull_request` | `reopened` | `pr_reopened` | PR reopened |
+| `pull_request` | `ready_for_review` | `pr_ready_for_review` | Draft PR marked ready |
+
+Draft PRs (`draft: true`) are skipped for all lifecycle events. Other `pull_request` actions (e.g. `closed`, `labeled`) are ignored.
 
 ## Webhook Verification
 

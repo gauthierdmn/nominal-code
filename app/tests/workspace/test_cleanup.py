@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nominal_code.workspace_cleanup import WorkspaceCleaner
+from nominal_code.workspace.cleanup import WorkspaceCleaner
 
 
 @pytest.fixture
@@ -155,7 +155,7 @@ class TestRunOnce:
         mock_platform.is_pr_open.return_value = False
 
         with patch(
-            "nominal_code.workspace_cleanup.asyncio.gather",
+            "nominal_code.workspace.cleanup.asyncio.gather",
             wraps=asyncio.gather,
         ) as mock_gather:
             await cleaner.run_once()

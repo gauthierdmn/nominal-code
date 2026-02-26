@@ -4,7 +4,8 @@ from unittest.mock import patch
 
 import pytest
 
-from nominal_code.config import Config
+from nominal_code.config import Config, _parse_reviewer_triggers
+from nominal_code.models import EventType
 
 
 @pytest.fixture
@@ -254,3 +255,60 @@ class TestFromEnv:
         with patch.dict(os.environ, env, clear=True):
             with pytest.raises(ValueError, match="at least one username"):
                 Config.from_env()
+
+    def test_from_env_reviewer_triggers_parsed(self, _both_bots_env):
+        with patch.dict(os.environ, {"REVIEWER_TRIGGERS": "pr_opened,pr_push"}):
+            config = Config.from_env()
+
+        assert config.reviewer_triggers == frozenset(
+            {EventType.PR_OPENED, EventType.PR_PUSH},
+        )
+
+    def test_from_env_reviewer_triggers_empty(self, _both_bots_env):
+        config = Config.from_env()
+
+        assert config.reviewer_triggers == frozenset()
+
+
+class TestParseReviewerTriggers:
+    def test_parse_reviewer_triggers_empty_string(self):
+        result = _parse_reviewer_triggers("")
+
+        assert result == frozenset()
+
+    def test_parse_reviewer_triggers_whitespace_only(self):
+        result = _parse_reviewer_triggers("   ")
+
+        assert result == frozenset()
+
+    def test_parse_reviewer_triggers_single_value(self):
+        result = _parse_reviewer_triggers("pr_opened")
+
+        assert result == frozenset({EventType.PR_OPENED})
+
+    def test_parse_reviewer_triggers_multiple_values(self):
+        result = _parse_reviewer_triggers("pr_opened,pr_push,pr_reopened")
+
+        assert result == frozenset(
+            {EventType.PR_OPENED, EventType.PR_PUSH, EventType.PR_REOPENED},
+        )
+
+    def test_parse_reviewer_triggers_with_whitespace(self):
+        result = _parse_reviewer_triggers(" pr_opened , pr_push ")
+
+        assert result == frozenset({EventType.PR_OPENED, EventType.PR_PUSH})
+
+    def test_parse_reviewer_triggers_invalid_value_skipped(self):
+        result = _parse_reviewer_triggers("pr_opened,invalid_event,pr_push")
+
+        assert result == frozenset({EventType.PR_OPENED, EventType.PR_PUSH})
+
+    def test_parse_reviewer_triggers_all_invalid(self):
+        result = _parse_reviewer_triggers("foo,bar")
+
+        assert result == frozenset()
+
+    def test_parse_reviewer_triggers_trailing_comma(self):
+        result = _parse_reviewer_triggers("pr_opened,")
+
+        assert result == frozenset({EventType.PR_OPENED})

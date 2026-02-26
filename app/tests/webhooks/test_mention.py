@@ -1,5 +1,5 @@
 # type: ignore
-from nominal_code.mention import extract_mention
+from nominal_code.webhooks.mention import extract_mention
 
 
 class TestExtractMention:

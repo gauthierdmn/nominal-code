@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from nominal_code.git_workspace import GitWorkspace, PushResult
+from nominal_code.workspace.git import GitWorkspace, PushResult
 
 
 @pytest.fixture
