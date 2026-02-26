@@ -1,5 +1,10 @@
 # Nominal Code
 
+[![CI](https://github.com/gauthierdmn/nominal-code/actions/workflows/ci.yml/badge.svg)](https://github.com/gauthierdmn/nominal-code/actions/workflows/ci.yml)
+[![Docs](https://github.com/gauthierdmn/nominal-code/actions/workflows/docs.yml/badge.svg)](https://gauthierdmn.github.io/nominal-code/)
+[![Python 3.13](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/downloads/release/python-3130/)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+
 A bot that monitors GitHub PRs and GitLab MRs for review comments mentioning it, then uses an AI agent to respond, review code, and otionally push changes. Comment `@your-bot fix this bug` on a pull request, and the bot clones the repo, runs the agent, and replies with comments and/or code commits.
 
 ## Features
