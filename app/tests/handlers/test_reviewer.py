@@ -19,7 +19,7 @@ from nominal_code.handlers.reviewer import (
     parse_review_output,
 )
 from nominal_code.handlers.shared import handle_comment
-from nominal_code.platforms.base import ExistingComment, PlatformName, ReviewComment
+from nominal_code.platforms.base import ExistingComment, PlatformName, PullRequestEvent
 from nominal_code.session import SessionQueue, SessionStore
 
 
@@ -51,7 +51,7 @@ def _make_comment(
     diff_hunk="",
     file_path="",
 ):
-    return ReviewComment(
+    return PullRequestEvent(
         platform=platform,
         repo_full_name=repo,
         pr_number=pr_number,

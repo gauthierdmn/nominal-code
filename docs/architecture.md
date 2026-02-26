@@ -3,32 +3,45 @@
 ## Request Flow
 
 ```
-PR comment "@bot do something"
-        │
-        ▼
-GitHub/GitLab sends webhook
-        │
-        ▼
-POST /webhooks/{platform}
-        │
-        ├─ verify_webhook()        ← signature/token check
-        ├─ parse_webhook()         ← normalize into ReviewComment
-        ├─ extract_mention()       ← identify bot type + prompt
-        │
-        ▼
-handle_comment()
-        │
-        ├─ allowed_users check     ← reject unauthorized users
-        ├─ post_reaction("eyes")   ← immediate acknowledgment
-        │
-        ▼
-session_queue.enqueue(job)         ← returns HTTP 200 immediately
-        │
-        ▼
-job runs serially per PR
-        │
-        ├─ [WORKER]  clone/update → run agent (all tools) → post reply
-        └─ [REVIEWER] clone/update → fetch diff + comments → run agent (read-only) → submit review
+PR comment "@bot do something"  ──or──  PR opened/pushed/reopened
+        │                                        │
+        ▼                                        ▼
+GitHub/GitLab sends webhook             GitHub/GitLab sends webhook
+        │                                        │
+        └──────────────┬─────────────────────────┘
+                       ▼
+            POST /webhooks/{platform}
+                       │
+                       ├─ verify_webhook()         ← signature/token check
+                       ├─ parse_event()            ← normalize into PullRequestEvent
+                       │
+                       ├─ [lifecycle event in REVIEWER_TRIGGERS?]
+                       │       ▼
+                       │   handle_auto_trigger()   ← no auth check, no reaction
+                       │       │
+                       │       ▼
+                       │   session_queue.enqueue()  ← reviewer with empty prompt
+                       │
+                       ├─ [comment event?]
+                       │       ▼
+                       │   extract_mention()        ← identify bot type + prompt
+                       │       │
+                       │       ▼
+                       │   handle_comment()
+                       │       │
+                       │       ├─ allowed_users check
+                       │       ├─ post_reaction("eyes")
+                       │       │
+                       │       ▼
+                       │   session_queue.enqueue()
+                       │
+                       └─ [otherwise] → ignored
+                               │
+                               ▼
+                    job runs serially per PR
+                               │
+                    ├─ [WORKER]  clone/update → run agent (all tools) → post reply
+                    └─ [REVIEWER] clone/update → fetch diff + comments → run agent (read-only) → submit review
 ```
 
 ## CLI Flow
@@ -78,7 +91,8 @@ A factory-based registry where each platform module self-registers at import tim
 
 ### Handlers
 
-- **`shared.handle_comment()`** — central dispatch. Checks authorization, posts the eyes reaction, and enqueues the job.
+- **`shared.handle_comment()`** — central dispatch for comment-based mentions. Checks authorization, posts the eyes reaction, and enqueues the job.
+- **`shared.handle_auto_trigger()`** — dispatch for PR lifecycle events. Skips authorization and reaction posting, enqueues a reviewer job with an empty prompt.
 - **`worker.process_comment()`** — clones the repo, runs the agent with full tools, posts the reply.
 - **`reviewer.execute_review()`** — core review logic (clone, fetch diff + comments, run agent, parse JSON, filter findings). Returns an `ExecuteReviewResult` without posting. Used by both webhook and CLI modes.
 - **`reviewer.process_comment()`** — webhook entry point. Calls `execute_review()` then posts results to the platform.

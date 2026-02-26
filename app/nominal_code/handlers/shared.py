@@ -6,7 +6,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, cast
 
 from nominal_code.bot_type import BotType
-from nominal_code.platforms.base import CommentReply, ReviewComment
+from nominal_code.platforms.base import CommentReply, PullRequestEvent
 
 if TYPE_CHECKING:
     from nominal_code.config import Config
@@ -26,7 +26,7 @@ logger: logging.Logger = logging.getLogger(__name__)
 
 
 async def handle_comment(
-    comment: ReviewComment,
+    comment: PullRequestEvent,
     prompt: str,
     config: Config,
     platform: Platform,
@@ -35,13 +35,13 @@ async def handle_comment(
     bot_type: BotType = BotType.WORKER,
 ) -> None:
     """
-    Dispatch a review comment for processing by the agent.
+    Dispatch a comment event for processing by the agent.
 
     Validates the author against allowed users, acknowledges with a reaction,
     and enqueues the job for serial execution per PR.
 
     Args:
-        comment (ReviewComment): The parsed review comment.
+        comment (PullRequestEvent): The parsed event.
         prompt (str): The extracted prompt after the @mention.
         config (Config): Application configuration.
         platform (Platform): The platform client for API calls.
@@ -104,23 +104,77 @@ async def handle_comment(
     )
 
 
-async def resolve_branch(
-    comment: ReviewComment,
+async def handle_auto_trigger(
+    event: PullRequestEvent,
+    config: Config,
     platform: Platform,
-) -> ReviewComment | None:
+    session_store: SessionStore,
+    session_queue: SessionQueue,
+) -> None:
     """
-    Return comment with resolved branch, or None on failure.
+    Dispatch a PR lifecycle event for automatic reviewer processing.
 
-    If the comment already has a branch, returns it unchanged. Otherwise
+    Unlike comment-triggered reviews, auto-triggers skip allowed-users
+    checks and reaction posting since there is no comment author or
+    comment to react to.
+
+    Args:
+        event (PullRequestEvent): The parsed lifecycle event.
+        config (Config): Application configuration.
+        platform (Platform): The platform client for API calls.
+        session_store (SessionStore): Agent session store.
+        session_queue (SessionQueue): Per-PR job queue.
+    """
+
+    if config.reviewer is None:
+        return
+
+    logger.info(
+        "Auto-trigger %s reviewer on %s#%d (title=%s, author=%s)",
+        event.event_type,
+        event.repo_full_name,
+        event.pr_number,
+        event.pr_title[:80],
+        event.pr_author,
+    )
+
+    async def _job() -> None:
+        from nominal_code.handlers.reviewer import process_comment
+
+        await process_comment(
+            event,
+            "",
+            config,
+            cast("ReviewerPlatform", platform),
+            session_store,
+        )
+
+    await session_queue.enqueue(
+        event.platform,
+        event.repo_full_name,
+        event.pr_number,
+        BotType.REVIEWER.value,
+        _job,
+    )
+
+
+async def resolve_branch(
+    comment: PullRequestEvent,
+    platform: Platform,
+) -> PullRequestEvent | None:
+    """
+    Return event with resolved branch, or None on failure.
+
+    If the event already has a branch, returns it unchanged. Otherwise
     fetches the branch from the platform. Returns None if the branch
     cannot be determined.
 
     Args:
-        comment (ReviewComment): The review comment to resolve.
+        comment (PullRequestEvent): The event to resolve.
         platform (Platform): The platform client for API calls.
 
     Returns:
-        ReviewComment | None: Comment with branch set, or None on failure.
+        PullRequestEvent | None: Event with branch set, or None on failure.
     """
 
     if comment.pr_branch:

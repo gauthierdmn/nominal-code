@@ -15,6 +15,7 @@ A bot that monitors GitHub PRs and GitLab MRs for review comments mentioning it,
 
 - **Worker bot** — receives a prompt, clones the repo, runs an agent with full tool access, commits and pushes changes
 - **Reviewer bot** — fetches the PR diff, runs an agent with read-only tools, posts structured inline code reviews
+- **Auto-trigger** — optionally run the reviewer automatically on PR open, push, or reopen via `REVIEWER_TRIGGERS`
 - **CLI mode** — run a one-off review on any PR without deploying a webhook server
 - **GitHub and GitLab** — supports both platforms simultaneously
 - **Session continuity** — multi-turn conversations within the same PR

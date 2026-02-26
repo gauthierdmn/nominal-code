@@ -13,7 +13,7 @@ from nominal_code.main import setup_logging
 from nominal_code.platforms.base import (
     CommentReply,
     PlatformName,
-    ReviewComment,
+    PullRequestEvent,
     ReviewerPlatform,
 )
 
@@ -218,7 +218,7 @@ async def run_review(args: argparse.Namespace) -> int:
     platform: ReviewerPlatform = build_platform(platform_name)
 
     branch: str = await platform.fetch_pr_branch(
-        ReviewComment(
+        PullRequestEvent(
             platform=platform_name,
             repo_full_name=repo_full_name,
             pr_number=pr_number,
@@ -241,7 +241,7 @@ async def run_review(args: argparse.Namespace) -> int:
 
         return 1
 
-    comment: ReviewComment = ReviewComment(
+    comment: PullRequestEvent = PullRequestEvent(
         platform=platform_name,
         repo_full_name=repo_full_name,
         pr_number=pr_number,

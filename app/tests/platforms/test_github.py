@@ -7,12 +7,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nominal_code.bot_type import FileStatus, ReviewFinding
+from nominal_code.bot_type import EventType, FileStatus, ReviewFinding
 from nominal_code.platforms.base import (
     CommentReply,
-    CommentType,
     PlatformName,
-    ReviewComment,
+    PullRequestEvent,
 )
 from nominal_code.platforms.github import (
     GitHubPlatform,
@@ -52,8 +51,8 @@ def _sign(secret, body):
     return f"sha256={sig}"
 
 
-def _make_comment(comment_type=CommentType.ISSUE_COMMENT):
-    return ReviewComment(
+def _make_comment(event_type=EventType.ISSUE_COMMENT):
+    return PullRequestEvent(
         platform=PlatformName.GITHUB,
         repo_full_name="owner/repo",
         pr_number=42,
@@ -64,7 +63,7 @@ def _make_comment(comment_type=CommentType.ISSUE_COMMENT):
         diff_hunk="",
         file_path="",
         clone_url="",
-        comment_type=comment_type,
+        event_type=event_type,
     )
 
 
@@ -117,7 +116,7 @@ class TestParseWebhook:
         }
         body = json.dumps(payload).encode()
         request = _make_request({"X-GitHub-Event": "issue_comment"})
-        result = platform.parse_webhook(request, body)
+        result = platform.parse_event(request, body)
 
         assert result is not None
         assert result.platform == "github"
@@ -126,7 +125,7 @@ class TestParseWebhook:
         assert result.comment_id == 100
         assert result.author_username == "alice"
         assert result.body == "@claude-bot fix this"
-        assert result.comment_type == CommentType.ISSUE_COMMENT
+        assert result.event_type == EventType.ISSUE_COMMENT
 
     def test_parse_issue_comment_not_on_pr(self, platform):
         payload = {
@@ -138,7 +137,7 @@ class TestParseWebhook:
         body = json.dumps(payload).encode()
         request = _make_request({"X-GitHub-Event": "issue_comment"})
 
-        assert platform.parse_webhook(request, body) is None
+        assert platform.parse_event(request, body) is None
 
     def test_parse_issue_comment_not_created(self, platform):
         payload = {
@@ -153,7 +152,7 @@ class TestParseWebhook:
         body = json.dumps(payload).encode()
         request = _make_request({"X-GitHub-Event": "issue_comment"})
 
-        assert platform.parse_webhook(request, body) is None
+        assert platform.parse_event(request, body) is None
 
     def test_parse_review_comment(self, platform):
         payload = {
@@ -175,14 +174,14 @@ class TestParseWebhook:
         request = _make_request(
             {"X-GitHub-Event": "pull_request_review_comment"},
         )
-        result = platform.parse_webhook(request, body)
+        result = platform.parse_event(request, body)
 
         assert result is not None
         assert result.pr_number == 10
         assert result.pr_branch == "feature-branch"
         assert result.diff_hunk == "@@ -1,3 +1,5 @@"
         assert result.file_path == "src/main.py"
-        assert result.comment_type == CommentType.REVIEW_COMMENT
+        assert result.event_type == EventType.REVIEW_COMMENT
 
     def test_parse_review_submitted(self, platform):
         payload = {
@@ -200,12 +199,12 @@ class TestParseWebhook:
         }
         body = json.dumps(payload).encode()
         request = _make_request({"X-GitHub-Event": "pull_request_review"})
-        result = platform.parse_webhook(request, body)
+        result = platform.parse_event(request, body)
 
         assert result is not None
         assert result.pr_number == 5
         assert result.body == "@claude-bot looks good but fix the typo"
-        assert result.comment_type == CommentType.REVIEW
+        assert result.event_type == EventType.REVIEW
 
     def test_parse_review_empty_body(self, platform):
         payload = {
@@ -221,13 +220,131 @@ class TestParseWebhook:
         body = json.dumps(payload).encode()
         request = _make_request({"X-GitHub-Event": "pull_request_review"})
 
-        assert platform.parse_webhook(request, body) is None
+        assert platform.parse_event(request, body) is None
 
     def test_parse_unknown_event(self, platform):
         body = b'{"action": "opened"}'
         request = _make_request({"X-GitHub-Event": "push"})
 
-        assert platform.parse_webhook(request, body) is None
+        assert platform.parse_event(request, body) is None
+
+
+class TestParsePullRequest:
+    def test_parse_pr_opened(self, platform):
+        payload = {
+            "action": "opened",
+            "pull_request": {
+                "number": 99,
+                "title": "Add new feature",
+                "draft": False,
+                "head": {"ref": "feature-branch"},
+                "user": {"login": "alice"},
+            },
+            "repository": {"full_name": "owner/repo"},
+        }
+        body = json.dumps(payload).encode()
+        request = _make_request({"X-GitHub-Event": "pull_request"})
+        result = platform.parse_event(request, body)
+
+        assert result is not None
+        assert result.event_type == EventType.PR_OPENED
+        assert result.pr_number == 99
+        assert result.pr_branch == "feature-branch"
+        assert result.pr_title == "Add new feature"
+        assert result.pr_author == "alice"
+        assert result.comment_id == 0
+        assert result.body == ""
+
+    def test_parse_pr_synchronize(self, platform):
+        payload = {
+            "action": "synchronize",
+            "pull_request": {
+                "number": 99,
+                "title": "Update feature",
+                "draft": False,
+                "head": {"ref": "feature-branch"},
+                "user": {"login": "bob"},
+            },
+            "repository": {"full_name": "owner/repo"},
+        }
+        body = json.dumps(payload).encode()
+        request = _make_request({"X-GitHub-Event": "pull_request"})
+        result = platform.parse_event(request, body)
+
+        assert result is not None
+        assert result.event_type == EventType.PR_PUSH
+
+    def test_parse_pr_reopened(self, platform):
+        payload = {
+            "action": "reopened",
+            "pull_request": {
+                "number": 99,
+                "title": "Reopened PR",
+                "draft": False,
+                "head": {"ref": "fix-branch"},
+                "user": {"login": "charlie"},
+            },
+            "repository": {"full_name": "owner/repo"},
+        }
+        body = json.dumps(payload).encode()
+        request = _make_request({"X-GitHub-Event": "pull_request"})
+        result = platform.parse_event(request, body)
+
+        assert result is not None
+        assert result.event_type == EventType.PR_REOPENED
+
+    def test_parse_pr_ready_for_review(self, platform):
+        payload = {
+            "action": "ready_for_review",
+            "pull_request": {
+                "number": 99,
+                "title": "Ready PR",
+                "draft": False,
+                "head": {"ref": "ready-branch"},
+                "user": {"login": "alice"},
+            },
+            "repository": {"full_name": "owner/repo"},
+        }
+        body = json.dumps(payload).encode()
+        request = _make_request({"X-GitHub-Event": "pull_request"})
+        result = platform.parse_event(request, body)
+
+        assert result is not None
+        assert result.event_type == EventType.PR_READY_FOR_REVIEW
+
+    def test_parse_pr_draft_skipped(self, platform):
+        payload = {
+            "action": "opened",
+            "pull_request": {
+                "number": 99,
+                "title": "Draft PR",
+                "draft": True,
+                "head": {"ref": "draft-branch"},
+                "user": {"login": "alice"},
+            },
+            "repository": {"full_name": "owner/repo"},
+        }
+        body = json.dumps(payload).encode()
+        request = _make_request({"X-GitHub-Event": "pull_request"})
+
+        assert platform.parse_event(request, body) is None
+
+    def test_parse_pr_closed_ignored(self, platform):
+        payload = {
+            "action": "closed",
+            "pull_request": {
+                "number": 99,
+                "title": "Closed PR",
+                "draft": False,
+                "head": {"ref": "some-branch"},
+                "user": {"login": "alice"},
+            },
+            "repository": {"full_name": "owner/repo"},
+        }
+        body = json.dumps(payload).encode()
+        request = _make_request({"X-GitHub-Event": "pull_request"})
+
+        assert platform.parse_event(request, body) is None
 
 
 class TestBuildCloneUrl:
@@ -257,7 +374,7 @@ class TestBuildReviewerCloneUrl:
 class TestPostReply:
     @pytest.mark.asyncio
     async def test_post_reply_issue_comment_uses_issues_endpoint(self, platform):
-        comment = ReviewComment(
+        comment = PullRequestEvent(
             platform=PlatformName.GITHUB,
             repo_full_name="owner/repo",
             pr_number=42,
@@ -268,7 +385,7 @@ class TestPostReply:
             diff_hunk="",
             file_path="",
             clone_url="",
-            comment_type=CommentType.ISSUE_COMMENT,
+            event_type=EventType.ISSUE_COMMENT,
         )
         reply = CommentReply(body="Fixed it!")
         mock_response = MagicMock()
@@ -290,7 +407,7 @@ class TestPostReply:
 
     @pytest.mark.asyncio
     async def test_post_reply_review_comment_uses_threaded_endpoint(self, platform):
-        comment = ReviewComment(
+        comment = PullRequestEvent(
             platform=PlatformName.GITHUB,
             repo_full_name="owner/repo",
             pr_number=42,
@@ -301,7 +418,7 @@ class TestPostReply:
             diff_hunk="@@ -1,3 +1,5 @@",
             file_path="src/main.py",
             clone_url="",
-            comment_type=CommentType.REVIEW_COMMENT,
+            event_type=EventType.REVIEW_COMMENT,
         )
         reply = CommentReply(body="Refactored!")
         mock_response = MagicMock()
@@ -323,7 +440,7 @@ class TestPostReply:
 
     @pytest.mark.asyncio
     async def test_post_reply_review_uses_issues_endpoint(self, platform):
-        comment = ReviewComment(
+        comment = PullRequestEvent(
             platform=PlatformName.GITHUB,
             repo_full_name="owner/repo",
             pr_number=42,
@@ -334,7 +451,7 @@ class TestPostReply:
             diff_hunk="",
             file_path="",
             clone_url="",
-            comment_type=CommentType.REVIEW,
+            event_type=EventType.REVIEW,
         )
         reply = CommentReply(body="Done!")
         mock_response = MagicMock()
@@ -356,7 +473,7 @@ class TestPostReply:
 
     @pytest.mark.asyncio
     async def test_post_reply_with_commit_sha(self, platform):
-        comment = ReviewComment(
+        comment = PullRequestEvent(
             platform=PlatformName.GITHUB,
             repo_full_name="owner/repo",
             pr_number=42,
@@ -367,7 +484,7 @@ class TestPostReply:
             diff_hunk="",
             file_path="",
             clone_url="",
-            comment_type=CommentType.ISSUE_COMMENT,
+            event_type=EventType.ISSUE_COMMENT,
         )
         reply = CommentReply(body="Done", commit_sha="abc123")
         mock_response = MagicMock()
@@ -391,7 +508,7 @@ class TestPostReply:
 class TestPostReaction:
     @pytest.mark.asyncio
     async def test_post_reaction_success_first_endpoint(self, platform):
-        comment = ReviewComment(
+        comment = PullRequestEvent(
             platform=PlatformName.GITHUB,
             repo_full_name="owner/repo",
             pr_number=42,

@@ -9,13 +9,12 @@ from urllib.parse import quote
 import httpx
 from aiohttp import web
 
-from nominal_code.bot_type import ChangedFile, FileStatus, ReviewFinding
+from nominal_code.bot_type import ChangedFile, EventType, FileStatus, ReviewFinding
 from nominal_code.platforms.base import (
     CommentReply,
-    CommentType,
     ExistingComment,
     PlatformName,
-    ReviewComment,
+    PullRequestEvent,
 )
 from nominal_code.platforms.registry import register_platform
 
@@ -29,7 +28,9 @@ class GitLabPlatform:
     GitLab webhook handler and API client.
 
     Handles ``Note Hook`` events where ``object_kind`` is ``note`` and
-    ``noteable_type`` is ``MergeRequest``. Verifies webhooks via secret token.
+    ``noteable_type`` is ``MergeRequest``, and ``Merge Request Hook``
+    events for lifecycle actions (open, update with oldrev, reopen).
+    Verifies webhooks via secret token.
 
     Attributes:
         token (str): GitLab personal access token.
@@ -108,28 +109,49 @@ class GitLabPlatform:
 
         return token == self.webhook_secret
 
-    def parse_webhook(
+    def parse_event(
         self,
         request: web.Request,
         body: bytes,
-    ) -> ReviewComment | None:
+    ) -> PullRequestEvent | None:
         """
-        Parse a GitLab webhook payload into a ReviewComment.
+        Parse a GitLab webhook payload into a PullRequestEvent.
 
-        Only handles Note Hook events on merge requests.
+        Handles Note Hook events on merge requests and Merge Request Hook
+        events for lifecycle actions (open, update with oldrev, reopen).
 
         Args:
             request (web.Request): The incoming HTTP request.
             body (bytes): The raw request body.
 
         Returns:
-            ReviewComment | None: Parsed comment, or None if not relevant.
+            PullRequestEvent | None: Parsed event, or None if not relevant.
         """
 
         payload: dict[str, Any] = json.loads(body)
+        object_kind: str = payload.get("object_kind", "")
 
-        if payload.get("object_kind") != "note":
-            return None
+        if object_kind == "note":
+            return self._parse_note(payload)
+
+        if object_kind == "merge_request":
+            return self._parse_merge_request(payload)
+
+        return None
+
+    def _parse_note(
+        self,
+        payload: dict[str, Any],
+    ) -> PullRequestEvent | None:
+        """
+        Parse a Note Hook event on a merge request.
+
+        Args:
+            payload (dict[str, Any]): The webhook payload.
+
+        Returns:
+            PullRequestEvent | None: Parsed comment, or None if not relevant.
+        """
 
         object_attributes: dict[str, Any] = payload.get(
             "object_attributes",
@@ -159,7 +181,7 @@ class GitLabPlatform:
             object_attributes.get("discussion_id", ""),
         )
 
-        return ReviewComment(
+        return PullRequestEvent(
             platform=PlatformName.GITLAB,
             repo_full_name=repo_full_name,
             pr_number=merge_request.get("iid", 0),
@@ -170,20 +192,74 @@ class GitLabPlatform:
             diff_hunk=diff_hunk,
             file_path=file_path,
             clone_url=f"https://oauth2:{self.token}@{self._host}/{repo_full_name}.git",
-            comment_type=CommentType.NOTE,
+            event_type=EventType.NOTE,
             discussion_id=discussion_id,
+        )
+
+    def _parse_merge_request(
+        self,
+        payload: dict[str, Any],
+    ) -> PullRequestEvent | None:
+        """
+        Parse a Merge Request Hook lifecycle event.
+
+        Maps ``open``, ``reopen``, and ``update`` (with ``oldrev``) actions
+        to the corresponding EventType. WIP merge requests are skipped.
+
+        Args:
+            payload (dict[str, Any]): The webhook payload.
+
+        Returns:
+            PullRequestEvent | None: Parsed event, or None if not relevant.
+        """
+
+        object_attributes: dict[str, Any] = payload.get(
+            "object_attributes",
+            {},
+        )
+        action: str = object_attributes.get("action", "")
+
+        if action == "open":
+            event_type: EventType = EventType.PR_OPENED
+        elif action == "reopen":
+            event_type = EventType.PR_REOPENED
+        elif action == "update" and "oldrev" in object_attributes:
+            event_type = EventType.PR_PUSH
+        else:
+            return None
+
+        if object_attributes.get("work_in_progress", False):
+            return None
+
+        project: dict[str, Any] = payload.get("project", {})
+        repo_full_name: str = project.get("path_with_namespace", "")
+
+        return PullRequestEvent(
+            platform=PlatformName.GITLAB,
+            repo_full_name=repo_full_name,
+            pr_number=object_attributes.get("iid", 0),
+            pr_branch=object_attributes.get("source_branch", ""),
+            comment_id=0,
+            author_username="",
+            body="",
+            diff_hunk="",
+            file_path="",
+            clone_url=f"https://oauth2:{self.token}@{self._host}/{repo_full_name}.git",
+            event_type=event_type,
+            pr_title=object_attributes.get("title", ""),
+            pr_author=payload.get("user", {}).get("username", ""),
         )
 
     async def post_reply(
         self,
-        comment: ReviewComment,
+        comment: PullRequestEvent,
         reply: CommentReply,
     ) -> None:
         """
         Post a reply to a GitLab MR note.
 
         Args:
-            comment (ReviewComment): The original comment to reply to.
+            comment (PullRequestEvent): The original comment to reply to.
             reply (CommentReply): The reply content.
         """
 
@@ -218,14 +294,14 @@ class GitLabPlatform:
 
     async def post_reaction(
         self,
-        comment: ReviewComment,
+        comment: PullRequestEvent,
         reaction: str,
     ) -> None:
         """
         Add an award emoji to a GitLab MR note.
 
         Args:
-            comment (ReviewComment): The comment to react to.
+            comment (PullRequestEvent): The comment to react to.
             reaction (str): The emoji name (e.g. ``eyes``, ``thumbsup``).
         """
 
@@ -282,14 +358,14 @@ class GitLabPlatform:
 
             return True
 
-    async def fetch_pr_branch(self, comment: ReviewComment) -> str:
+    async def fetch_pr_branch(self, comment: PullRequestEvent) -> str:
         """
         Resolve the head branch for a merge request.
 
         GitLab webhooks always include the source branch, so this is a no-op.
 
         Args:
-            comment (ReviewComment): The comment with repo and MR info.
+            comment (PullRequestEvent): The event with repo and MR info.
 
         Returns:
             str: Always returns an empty string.
@@ -452,7 +528,7 @@ class GitLabPlatform:
         pr_number: int,
         findings: list[ReviewFinding],
         summary: str,
-        comment: ReviewComment,
+        comment: PullRequestEvent,
     ) -> None:
         """
         Submit a review on a GitLab MR via summary note and diff discussions.
@@ -465,7 +541,7 @@ class GitLabPlatform:
             pr_number (int): Merge request IID.
             findings (list[ReviewFinding]): Inline review comments.
             summary (str): High-level review summary.
-            comment (ReviewComment): The original comment that triggered the review.
+            comment (PullRequestEvent): The original event that triggered the review.
         """
 
         await self.post_reply(comment, CommentReply(body=summary))

@@ -5,12 +5,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nominal_code.bot_type import FileStatus, ReviewFinding
+from nominal_code.bot_type import EventType, FileStatus, ReviewFinding
 from nominal_code.platforms.base import (
     CommentReply,
-    CommentType,
     PlatformName,
-    ReviewComment,
+    PullRequestEvent,
 )
 from nominal_code.platforms.gitlab import (
     GitLabPlatform,
@@ -50,7 +49,7 @@ def _make_request(headers=None):
 
 
 def _make_comment():
-    return ReviewComment(
+    return PullRequestEvent(
         platform=PlatformName.GITLAB,
         repo_full_name="group/repo",
         pr_number=10,
@@ -61,7 +60,7 @@ def _make_comment():
         diff_hunk="",
         file_path="",
         clone_url="",
-        comment_type=CommentType.NOTE,
+        event_type=EventType.NOTE,
     )
 
 
@@ -128,7 +127,7 @@ class TestParseWebhook:
         payload = _note_payload()
         body = json.dumps(payload).encode()
         request = _make_request()
-        result = platform.parse_webhook(request, body)
+        result = platform.parse_event(request, body)
 
         assert result is not None
         assert result.platform == "gitlab"
@@ -138,14 +137,14 @@ class TestParseWebhook:
         assert result.comment_id == 500
         assert result.author_username == "alice"
         assert result.body == "@claude-bot fix this"
-        assert result.comment_type == CommentType.NOTE
+        assert result.event_type == EventType.NOTE
         assert result.discussion_id == "abc123def456"
 
     def test_parse_mr_note_without_discussion_id(self, platform):
         payload = _note_payload(discussion_id="")
         body = json.dumps(payload).encode()
         request = _make_request()
-        result = platform.parse_webhook(request, body)
+        result = platform.parse_event(request, body)
 
         assert result is not None
         assert result.discussion_id == ""
@@ -155,14 +154,14 @@ class TestParseWebhook:
         body = json.dumps(payload).encode()
         request = _make_request()
 
-        assert platform.parse_webhook(request, body) is None
+        assert platform.parse_event(request, body) is None
 
     def test_parse_note_on_issue_not_mr(self, platform):
         payload = _note_payload(noteable_type="Issue")
         body = json.dumps(payload).encode()
         request = _make_request()
 
-        assert platform.parse_webhook(request, body) is None
+        assert platform.parse_event(request, body) is None
 
     def test_parse_note_with_position(self, platform):
         payload = _note_payload()
@@ -172,7 +171,7 @@ class TestParseWebhook:
         }
         body = json.dumps(payload).encode()
         request = _make_request()
-        result = platform.parse_webhook(request, body)
+        result = platform.parse_event(request, body)
 
         assert result is not None
         assert result.file_path == "src/main.py"
@@ -181,7 +180,7 @@ class TestParseWebhook:
         payload = _note_payload()
         body = json.dumps(payload).encode()
         request = _make_request()
-        result = platform.parse_webhook(request, body)
+        result = platform.parse_event(request, body)
 
         assert result is not None
         assert result.clone_url == (
@@ -189,10 +188,133 @@ class TestParseWebhook:
         )
 
 
+class TestParseMergeRequest:
+    def test_parse_mr_opened(self, platform):
+        payload = {
+            "object_kind": "merge_request",
+            "user": {"username": "alice"},
+            "project": {"path_with_namespace": "group/repo"},
+            "object_attributes": {
+                "iid": 5,
+                "action": "open",
+                "source_branch": "feature",
+                "title": "New feature",
+                "work_in_progress": False,
+            },
+        }
+        body = json.dumps(payload).encode()
+        request = _make_request()
+        result = platform.parse_event(request, body)
+
+        assert result is not None
+        assert result.event_type == EventType.PR_OPENED
+        assert result.pr_number == 5
+        assert result.pr_branch == "feature"
+        assert result.pr_title == "New feature"
+        assert result.pr_author == "alice"
+        assert result.comment_id == 0
+        assert result.body == ""
+
+    def test_parse_mr_reopen(self, platform):
+        payload = {
+            "object_kind": "merge_request",
+            "user": {"username": "bob"},
+            "project": {"path_with_namespace": "group/repo"},
+            "object_attributes": {
+                "iid": 5,
+                "action": "reopen",
+                "source_branch": "fix",
+                "title": "Reopened MR",
+                "work_in_progress": False,
+            },
+        }
+        body = json.dumps(payload).encode()
+        request = _make_request()
+        result = platform.parse_event(request, body)
+
+        assert result is not None
+        assert result.event_type == EventType.PR_REOPENED
+
+    def test_parse_mr_update_with_oldrev(self, platform):
+        payload = {
+            "object_kind": "merge_request",
+            "user": {"username": "charlie"},
+            "project": {"path_with_namespace": "group/repo"},
+            "object_attributes": {
+                "iid": 5,
+                "action": "update",
+                "oldrev": "abc123",
+                "source_branch": "feature",
+                "title": "Push event",
+                "work_in_progress": False,
+            },
+        }
+        body = json.dumps(payload).encode()
+        request = _make_request()
+        result = platform.parse_event(request, body)
+
+        assert result is not None
+        assert result.event_type == EventType.PR_PUSH
+
+    def test_parse_mr_update_without_oldrev_ignored(self, platform):
+        payload = {
+            "object_kind": "merge_request",
+            "user": {"username": "alice"},
+            "project": {"path_with_namespace": "group/repo"},
+            "object_attributes": {
+                "iid": 5,
+                "action": "update",
+                "source_branch": "feature",
+                "title": "Title change",
+                "work_in_progress": False,
+            },
+        }
+        body = json.dumps(payload).encode()
+        request = _make_request()
+
+        assert platform.parse_event(request, body) is None
+
+    def test_parse_mr_wip_skipped(self, platform):
+        payload = {
+            "object_kind": "merge_request",
+            "user": {"username": "alice"},
+            "project": {"path_with_namespace": "group/repo"},
+            "object_attributes": {
+                "iid": 5,
+                "action": "open",
+                "source_branch": "wip-branch",
+                "title": "WIP: Draft MR",
+                "work_in_progress": True,
+            },
+        }
+        body = json.dumps(payload).encode()
+        request = _make_request()
+
+        assert platform.parse_event(request, body) is None
+
+    def test_parse_mr_close_ignored(self, platform):
+        payload = {
+            "object_kind": "merge_request",
+            "user": {"username": "alice"},
+            "project": {"path_with_namespace": "group/repo"},
+            "object_attributes": {
+                "iid": 5,
+                "action": "close",
+                "source_branch": "feature",
+                "title": "Closed MR",
+                "work_in_progress": False,
+            },
+        }
+        body = json.dumps(payload).encode()
+        request = _make_request()
+
+        assert platform.parse_event(request, body) is None
+
+
 class TestFetchPrBranch:
     @pytest.mark.asyncio
     async def test_fetch_pr_branch_returns_empty(self, platform):
-        comment = ReviewComment(
+        comment = PullRequestEvent(
             platform=PlatformName.GITLAB,
             repo_full_name="group/repo",
             pr_number=10,
@@ -227,7 +349,7 @@ class TestBuildReviewerCloneUrl:
 class TestPostReply:
     @pytest.mark.asyncio
     async def test_post_reply_with_discussion_id_uses_threaded_endpoint(self, platform):
-        comment = ReviewComment(
+        comment = PullRequestEvent(
             platform=PlatformName.GITLAB,
             repo_full_name="group/repo",
             pr_number=10,
@@ -238,7 +360,7 @@ class TestPostReply:
             diff_hunk="",
             file_path="",
             clone_url="",
-            comment_type=CommentType.NOTE,
+            event_type=EventType.NOTE,
             discussion_id="abc123def456",
         )
         reply = CommentReply(body="Fixed!")
@@ -261,7 +383,7 @@ class TestPostReply:
 
     @pytest.mark.asyncio
     async def test_post_reply_without_discussion_id_uses_notes_endpoint(self, platform):
-        comment = ReviewComment(
+        comment = PullRequestEvent(
             platform=PlatformName.GITLAB,
             repo_full_name="group/repo",
             pr_number=10,
@@ -272,7 +394,7 @@ class TestPostReply:
             diff_hunk="",
             file_path="",
             clone_url="",
-            comment_type=CommentType.NOTE,
+            event_type=EventType.NOTE,
             discussion_id="",
         )
         reply = CommentReply(body="Fixed!")
@@ -297,7 +419,7 @@ class TestPostReply:
 class TestPostReaction:
     @pytest.mark.asyncio
     async def test_post_reaction_success(self, platform):
-        comment = ReviewComment(
+        comment = PullRequestEvent(
             platform=PlatformName.GITLAB,
             repo_full_name="group/repo",
             pr_number=10,

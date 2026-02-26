@@ -5,17 +5,18 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from nominal_code.agent_runner import AgentResult
-from nominal_code.bot_type import BotType
+from nominal_code.bot_type import BotType, EventType
 from nominal_code.config import ReviewerConfig, WorkerConfig
 from nominal_code.handlers.shared import (
     build_system_prompt,
     detect_languages,
+    handle_auto_trigger,
     handle_comment,
     load_repo_guidelines,
     load_repo_language_guidelines,
     resolve_guidelines,
 )
-from nominal_code.platforms.base import PlatformName, ReviewComment
+from nominal_code.platforms.base import PlatformName, PullRequestEvent
 from nominal_code.session import SessionQueue, SessionStore
 
 
@@ -50,7 +51,7 @@ def _make_comment(
     diff_hunk="",
     file_path="",
 ):
-    return ReviewComment(
+    return PullRequestEvent(
         platform=platform,
         repo_full_name=repo,
         pr_number=pr_number,
@@ -70,6 +71,7 @@ def _make_platform():
     platform.post_reply = AsyncMock()
     platform.fetch_pr_branch = AsyncMock(return_value="")
     platform.fetch_pr_diff = AsyncMock(return_value=[])
+    platform.fetch_pr_comments = AsyncMock(return_value=[])
     platform.submit_review = AsyncMock()
     platform.build_reviewer_clone_url = MagicMock(
         return_value="https://ro-token@github.com/owner/repo.git",
@@ -333,3 +335,150 @@ class TestResolveGuidelines:
         result = resolve_guidelines(str(tmp_path), "", {}, [])
 
         assert result == ""
+
+
+class TestHandleAutoTrigger:
+    @pytest.mark.asyncio
+    async def test_handle_auto_trigger_enqueues_reviewer_job(self):
+        config = _make_config()
+        platform = _make_platform()
+        session_store = SessionStore()
+        session_queue = SessionQueue()
+
+        event = PullRequestEvent(
+            platform=PlatformName.GITHUB,
+            repo_full_name="owner/repo",
+            pr_number=1,
+            pr_branch="feature",
+            comment_id=0,
+            author_username="",
+            body="",
+            diff_hunk="",
+            file_path="",
+            clone_url="",
+            event_type=EventType.PR_OPENED,
+            pr_title="Add new feature",
+            pr_author="alice",
+        )
+
+        with patch(
+            "nominal_code.handlers.reviewer.run_agent",
+            new_callable=AsyncMock,
+        ) as mock_run:
+            mock_run.return_value = AgentResult(
+                output='{"summary": "Looks good", "comments": []}',
+                is_error=False,
+                num_turns=1,
+                duration_ms=1000,
+                session_id="sess-1",
+            )
+
+            with patch(
+                "nominal_code.handlers.reviewer.GitWorkspace",
+            ) as mock_ws_class:
+                mock_ws = MagicMock()
+                mock_ws.ensure_ready = AsyncMock()
+                mock_ws.repo_path = "/tmp/workspaces/owner/repo/pr-1"
+                mock_ws_class.return_value = mock_ws
+
+                await handle_auto_trigger(
+                    event=event,
+                    config=config,
+                    platform=platform,
+                    session_store=session_store,
+                    session_queue=session_queue,
+                )
+
+                await asyncio.sleep(0.1)
+
+            mock_run.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_handle_auto_trigger_skips_when_no_reviewer(self):
+        config = _make_config()
+        config.reviewer = None
+        platform = _make_platform()
+        session_store = SessionStore()
+        session_queue = SessionQueue()
+
+        event = PullRequestEvent(
+            platform=PlatformName.GITHUB,
+            repo_full_name="owner/repo",
+            pr_number=1,
+            pr_branch="feature",
+            comment_id=0,
+            author_username="",
+            body="",
+            diff_hunk="",
+            file_path="",
+            clone_url="",
+            event_type=EventType.PR_OPENED,
+            pr_title="Add feature",
+            pr_author="alice",
+        )
+
+        await handle_auto_trigger(
+            event=event,
+            config=config,
+            platform=platform,
+            session_store=session_store,
+            session_queue=session_queue,
+        )
+
+        platform.post_reaction.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_handle_auto_trigger_does_not_check_allowed_users(self):
+        config = _make_config(allowed_users=["alice"])
+        platform = _make_platform()
+        session_store = SessionStore()
+        session_queue = SessionQueue()
+
+        event = PullRequestEvent(
+            platform=PlatformName.GITHUB,
+            repo_full_name="owner/repo",
+            pr_number=1,
+            pr_branch="feature",
+            comment_id=0,
+            author_username="",
+            body="",
+            diff_hunk="",
+            file_path="",
+            clone_url="",
+            event_type=EventType.PR_OPENED,
+            pr_title="Add feature",
+            pr_author="eve",
+        )
+
+        with patch(
+            "nominal_code.handlers.reviewer.run_agent",
+            new_callable=AsyncMock,
+        ) as mock_run:
+            mock_run.return_value = AgentResult(
+                output='{"summary": "OK", "comments": []}',
+                is_error=False,
+                num_turns=1,
+                duration_ms=500,
+                session_id="sess-1",
+            )
+
+            with patch(
+                "nominal_code.handlers.reviewer.GitWorkspace",
+            ) as mock_ws_class:
+                mock_ws = MagicMock()
+                mock_ws.ensure_ready = AsyncMock()
+                mock_ws.repo_path = "/tmp/workspaces/owner/repo/pr-1"
+                mock_ws_class.return_value = mock_ws
+
+                await handle_auto_trigger(
+                    event=event,
+                    config=config,
+                    platform=platform,
+                    session_store=session_store,
+                    session_queue=session_queue,
+                )
+
+                await asyncio.sleep(0.1)
+
+            mock_run.assert_called_once()
+            platform.post_reaction.assert_not_called()

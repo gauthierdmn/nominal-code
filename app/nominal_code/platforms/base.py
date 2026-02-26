@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Protocol
 from aiohttp import web
 
 if TYPE_CHECKING:
-    from nominal_code.bot_type import ChangedFile, ReviewFinding
+    from nominal_code.bot_type import ChangedFile, EventType, ReviewFinding
 
 
 class PlatformName(StrEnum):
@@ -19,36 +19,33 @@ class PlatformName(StrEnum):
     GITLAB = "gitlab"
 
 
-class CommentType(StrEnum):
-    """
-    Event type that produced a review comment.
-    """
-
-    ISSUE_COMMENT = "issue_comment"
-    REVIEW_COMMENT = "review_comment"
-    REVIEW = "review"
-    NOTE = "note"
-
-
 @dataclass(frozen=True)
-class ReviewComment:
+class PullRequestEvent:
     """
-    Normalized review comment from either GitHub or GitLab.
+    Normalized event from either GitHub or GitLab.
+
+    Represents both comment events (triggered by @mentions) and lifecycle
+    events (triggered by PR state changes like opened, push, reopened).
 
     Attributes:
         platform (PlatformName): Source platform identifier.
         repo_full_name (str): Full repository name (e.g. ``owner/repo``).
         pr_number (int): Pull request or merge request number.
         pr_branch (str): The head branch name of the PR/MR.
-        comment_id (int): Unique comment identifier on the platform.
-        author_username (str): Username of the comment author.
-        body (str): The raw comment body text.
+        comment_id (int): Unique comment identifier on the platform, or 0
+            for lifecycle events.
+        author_username (str): Username of the comment author, or empty
+            for lifecycle events.
+        body (str): The raw comment body text, or empty for lifecycle events.
         diff_hunk (str): The diff hunk context around the comment.
         file_path (str): File path the comment is attached to.
         clone_url (str): Authenticated clone URL for the repository.
-        comment_type (CommentType | None): Event type that produced this comment,
+        event_type (EventType | None): The event type that produced this event,
             or None when unset.
         discussion_id (str): GitLab discussion ID for threaded replies.
+        pr_title (str): Pull request title, populated for lifecycle events.
+        pr_author (str): Pull request author username, populated for
+            lifecycle events.
     """
 
     platform: PlatformName
@@ -61,8 +58,10 @@ class ReviewComment:
     diff_hunk: str
     file_path: str
     clone_url: str
-    comment_type: CommentType | None = None
+    event_type: EventType | None = None
     discussion_id: str = ""
+    pr_title: str = ""
+    pr_author: str = ""
 
 
 @dataclass(frozen=True)
@@ -133,32 +132,32 @@ class Platform(Protocol):
 
         ...
 
-    def parse_webhook(self, request: web.Request, body: bytes) -> ReviewComment | None:
+    def parse_event(self, request: web.Request, body: bytes) -> PullRequestEvent | None:
         """
-        Parse a webhook payload into a ReviewComment.
+        Parse a webhook payload into a PullRequestEvent.
 
-        Returns None if the event type is not a relevant comment event.
+        Returns None if the event type is not relevant.
 
         Args:
             request (web.Request): The incoming HTTP request.
             body (bytes): The raw request body.
 
         Returns:
-            ReviewComment | None: The parsed comment, or None if irrelevant.
+            PullRequestEvent | None: The parsed event, or None if irrelevant.
         """
 
         ...
 
     async def post_reply(
         self,
-        comment: ReviewComment,
+        comment: PullRequestEvent,
         reply: CommentReply,
     ) -> None:
         """
         Post a reply to a review comment on the platform.
 
         Args:
-            comment (ReviewComment): The original comment to reply to.
+            comment (PullRequestEvent): The original comment to reply to.
             reply (CommentReply): The reply content.
         """
 
@@ -166,14 +165,14 @@ class Platform(Protocol):
 
     async def post_reaction(
         self,
-        comment: ReviewComment,
+        comment: PullRequestEvent,
         reaction: str,
     ) -> None:
         """
         Add a reaction/emoji to a comment on the platform.
 
         Args:
-            comment (ReviewComment): The comment to react to.
+            comment (PullRequestEvent): The comment to react to.
             reaction (str): The reaction name (e.g. ``eyes``, ``+1``).
         """
 
@@ -193,7 +192,7 @@ class Platform(Protocol):
 
         ...
 
-    async def fetch_pr_branch(self, comment: ReviewComment) -> str:
+    async def fetch_pr_branch(self, comment: PullRequestEvent) -> str:
         """
         Resolve the head branch name when the webhook payload lacks it.
 
@@ -201,7 +200,7 @@ class Platform(Protocol):
         return an empty string.
 
         Args:
-            comment (ReviewComment): The comment with repo and PR info.
+            comment (PullRequestEvent): The event with repo and PR info.
 
         Returns:
             str: The head branch name, or empty string if unavailable.
@@ -257,7 +256,7 @@ class ReviewerPlatform(Platform, Protocol):
         pr_number: int,
         findings: list[ReviewFinding],
         summary: str,
-        comment: ReviewComment,
+        comment: PullRequestEvent,
     ) -> None:
         """
         Submit a native code review with inline comments.
@@ -267,7 +266,7 @@ class ReviewerPlatform(Platform, Protocol):
             pr_number (int): Pull request or merge request number.
             findings (list[ReviewFinding]): Inline review comments.
             summary (str): High-level review summary.
-            comment (ReviewComment): The original comment that triggered the review.
+            comment (PullRequestEvent): The original event that triggered the review.
         """
 
         ...

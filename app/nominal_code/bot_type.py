@@ -4,6 +4,34 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 
+class EventType(StrEnum):
+    """
+    Discriminator for all PR/MR events the bot handles.
+
+    Covers both comment events (triggered by @mentions) and lifecycle
+    events (triggered by PR state changes).
+    """
+
+    ISSUE_COMMENT = "issue_comment"
+    REVIEW_COMMENT = "review_comment"
+    REVIEW = "review"
+    NOTE = "note"
+    PR_OPENED = "pr_opened"
+    PR_PUSH = "pr_push"
+    PR_REOPENED = "pr_reopened"
+    PR_READY_FOR_REVIEW = "pr_ready_for_review"
+
+
+COMMENT_EVENT_TYPES: frozenset[EventType] = frozenset(
+    {
+        EventType.ISSUE_COMMENT,
+        EventType.REVIEW_COMMENT,
+        EventType.REVIEW,
+        EventType.NOTE,
+    }
+)
+
+
 class BotType(StrEnum):
     """
     Identifiers for the two bot personalities.

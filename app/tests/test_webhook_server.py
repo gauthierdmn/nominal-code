@@ -5,14 +5,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import pytest_asyncio
 
-from nominal_code.bot_type import BotType
+from nominal_code.bot_type import BotType, EventType
 from nominal_code.config import ReviewerConfig, WorkerConfig
-from nominal_code.platforms.base import PlatformName, ReviewComment
+from nominal_code.platforms.base import PlatformName, PullRequestEvent
 from nominal_code.session import SessionQueue, SessionStore
 from nominal_code.webhook_server import create_app
 
 
-def _make_config(worker=True, reviewer=True):
+def _make_config(worker=True, reviewer=True, reviewer_triggers=None):
     config = MagicMock()
     config.worker = (
         WorkerConfig(bot_username="claude-worker", system_prompt="Be concise.")
@@ -29,6 +29,7 @@ def _make_config(worker=True, reviewer=True):
     config.agent_model = ""
     config.agent_max_turns = 0
     config.agent_cli_path = ""
+    config.reviewer_triggers = frozenset(reviewer_triggers or [])
 
     return config
 
@@ -36,7 +37,7 @@ def _make_config(worker=True, reviewer=True):
 def _make_github_platform():
     platform = MagicMock()
     platform.verify_webhook = MagicMock(return_value=True)
-    platform.parse_webhook = MagicMock(return_value=None)
+    platform.parse_event = MagicMock(return_value=None)
     platform.post_reaction = AsyncMock()
     platform.post_reply = AsyncMock()
     platform.fetch_pr_branch = AsyncMock(return_value="")
@@ -91,7 +92,7 @@ class TestGitHubWebhook:
 
     @pytest.mark.asyncio
     async def test_github_webhook_irrelevant_event(self, client, app):
-        app["platforms"]["github"].parse_webhook.return_value = None
+        app["platforms"]["github"].parse_event.return_value = None
         payload = {"action": "opened"}
 
         response = await client.post(
@@ -108,7 +109,7 @@ class TestGitHubWebhook:
 
     @pytest.mark.asyncio
     async def test_github_webhook_no_mention(self, client, app):
-        comment = ReviewComment(
+        comment = PullRequestEvent(
             platform=PlatformName.GITHUB,
             repo_full_name="owner/repo",
             pr_number=1,
@@ -120,7 +121,7 @@ class TestGitHubWebhook:
             file_path="",
             clone_url="",
         )
-        app["platforms"]["github"].parse_webhook.return_value = comment
+        app["platforms"]["github"].parse_event.return_value = comment
 
         response = await client.post(
             "/webhooks/github",
@@ -136,7 +137,7 @@ class TestGitHubWebhook:
 
     @pytest.mark.asyncio
     async def test_github_webhook_worker_mention(self, client, app):
-        comment = ReviewComment(
+        comment = PullRequestEvent(
             platform=PlatformName.GITHUB,
             repo_full_name="owner/repo",
             pr_number=1,
@@ -148,7 +149,7 @@ class TestGitHubWebhook:
             file_path="",
             clone_url="",
         )
-        app["platforms"]["github"].parse_webhook.return_value = comment
+        app["platforms"]["github"].parse_event.return_value = comment
 
         with patch(
             "nominal_code.webhook_server.handle_comment",
@@ -173,7 +174,7 @@ class TestGitHubWebhook:
 
     @pytest.mark.asyncio
     async def test_github_webhook_reviewer_mention(self, client, app):
-        comment = ReviewComment(
+        comment = PullRequestEvent(
             platform=PlatformName.GITHUB,
             repo_full_name="owner/repo",
             pr_number=1,
@@ -185,7 +186,7 @@ class TestGitHubWebhook:
             file_path="",
             clone_url="",
         )
-        app["platforms"]["github"].parse_webhook.return_value = comment
+        app["platforms"]["github"].parse_event.return_value = comment
 
         with patch(
             "nominal_code.webhook_server.handle_comment",
@@ -214,7 +215,7 @@ class TestGitHubWebhook:
         client,
         app,
     ):
-        comment = ReviewComment(
+        comment = PullRequestEvent(
             platform=PlatformName.GITHUB,
             repo_full_name="owner/repo",
             pr_number=1,
@@ -226,7 +227,7 @@ class TestGitHubWebhook:
             file_path="",
             clone_url="",
         )
-        app["platforms"]["github"].parse_webhook.return_value = comment
+        app["platforms"]["github"].parse_event.return_value = comment
 
         with patch(
             "nominal_code.webhook_server.handle_comment",
@@ -259,7 +260,7 @@ class TestSingleBotConfig:
         )
         client = await aiohttp_client(app)
 
-        comment = ReviewComment(
+        comment = PullRequestEvent(
             platform=PlatformName.GITHUB,
             repo_full_name="owner/repo",
             pr_number=1,
@@ -271,7 +272,7 @@ class TestSingleBotConfig:
             file_path="",
             clone_url="",
         )
-        app["platforms"]["github"].parse_webhook.return_value = comment
+        app["platforms"]["github"].parse_event.return_value = comment
 
         response = await client.post(
             "/webhooks/github",
@@ -299,7 +300,7 @@ class TestSingleBotConfig:
         )
         client = await aiohttp_client(app)
 
-        comment = ReviewComment(
+        comment = PullRequestEvent(
             platform=PlatformName.GITHUB,
             repo_full_name="owner/repo",
             pr_number=1,
@@ -311,7 +312,7 @@ class TestSingleBotConfig:
             file_path="",
             clone_url="",
         )
-        app["platforms"]["github"].parse_webhook.return_value = comment
+        app["platforms"]["github"].parse_event.return_value = comment
 
         response = await client.post(
             "/webhooks/github",
@@ -324,3 +325,151 @@ class TestSingleBotConfig:
         data = await response.json()
 
         assert data["status"] == "no_mention"
+
+
+class TestAutoTrigger:
+    @pytest.mark.asyncio
+    async def test_auto_trigger_dispatches_when_configured(self, aiohttp_client):
+        config = _make_config(
+            reviewer=True,
+            reviewer_triggers=[EventType.PR_OPENED],
+        )
+        github_platform = _make_github_platform()
+        platforms = {"github": github_platform}
+
+        app = create_app(
+            config=config,
+            platforms=platforms,
+            session_store=SessionStore(),
+            session_queue=SessionQueue(),
+        )
+        client = await aiohttp_client(app)
+
+        event = PullRequestEvent(
+            platform=PlatformName.GITHUB,
+            repo_full_name="owner/repo",
+            pr_number=1,
+            pr_branch="feature",
+            comment_id=0,
+            author_username="",
+            body="",
+            diff_hunk="",
+            file_path="",
+            clone_url="",
+            event_type=EventType.PR_OPENED,
+            pr_title="Add new feature",
+            pr_author="alice",
+        )
+        app["platforms"]["github"].parse_event.return_value = event
+
+        with patch(
+            "nominal_code.webhook_server.handle_auto_trigger",
+            new_callable=AsyncMock,
+        ) as mock_auto:
+            response = await client.post(
+                "/webhooks/github",
+                data=b"{}",
+                headers={"Content-Type": "application/json"},
+            )
+
+            assert response.status == 200
+
+            data = await response.json()
+
+            assert data["status"] == "accepted"
+            mock_auto.assert_called_once()
+            call_kwargs = mock_auto.call_args.kwargs
+
+            assert call_kwargs["event"] is event
+
+    @pytest.mark.asyncio
+    async def test_lifecycle_event_ignored_when_triggers_not_configured(
+        self,
+        aiohttp_client,
+    ):
+        config = _make_config(reviewer=True, reviewer_triggers=[])
+        github_platform = _make_github_platform()
+        platforms = {"github": github_platform}
+
+        app = create_app(
+            config=config,
+            platforms=platforms,
+            session_store=SessionStore(),
+            session_queue=SessionQueue(),
+        )
+        client = await aiohttp_client(app)
+
+        event = PullRequestEvent(
+            platform=PlatformName.GITHUB,
+            repo_full_name="owner/repo",
+            pr_number=1,
+            pr_branch="feature",
+            comment_id=0,
+            author_username="",
+            body="",
+            diff_hunk="",
+            file_path="",
+            clone_url="",
+            event_type=EventType.PR_OPENED,
+            pr_title="New feature",
+            pr_author="alice",
+        )
+        app["platforms"]["github"].parse_event.return_value = event
+
+        response = await client.post(
+            "/webhooks/github",
+            data=b"{}",
+            headers={"Content-Type": "application/json"},
+        )
+
+        assert response.status == 200
+
+        data = await response.json()
+
+        assert data["status"] == "ignored"
+
+    @pytest.mark.asyncio
+    async def test_unconfigured_lifecycle_event_type_ignored(self, aiohttp_client):
+        config = _make_config(
+            reviewer=True,
+            reviewer_triggers=[EventType.PR_OPENED],
+        )
+        github_platform = _make_github_platform()
+        platforms = {"github": github_platform}
+
+        app = create_app(
+            config=config,
+            platforms=platforms,
+            session_store=SessionStore(),
+            session_queue=SessionQueue(),
+        )
+        client = await aiohttp_client(app)
+
+        event = PullRequestEvent(
+            platform=PlatformName.GITHUB,
+            repo_full_name="owner/repo",
+            pr_number=1,
+            pr_branch="feature",
+            comment_id=0,
+            author_username="",
+            body="",
+            diff_hunk="",
+            file_path="",
+            clone_url="",
+            event_type=EventType.PR_PUSH,
+            pr_title="Push event",
+            pr_author="bob",
+        )
+        app["platforms"]["github"].parse_event.return_value = event
+
+        response = await client.post(
+            "/webhooks/github",
+            data=b"{}",
+            headers={"Content-Type": "application/json"},
+        )
+
+        assert response.status == 200
+
+        data = await response.json()
+
+        assert data["status"] == "ignored"

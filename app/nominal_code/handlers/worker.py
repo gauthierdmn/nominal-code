@@ -11,7 +11,7 @@ from nominal_code.handlers.shared import (
     resolve_branch,
     resolve_guidelines,
 )
-from nominal_code.platforms.base import CommentReply, ReviewComment
+from nominal_code.platforms.base import CommentReply, PullRequestEvent
 
 if TYPE_CHECKING:
     from nominal_code.config import Config
@@ -22,7 +22,7 @@ logger: logging.Logger = logging.getLogger(__name__)
 
 
 async def process_comment(
-    comment: ReviewComment,
+    comment: PullRequestEvent,
     prompt: str,
     config: Config,
     platform: Platform,
@@ -32,14 +32,14 @@ async def process_comment(
     Process a comment using the worker bot: clone, run agent, post reply.
 
     Args:
-        comment (ReviewComment): The parsed review comment.
+        comment (PullRequestEvent): The parsed review comment.
         prompt (str): The extracted prompt.
         config (Config): Application configuration.
         platform (Platform): The platform client.
         session_store (SessionStore): Agent session store.
     """
 
-    effective_comment: ReviewComment | None = await resolve_branch(comment, platform)
+    effective_comment: PullRequestEvent | None = await resolve_branch(comment, platform)
 
     if effective_comment is None:
         return
@@ -139,7 +139,7 @@ async def process_comment(
 
 
 def build_prompt(
-    comment: ReviewComment,
+    comment: PullRequestEvent,
     user_prompt: str,
     deps_path: str = "",
 ) -> str:
@@ -149,7 +149,7 @@ def build_prompt(
     Includes file path, diff hunk, and branch context when available.
 
     Args:
-        comment (ReviewComment): The review comment with context.
+        comment (PullRequestEvent): The review comment with context.
         user_prompt (str): The user's extracted prompt text.
         deps_path (str): Path to the shared dependencies directory.
 

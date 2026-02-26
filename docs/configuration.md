@@ -28,6 +28,7 @@ The bot is configured entirely via environment variables. You can set them in a 
 | `REVIEWER_SYSTEM_PROMPT` | No | `reviewer_prompt.md` | Path to a system prompt file for the reviewer bot |
 | `CODING_GUIDELINES` | No | `coding_guidelines.md` | Path to a coding guidelines file appended to the system prompt |
 | `CLEANUP_INTERVAL_HOURS` | No | `6` | Hours between workspace cleanup runs (`0` to disable) |
+| `REVIEWER_TRIGGERS` | No | — | Comma-separated PR lifecycle events that auto-trigger the reviewer (e.g. `pr_opened,pr_push`) |
 | `LOG_LEVEL` | No | `INFO` | Python log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
 
 \*At least one of `WORKER_BOT_USERNAME` or `REVIEWER_BOT_USERNAME` must be set. You can deploy worker-only, reviewer-only, or both.
@@ -53,6 +54,25 @@ Path to a coding guidelines file that gets appended to both the worker and revie
 ## Per-Repo Overrides
 
 Repositories can include a `.nominal/guidelines.md` file at their root. When present, its contents are appended to the system prompt for that repository — allowing teams to specify project-specific conventions, frameworks, or review criteria without changing the global configuration.
+
+## Auto-Trigger
+
+The reviewer bot can be configured to automatically run on PR lifecycle events, without requiring an `@mention` in a comment. Set `REVIEWER_TRIGGERS` to a comma-separated list of event types:
+
+```bash
+REVIEWER_TRIGGERS=pr_opened,pr_push
+```
+
+| Event Type | GitHub Source | GitLab Source |
+|---|---|---|
+| `pr_opened` | PR opened | MR opened |
+| `pr_push` | New commits pushed to PR | MR updated with new commits |
+| `pr_reopened` | PR reopened | MR reopened |
+| `pr_ready_for_review` | PR marked ready (was draft) | _(not available)_ |
+
+When unset or empty, auto-triggering is disabled and the reviewer only responds to `@mentions` (backward compatible).
+
+Auto-triggered reviews skip the `ALLOWED_USERS` check since there is no comment author. Draft PRs on GitHub and WIP merge requests on GitLab are automatically skipped.
 
 ## Reviewer Token Separation
 

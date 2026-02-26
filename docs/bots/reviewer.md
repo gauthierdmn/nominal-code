@@ -16,6 +16,20 @@ You can optionally include specific instructions:
 @my-reviewer focus on error handling
 ```
 
+## Auto-Trigger on PR Events
+
+The reviewer can also run automatically when a PR is opened, updated, or reopened — without anyone leaving a comment. Set the `REVIEWER_TRIGGERS` environment variable:
+
+```bash
+REVIEWER_TRIGGERS=pr_opened,pr_push
+```
+
+Supported event types: `pr_opened`, `pr_push`, `pr_reopened`, `pr_ready_for_review`.
+
+Auto-triggered reviews work the same as mention-triggered reviews, but with no user prompt (the reviewer uses the diff and its system prompt). Draft PRs (GitHub) and WIP merge requests (GitLab) are skipped. The `ALLOWED_USERS` check is also skipped since there is no comment author.
+
+See [Configuration](../configuration.md#auto-trigger) for the full event mapping.
+
 ## What It Does
 
 1. Clones the repository (or updates an existing workspace) to the PR's head branch.

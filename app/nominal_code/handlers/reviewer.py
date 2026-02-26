@@ -23,7 +23,7 @@ from nominal_code.handlers.shared import (
 from nominal_code.platforms.base import (
     CommentReply,
     ExistingComment,
-    ReviewComment,
+    PullRequestEvent,
 )
 
 if TYPE_CHECKING:
@@ -70,7 +70,7 @@ class ExecuteReviewResult:
 
 
 async def execute_review(
-    comment: ReviewComment,
+    comment: PullRequestEvent,
     prompt: str,
     config: Config,
     platform: ReviewerPlatform,
@@ -84,7 +84,7 @@ async def execute_review(
     comments, runs the agent, parses the output, and filters findings.
 
     Args:
-        comment (ReviewComment): The parsed review comment.
+        comment (PullRequestEvent): The parsed review comment.
         prompt (str): The extracted prompt.
         config (Config): Application configuration.
         platform (ReviewerPlatform): The platform client with reviewer capabilities.
@@ -101,7 +101,7 @@ async def execute_review(
     reviewer_clone_url: str = platform.build_reviewer_clone_url(
         comment.repo_full_name,
     )
-    effective_comment: ReviewComment = replace(comment, clone_url=reviewer_clone_url)
+    effective_comment: PullRequestEvent = replace(comment, clone_url=reviewer_clone_url)
 
     workspace: GitWorkspace = GitWorkspace(
         base_dir=config.workspace_base_dir,
@@ -282,7 +282,7 @@ async def execute_review(
 
 
 async def process_comment(
-    comment: ReviewComment,
+    comment: PullRequestEvent,
     prompt: str,
     config: Config,
     platform: ReviewerPlatform,
@@ -292,14 +292,14 @@ async def process_comment(
     Process a comment using the reviewer bot: fetch diff, run agent, submit review.
 
     Args:
-        comment (ReviewComment): The parsed review comment.
+        comment (PullRequestEvent): The parsed review comment.
         prompt (str): The extracted prompt.
         config (Config): Application configuration.
         platform (ReviewerPlatform): The platform client with reviewer capabilities.
         session_store (SessionStore): Agent session store.
     """
 
-    effective_comment: ReviewComment | None = await resolve_branch(comment, platform)
+    effective_comment: PullRequestEvent | None = await resolve_branch(comment, platform)
 
     if effective_comment is None:
         return
@@ -362,7 +362,7 @@ async def process_comment(
 
 
 def build_reviewer_prompt(
-    comment: ReviewComment,
+    comment: PullRequestEvent,
     user_prompt: str,
     changed_files: list[ChangedFile],
     deps_path: str = "",
@@ -372,7 +372,7 @@ def build_reviewer_prompt(
     Build a prompt for the reviewer bot including the full PR diff.
 
     Args:
-        comment (ReviewComment): The review comment with context.
+        comment (PullRequestEvent): The review comment with context.
         user_prompt (str): The user's extracted prompt text.
         changed_files (list[ChangedFile]): Files changed in the PR.
         deps_path (str): Path to the shared dependencies directory.
