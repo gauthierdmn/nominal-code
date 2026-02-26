@@ -72,7 +72,7 @@ class TestWorkerProcessComment:
         session_store = SessionStore()
 
         with patch(
-            "nominal_code.handlers.worker.run_agent",
+            "nominal_code.handlers.common.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -84,7 +84,7 @@ class TestWorkerProcessComment:
             )
 
             with patch(
-                "nominal_code.handlers.worker.GitWorkspace",
+                "nominal_code.handlers.common.GitWorkspace",
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
@@ -114,7 +114,7 @@ class TestWorkerProcessComment:
         session_store = SessionStore()
 
         with patch(
-            "nominal_code.handlers.worker.run_agent",
+            "nominal_code.handlers.common.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -126,7 +126,7 @@ class TestWorkerProcessComment:
             )
 
             with patch(
-                "nominal_code.handlers.worker.GitWorkspace",
+                "nominal_code.handlers.common.GitWorkspace",
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
@@ -134,7 +134,7 @@ class TestWorkerProcessComment:
                 mock_ws_class.return_value = mock_ws
 
                 with patch(
-                    "nominal_code.handlers.worker.resolve_guidelines",
+                    "nominal_code.handlers.common.resolve_guidelines",
                     return_value="Repo guidelines override",
                 ) as mock_resolve:
                     await review_and_fix(

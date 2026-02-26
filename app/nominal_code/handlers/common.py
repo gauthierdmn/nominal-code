@@ -2,17 +2,25 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
+from nominal_code.agent_runner import AgentResult, run_agent
 from nominal_code.bot_type import BotType
-from nominal_code.platforms.base import CommentEvent, CommentReply, LifecycleEvent, PullRequestEvent
+from nominal_code.git_workspace import GitWorkspace
+from nominal_code.platforms.base import (
+    CommentEvent,
+    CommentReply,
+    LifecycleEvent,
+    PullRequestEvent,
+)
 
 if TYPE_CHECKING:
     from nominal_code.config import Config
     from nominal_code.platforms.base import Platform
-    from nominal_code.session import SessionQueue
+    from nominal_code.session import SessionQueue, SessionStore
 
 NOMINAL_CONFIG_DIR: str = ".nominal"
 REPO_GUIDELINES_PATH: str = os.path.join(NOMINAL_CONFIG_DIR, "guidelines.md")
@@ -273,3 +281,201 @@ def build_system_prompt(system_prompt: str, guidelines: str) -> str:
     parts: list[str] = [part for part in (system_prompt, guidelines) if part]
 
     return "\n\n".join(parts)
+
+
+def create_workspace(
+    event: PullRequestEvent,
+    config: Config,
+) -> GitWorkspace:
+    """
+    Construct a GitWorkspace from the event and config without any I/O.
+
+    Use this when you need to run ``ensure_ready()`` separately (e.g. inside
+    an ``asyncio.gather``). For the full setup pipeline, use ``setup_workspace``.
+
+    Args:
+        event (PullRequestEvent): The event with repository and branch info.
+        config (Config): Application configuration.
+
+    Returns:
+        GitWorkspace: The constructed (but not yet cloned) workspace.
+    """
+
+    return GitWorkspace(
+        base_dir=config.workspace_base_dir,
+        repo_full_name=event.repo_full_name,
+        pr_number=event.pr_number,
+        clone_url=event.clone_url,
+        branch=event.pr_branch,
+    )
+
+
+async def setup_workspace(
+    event: PullRequestEvent,
+    config: Config,
+) -> GitWorkspace:
+    """
+    Create a workspace, clone/reset it, and ensure the deps directory exists.
+
+    Combines ``create_workspace``, ``ensure_ready``, and ``ensure_deps_dir``
+    into a single call. Lets ``RuntimeError`` from ``ensure_ready`` propagate.
+
+    Args:
+        event (PullRequestEvent): The event with repository and branch info.
+        config (Config): Application configuration.
+
+    Returns:
+        GitWorkspace: The fully ready workspace.
+
+    Raises:
+        RuntimeError: If the git workspace cannot be set up.
+    """
+
+    workspace: GitWorkspace = create_workspace(event, config)
+
+    await workspace.ensure_ready()
+    workspace.ensure_deps_dir()
+
+    return workspace
+
+
+def resolve_system_prompt(
+    workspace: GitWorkspace,
+    config: Config,
+    bot_system_prompt: str,
+    file_paths: list[str],
+) -> str:
+    """
+    Resolve guidelines and compose the full system prompt.
+
+    Combines ``resolve_guidelines`` and ``build_system_prompt`` into a single
+    call to avoid duplicating the pattern in every handler.
+
+    Args:
+        workspace (GitWorkspace): The workspace with the cloned repo.
+        config (Config): Application configuration.
+        bot_system_prompt (str): The bot-specific base system prompt.
+        file_paths (list[str]): File paths used to detect relevant languages.
+
+    Returns:
+        str: The combined system prompt with guidelines.
+    """
+
+    effective_guidelines: str = resolve_guidelines(
+        workspace.repo_path,
+        config.coding_guidelines,
+        config.language_guidelines,
+        file_paths,
+    )
+
+    return build_system_prompt(bot_system_prompt, effective_guidelines)
+
+
+async def run_and_track_session(
+    event: PullRequestEvent,
+    bot_type: BotType,
+    session_store: SessionStore | None,
+    system_prompt: str,
+    prompt: str,
+    cwd: str,
+    config: Config,
+    allowed_tools: list[str] | None = None,
+    session_id_override: str | None = None,
+) -> AgentResult:
+    """
+    Run the agent and persist the session ID if a store is provided.
+
+    Looks up the existing session (or uses ``session_id_override`` for retries),
+    calls ``run_agent``, and stores the new session ID on success.
+
+    Args:
+        event (PullRequestEvent): The event that triggered the agent run.
+        bot_type (BotType): Which bot personality is running.
+        session_store (SessionStore | None): Session store (None to skip).
+        system_prompt (str): The composed system prompt.
+        prompt (str): The user/PR prompt to send to the agent.
+        cwd (str): Working directory for the agent.
+        config (Config): Application configuration.
+        allowed_tools (list[str] | None): Restrict which tools the agent may use.
+        session_id_override (str | None): Override session ID (e.g. for retries).
+
+    Returns:
+        AgentResult: The agent execution result.
+    """
+
+    existing_session: str | None = session_id_override
+
+    if existing_session is None and session_store is not None:
+        existing_session = session_store.get(
+            event.platform,
+            event.repo_full_name,
+            event.pr_number,
+            bot_type.value,
+        )
+
+    kwargs: dict[str, object] = {
+        "prompt": prompt,
+        "cwd": cwd,
+        "model": config.agent_model,
+        "max_turns": config.agent_max_turns,
+        "cli_path": config.agent_cli_path,
+        "session_id": existing_session or "",
+        "system_prompt": system_prompt,
+        "permission_mode": "bypassPermissions",
+    }
+
+    if allowed_tools is not None:
+        kwargs["allowed_tools"] = allowed_tools
+
+    result: AgentResult = await run_agent(**kwargs)  # type: ignore[arg-type]
+
+    if session_store is not None and result.session_id:
+        session_store.set(
+            event.platform,
+            event.repo_full_name,
+            event.pr_number,
+            bot_type.value,
+            result.session_id,
+        )
+
+    return result
+
+
+@asynccontextmanager
+async def handle_agent_errors(
+    event: PullRequestEvent,
+    platform: Platform,
+    agent_label: str,
+) -> AsyncIterator[None]:
+    """
+    Context manager that catches workspace and agent errors and posts replies.
+
+    Catches ``RuntimeError`` (workspace setup failures) and generic
+    ``Exception`` (agent runtime errors), logs them, and posts a user-facing
+    error message to the platform.
+
+    Args:
+        event (PullRequestEvent): The event to reply to on error.
+        platform (Platform): The platform client for posting replies.
+        agent_label (str): Label for log messages (e.g. ``worker``, ``reviewer``).
+
+    Yields:
+        None: Control to the caller's body block.
+    """
+
+    try:
+        yield
+    except RuntimeError:
+        logger.exception("Failed to set up workspace")
+
+        await platform.post_reply(
+            event,
+            CommentReply(body="Failed to set up the git workspace."),
+        )
+    except Exception:
+        logger.exception("Error running agent (%s)", agent_label)
+
+        await platform.post_reply(
+            event,
+            CommentReply(body="An unexpected error occurred while running the agent."),
+        )

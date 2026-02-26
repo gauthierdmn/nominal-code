@@ -7,18 +7,18 @@ import re
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
-from nominal_code.agent_runner import AgentResult, run_agent
 from nominal_code.bot_type import (
     AgentReview,
     BotType,
     ChangedFile,
     ReviewFinding,
 )
-from nominal_code.git_workspace import GitWorkspace
 from nominal_code.handlers.common import (
-    build_system_prompt,
+    create_workspace,
+    handle_agent_errors,
     resolve_branch,
-    resolve_guidelines,
+    resolve_system_prompt,
+    run_and_track_session,
 )
 from nominal_code.platforms.base import (
     CommentReply,
@@ -27,7 +27,9 @@ from nominal_code.platforms.base import (
 )
 
 if TYPE_CHECKING:
+    from nominal_code.agent_runner import AgentResult
     from nominal_code.config import Config
+    from nominal_code.git_workspace import GitWorkspace
     from nominal_code.platforms.base import ReviewerPlatform
     from nominal_code.session import SessionStore
 
@@ -101,13 +103,7 @@ async def review(
     )
     effective_event: PullRequestEvent = replace(event, clone_url=reviewer_clone_url)
 
-    workspace: GitWorkspace = GitWorkspace(
-        base_dir=config.workspace_base_dir,
-        repo_full_name=effective_event.repo_full_name,
-        pr_number=effective_event.pr_number,
-        clone_url=effective_event.clone_url,
-        branch=effective_event.pr_branch,
-    )
+    workspace: GitWorkspace = create_workspace(effective_event, config)
 
     results: tuple[
         list[ChangedFile], list[ExistingComment], None
@@ -139,53 +135,24 @@ async def review(
         existing_comments=existing_comments,
     )
 
-    existing_session: str | None = None
-
-    if session_store is not None:
-        existing_session = session_store.get(
-            event.platform,
-            event.repo_full_name,
-            event.pr_number,
-            BotType.REVIEWER.value,
-        )
-
     if config.reviewer is None:
         raise RuntimeError("Reviewer config is required but not configured")
 
     file_paths: list[str] = [changed.file_path for changed in changed_files]
-
-    effective_guidelines: str = resolve_guidelines(
-        workspace.repo_path,
-        config.coding_guidelines,
-        config.language_guidelines,
-        file_paths,
+    combined_system_prompt: str = resolve_system_prompt(
+        workspace, config, config.reviewer.system_prompt, file_paths,
     )
 
-    combined_system_prompt: str = build_system_prompt(
-        config.reviewer.system_prompt,
-        effective_guidelines,
-    )
-
-    result: AgentResult = await run_agent(
+    result: AgentResult = await run_and_track_session(
+        event=event,
+        bot_type=BotType.REVIEWER,
+        session_store=session_store,
+        system_prompt=combined_system_prompt,
         prompt=full_prompt,
         cwd=workspace.repo_path,
-        model=config.agent_model,
-        max_turns=config.agent_max_turns,
-        cli_path=config.agent_cli_path,
-        session_id=existing_session or "",
-        system_prompt=combined_system_prompt,
-        permission_mode="bypassPermissions",
+        config=config,
         allowed_tools=REVIEWER_ALLOWED_TOOLS,
     )
-
-    if session_store is not None and result.session_id:
-        session_store.set(
-            event.platform,
-            event.repo_full_name,
-            event.pr_number,
-            BotType.REVIEWER.value,
-            result.session_id,
-        )
 
     review_result: AgentReview | None = parse_review_output(result.output)
 
@@ -203,26 +170,17 @@ async def review(
             MAX_REVIEW_RETRIES,
         )
 
-        result = await run_agent(
+        result = await run_and_track_session(
+            event=event,
+            bot_type=BotType.REVIEWER,
+            session_store=session_store,
+            system_prompt=combined_system_prompt,
             prompt=retry_prompt,
             cwd=workspace.repo_path,
-            model=config.agent_model,
-            max_turns=config.agent_max_turns,
-            cli_path=config.agent_cli_path,
-            session_id=result.session_id,
-            system_prompt=combined_system_prompt,
-            permission_mode="bypassPermissions",
+            config=config,
             allowed_tools=REVIEWER_ALLOWED_TOOLS,
+            session_id_override=result.session_id,
         )
-
-        if session_store is not None and result.session_id:
-            session_store.set(
-                event.platform,
-                event.repo_full_name,
-                event.pr_number,
-                BotType.REVIEWER.value,
-                result.session_id,
-            )
 
         review_result = parse_review_output(result.output)
 
@@ -307,7 +265,7 @@ async def review_and_post(
 
     bot_username: str = config.reviewer.bot_username
 
-    try:
+    async with handle_agent_errors(event, platform, "reviewer"):
         review_result: ReviewResult = await review(
             event=effective_event,
             prompt=prompt,
@@ -316,47 +274,28 @@ async def review_and_post(
             session_store=session_store,
             bot_username=bot_username,
         )
-    except RuntimeError:
-        logger.exception("Failed to set up workspace")
 
-        await platform.post_reply(
-            event,
-            CommentReply(body="Failed to set up the git workspace."),
-        )
+        if review_result.agent_review is None:
+            await platform.post_reply(
+                event,
+                CommentReply(body=review_result.raw_output),
+            )
 
-        return
+            return
 
-    except Exception:
-        logger.exception("Error running agent (reviewer)")
-
-        await platform.post_reply(
-            event,
-            CommentReply(body="An unexpected error occurred while running the agent."),
-        )
-
-        return
-
-    if review_result.agent_review is None:
-        await platform.post_reply(
-            event,
-            CommentReply(body=review_result.raw_output),
-        )
-
-        return
-
-    if review_result.valid_findings:
-        await platform.submit_review(
-            repo_full_name=event.repo_full_name,
-            pr_number=event.pr_number,
-            findings=review_result.valid_findings,
-            summary=review_result.effective_summary,
-            event=event,
-        )
-    else:
-        await platform.post_reply(
-            event,
-            CommentReply(body=review_result.effective_summary),
-        )
+        if review_result.valid_findings:
+            await platform.submit_review(
+                repo_full_name=event.repo_full_name,
+                pr_number=event.pr_number,
+                findings=review_result.valid_findings,
+                summary=review_result.effective_summary,
+                event=event,
+            )
+        else:
+            await platform.post_reply(
+                event,
+                CommentReply(body=review_result.effective_summary),
+            )
 
 
 def build_reviewer_prompt(

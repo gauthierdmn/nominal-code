@@ -3,18 +3,19 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from nominal_code.agent_runner import AgentResult, run_agent
 from nominal_code.bot_type import BotType
-from nominal_code.git_workspace import GitWorkspace
 from nominal_code.handlers.common import (
-    build_system_prompt,
+    handle_agent_errors,
     resolve_branch,
-    resolve_guidelines,
+    resolve_system_prompt,
+    run_and_track_session,
+    setup_workspace,
 )
 from nominal_code.platforms.base import CommentEvent, CommentReply
 
 if TYPE_CHECKING:
     from nominal_code.config import Config
+    from nominal_code.git_workspace import GitWorkspace
     from nominal_code.platforms.base import Platform
     from nominal_code.session import SessionStore
 
@@ -44,83 +45,35 @@ async def review_and_fix(
     if effective_event is None:
         return
 
-    workspace: GitWorkspace = GitWorkspace(
-        base_dir=config.workspace_base_dir,
-        repo_full_name=effective_event.repo_full_name,
-        pr_number=effective_event.pr_number,
-        clone_url=effective_event.clone_url,
-        branch=effective_event.pr_branch,
-    )
+    async with handle_agent_errors(event, platform, "worker"):
+        workspace: GitWorkspace = await setup_workspace(effective_event, config)
 
-    try:
-        await workspace.ensure_ready()
-    except RuntimeError:
-        logger.exception("Failed to set up workspace")
-
-        await platform.post_reply(
-            event,
-            CommentReply(body="Failed to set up the git workspace."),
-        )
-
-        return
-
-    workspace.ensure_deps_dir()
-
-    full_prompt: str = build_prompt(
-        effective_event,
-        prompt,
-        deps_path=workspace.deps_path,
-    )
-    existing_session: str | None = session_store.get(
-        event.platform,
-        event.repo_full_name,
-        event.pr_number,
-        BotType.WORKER.value,
-    )
-
-    try:
         if config.worker is None:
             raise RuntimeError("Worker config is required but not configured")
 
         file_paths: list[str] = (
             [effective_event.file_path] if effective_event.file_path else []
         )
-
-        effective_guidelines: str = resolve_guidelines(
-            workspace.repo_path,
-            config.coding_guidelines,
-            config.language_guidelines,
-            file_paths,
+        system_prompt: str = resolve_system_prompt(
+            workspace, config, config.worker.system_prompt, file_paths,
+        )
+        full_prompt: str = build_prompt(
+            effective_event,
+            prompt,
+            deps_path=workspace.deps_path,
         )
 
-        combined_system_prompt: str = build_system_prompt(
-            config.worker.system_prompt,
-            effective_guidelines,
-        )
-
-        result: AgentResult = await run_agent(
+        result = await run_and_track_session(
+            event=event,
+            bot_type=BotType.WORKER,
+            session_store=session_store,
+            system_prompt=system_prompt,
             prompt=full_prompt,
             cwd=workspace.repo_path,
-            model=config.agent_model,
-            max_turns=config.agent_max_turns,
-            cli_path=config.agent_cli_path,
-            session_id=existing_session or "",
-            system_prompt=combined_system_prompt,
-            permission_mode="bypassPermissions",
+            config=config,
         )
 
-        if result.session_id:
-            session_store.set(
-                event.platform,
-                event.repo_full_name,
-                event.pr_number,
-                BotType.WORKER.value,
-                result.session_id,
-            )
-
-        reply: CommentReply = CommentReply(body=result.output)
-
-        await platform.post_reply(event, reply)
+        await platform.post_reply(event, CommentReply(body=result.output))
 
         logger.info(
             "Worker finished for %s#%d (turns=%d, duration=%dms)",
@@ -128,13 +81,6 @@ async def review_and_fix(
             event.pr_number,
             result.num_turns,
             result.duration_ms,
-        )
-    except Exception:
-        logger.exception("Error running agent (worker)")
-
-        await platform.post_reply(
-            event,
-            CommentReply(body="An unexpected error occurred while running the agent."),
         )
 
 
