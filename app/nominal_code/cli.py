@@ -117,6 +117,8 @@ def build_platform(platform_name: PlatformName) -> ReviewerPlatform:
     """
     Construct a platform instance for CLI use from environment tokens.
 
+    For GitHub, supports both PAT and App authentication. App mode requires
+    ``GITHUB_APP_ID``, a private key, and ``GITHUB_INSTALLATION_ID``.
     No webhook secret is required since CLI mode does not receive webhooks.
 
     Args:
@@ -130,15 +132,47 @@ def build_platform(platform_name: PlatformName) -> ReviewerPlatform:
     """
 
     if platform_name == PlatformName.GITHUB:
+        from nominal_code.platforms.github import (
+            GitHubAppAuth,
+            GitHubAuth,
+            GitHubPatAuth,
+            GitHubPlatform,
+            load_private_key,
+        )
+
+        app_id: str = os.environ.get("GITHUB_APP_ID", "")
+        private_key: str = load_private_key()
+
+        if app_id and private_key:
+            installation_id_str: str = os.environ.get(
+                "GITHUB_INSTALLATION_ID",
+                "",
+            )
+
+            if not installation_id_str:
+                logger.error(
+                    "GITHUB_INSTALLATION_ID is required for CLI mode "
+                    "with GitHub App auth",
+                )
+                sys.exit(1)
+
+            auth: GitHubAuth = GitHubAppAuth(
+                app_id=app_id,
+                private_key=private_key,
+                installation_id=int(installation_id_str),
+            )
+
+            return GitHubPlatform(auth=auth)
+
         token: str = os.environ.get("GITHUB_TOKEN", "")
 
         if not token:
             logger.error("GITHUB_TOKEN is required for GitHub reviews")
             sys.exit(1)
 
-        from nominal_code.platforms.github import GitHubPlatform
+        auth = GitHubPatAuth(token=token)
 
-        return GitHubPlatform(token=token)
+        return GitHubPlatform(auth=auth)
 
     if platform_name == PlatformName.GITLAB:
         token = os.environ.get("GITLAB_TOKEN", "")
@@ -217,6 +251,8 @@ async def run_review(args: argparse.Namespace) -> int:
 
     platform_name: PlatformName = PlatformName(args.platform)
     platform: ReviewerPlatform = build_platform(platform_name)
+
+    await platform.ensure_auth()
 
     branch: str = await platform.fetch_pr_branch(repo_full_name, pr_number)
 

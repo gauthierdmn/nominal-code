@@ -508,6 +508,11 @@ class GitLabPlatform:
                     pr_number,
                 )
 
+    async def ensure_auth(self) -> None:
+        """
+        No-op for GitLab PAT authentication.
+        """
+
     def build_reviewer_clone_url(self, repo_full_name: str) -> str:
         """
         Build a clone URL using the read-only reviewer token.

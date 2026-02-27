@@ -67,6 +67,7 @@ def _make_platform():
     platform.build_reviewer_clone_url = MagicMock(
         return_value="https://ro-token@github.com/owner/repo.git",
     )
+    platform.ensure_auth = AsyncMock()
 
     return platform
 

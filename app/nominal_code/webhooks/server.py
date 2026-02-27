@@ -124,6 +124,8 @@ async def _handle_webhook(
     if event is None:
         return web.json_response({"status": "ignored"})
 
+    await platform.ensure_auth()
+
     if event.event_type in config.reviewer_triggers:
         if config.reviewer is None:
             return web.json_response({"status": "ignored"})
@@ -135,6 +137,8 @@ async def _handle_webhook(
 
         async def _auto_trigger_job() -> None:
             from nominal_code.review.handler import review_and_post
+
+            await platform.ensure_auth()
 
             await review_and_post(
                 lifecycle_event,
@@ -181,6 +185,8 @@ async def _handle_webhook(
         async def _job() -> None:
             from nominal_code.worker.handler import review_and_fix
 
+            await platform.ensure_auth()
+
             await review_and_fix(
                 comment_event,
                 prompt,
@@ -195,6 +201,8 @@ async def _handle_webhook(
 
         async def _job() -> None:
             from nominal_code.review.handler import review_and_post
+
+            await platform.ensure_auth()
 
             await review_and_post(
                 comment_event,

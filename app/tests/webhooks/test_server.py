@@ -41,6 +41,7 @@ def _make_github_platform():
     platform.post_reaction = AsyncMock()
     platform.post_reply = AsyncMock()
     platform.fetch_pr_branch = AsyncMock(return_value="")
+    platform.ensure_auth = AsyncMock()
 
     return platform
 

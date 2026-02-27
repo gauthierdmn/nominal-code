@@ -22,6 +22,7 @@ workspaces/
 # OS
 .DS_Store
 
-# Ruff / pytest
+# Ruff / pytest / mypy
 .ruff_cache/
 .pytest_cache/
+.mypy_cache

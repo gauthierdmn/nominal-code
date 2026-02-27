@@ -214,6 +214,7 @@ class TestRunReview:
         mock_platform.fetch_pr_branch = AsyncMock(return_value="feature-branch")
         mock_platform.submit_review = AsyncMock()
         mock_platform.post_reply = AsyncMock()
+        mock_platform.ensure_auth = AsyncMock()
 
         review_result = ReviewResult(
             agent_review=AgentReview(summary="Looks good"),
@@ -253,6 +254,7 @@ class TestRunReview:
         mock_platform.fetch_pr_branch = AsyncMock(return_value="main")
         mock_platform.submit_review = AsyncMock()
         mock_platform.post_reply = AsyncMock()
+        mock_platform.ensure_auth = AsyncMock()
 
         review_result = ReviewResult(
             agent_review=AgentReview(
@@ -296,6 +298,7 @@ class TestRunReview:
 
         mock_platform = MagicMock()
         mock_platform.fetch_pr_branch = AsyncMock(return_value="")
+        mock_platform.ensure_auth = AsyncMock()
 
         with patch(
             "nominal_code.cli.build_platform",
@@ -320,6 +323,7 @@ class TestRunReview:
         mock_platform.fetch_pr_branch = AsyncMock(return_value="main")
         mock_platform.submit_review = AsyncMock()
         mock_platform.post_reply = AsyncMock()
+        mock_platform.ensure_auth = AsyncMock()
 
         review_result = ReviewResult(
             agent_review=AgentReview(summary="All clear"),

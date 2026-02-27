@@ -231,6 +231,15 @@ class Platform(Protocol):
 
         ...
 
+    async def ensure_auth(self) -> None:
+        """
+        Ensure the platform has a valid authentication token.
+
+        Refreshes expired tokens for App-based auth. No-op for static tokens.
+        """
+
+        ...
+
 
 class ReviewerPlatform(Platform, Protocol):
     """
