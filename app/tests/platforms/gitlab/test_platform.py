@@ -55,7 +55,6 @@ def _make_comment():
         repo_full_name="group/repo",
         pr_number=10,
         pr_branch="feature",
-        clone_url="",
         event_type=EventType.NOTE,
         comment_id=500,
         author_username="alice",
@@ -182,9 +181,7 @@ class TestParseWebhook:
         result = platform.parse_event(request, body)
 
         assert result is not None
-        assert result.clone_url == (
-            "https://oauth2:glpat-test456@gitlab.com/group/repo.git"
-        )
+        assert result.clone_url == ""
 
 
 class TestParseMergeRequest:
@@ -340,7 +337,6 @@ class TestPostReply:
             repo_full_name="group/repo",
             pr_number=10,
             pr_branch="feature",
-            clone_url="",
             event_type=EventType.NOTE,
             comment_id=500,
             author_username="alice",
@@ -372,7 +368,6 @@ class TestPostReply:
             repo_full_name="group/repo",
             pr_number=10,
             pr_branch="feature",
-            clone_url="",
             event_type=EventType.NOTE,
             comment_id=500,
             author_username="alice",
@@ -406,7 +401,6 @@ class TestPostReaction:
             repo_full_name="group/repo",
             pr_number=10,
             pr_branch="feature",
-            clone_url="",
             event_type=EventType.NOTE,
             comment_id=500,
             author_username="alice",

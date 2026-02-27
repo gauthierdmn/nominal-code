@@ -576,7 +576,6 @@ class GitLabPlatform:
             repo_full_name=repo_full_name,
             pr_number=merge_request.get("iid", 0),
             pr_branch=merge_request.get("source_branch", ""),
-            clone_url=f"https://oauth2:{self.token}@{self.host}/{repo_full_name}.git",
             event_type=EventType.NOTE,
             comment_id=object_attributes.get("id", 0),
             author_username=user.get("username", ""),
@@ -628,13 +627,12 @@ class GitLabPlatform:
             repo_full_name=repo_full_name,
             pr_number=object_attributes.get("iid", 0),
             pr_branch=object_attributes.get("source_branch", ""),
-            clone_url=f"https://oauth2:{self.token}@{self.host}/{repo_full_name}.git",
             event_type=event_type,
             pr_title=object_attributes.get("title", ""),
             pr_author=payload.get("user", {}).get("username", ""),
         )
 
-    def _build_clone_url(self, repo_full_name: str) -> str:
+    def build_clone_url(self, repo_full_name: str) -> str:
         """
         Build an authenticated clone URL for a GitLab repository.
 

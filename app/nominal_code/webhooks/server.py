@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
 from typing import TYPE_CHECKING, cast
 
 from aiohttp import web
@@ -125,6 +126,9 @@ async def _handle_webhook(
         return web.json_response({"status": "ignored"})
 
     await platform.ensure_auth()
+
+    clone_url: str = platform.build_clone_url(event.repo_full_name)
+    event = replace(event, clone_url=clone_url)
 
     if event.event_type in config.reviewer_triggers:
         if config.reviewer is None:

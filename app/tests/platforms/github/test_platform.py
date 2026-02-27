@@ -66,7 +66,6 @@ def _make_comment(event_type=EventType.ISSUE_COMMENT):
         repo_full_name="owner/repo",
         pr_number=42,
         pr_branch="main",
-        clone_url="",
         event_type=event_type,
         comment_id=100,
         author_username="alice",
@@ -380,7 +379,7 @@ class TestParsePullRequest:
 
 class TestBuildCloneUrl:
     def test_build_clone_url(self, platform):
-        url = platform._build_clone_url("owner/repo")
+        url = platform.build_clone_url("owner/repo")
 
         assert url == "https://x-access-token:ghp_test123@github.com/owner/repo.git"
 
@@ -410,7 +409,6 @@ class TestPostReply:
             repo_full_name="owner/repo",
             pr_number=42,
             pr_branch="main",
-            clone_url="",
             event_type=EventType.ISSUE_COMMENT,
             comment_id=100,
             author_username="alice",
@@ -442,7 +440,6 @@ class TestPostReply:
             repo_full_name="owner/repo",
             pr_number=42,
             pr_branch="main",
-            clone_url="",
             event_type=EventType.REVIEW_COMMENT,
             comment_id=200,
             author_username="bob",
@@ -476,7 +473,6 @@ class TestPostReply:
             repo_full_name="owner/repo",
             pr_number=42,
             pr_branch="main",
-            clone_url="",
             event_type=EventType.REVIEW,
             comment_id=300,
             author_username="charlie",
@@ -508,7 +504,6 @@ class TestPostReply:
             repo_full_name="owner/repo",
             pr_number=42,
             pr_branch="main",
-            clone_url="",
             event_type=EventType.ISSUE_COMMENT,
             comment_id=100,
             author_username="alice",
@@ -541,7 +536,6 @@ class TestPostReaction:
             repo_full_name="owner/repo",
             pr_number=42,
             pr_branch="main",
-            clone_url="",
             event_type=EventType.ISSUE_COMMENT,
             comment_id=100,
             author_username="alice",

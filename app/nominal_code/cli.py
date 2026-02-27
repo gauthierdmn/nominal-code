@@ -270,7 +270,7 @@ async def run_review(args: argparse.Namespace) -> int:
         repo_full_name=repo_full_name,
         pr_number=pr_number,
         pr_branch=branch,
-        clone_url="",
+        clone_url=platform.build_clone_url(repo_full_name),
         event_type=EventType.PR_OPENED,
     )
 

@@ -544,7 +544,6 @@ class GitHubPlatform:
             repo_full_name=repo_full_name,
             pr_number=pr_number,
             pr_branch="",
-            clone_url=self._build_clone_url(repo_full_name),
             event_type=EventType.ISSUE_COMMENT,
             comment_id=comment.get("id", 0),
             author_username=comment.get("user", {}).get("login", ""),
@@ -580,7 +579,6 @@ class GitHubPlatform:
             repo_full_name=repo_full_name,
             pr_number=pull_request.get("number", 0),
             pr_branch=pull_request.get("head", {}).get("ref", ""),
-            clone_url=self._build_clone_url(repo_full_name),
             event_type=EventType.REVIEW_COMMENT,
             comment_id=comment.get("id", 0),
             author_username=comment.get("user", {}).get("login", ""),
@@ -623,7 +621,6 @@ class GitHubPlatform:
             repo_full_name=repo_full_name,
             pr_number=pull_request.get("number", 0),
             pr_branch=pull_request.get("head", {}).get("ref", ""),
-            clone_url=self._build_clone_url(repo_full_name),
             event_type=EventType.REVIEW,
             comment_id=review.get("id", 0),
             author_username=review.get("user", {}).get("login", ""),
@@ -667,7 +664,6 @@ class GitHubPlatform:
             repo_full_name=repo_full_name,
             pr_number=pull_request.get("number", 0),
             pr_branch=pull_request.get("head", {}).get("ref", ""),
-            clone_url=self._build_clone_url(repo_full_name),
             event_type=event_type,
             pr_title=pull_request.get("title", ""),
             pr_author=pull_request.get("user", {}).get("login", ""),
@@ -797,7 +793,7 @@ class GitHubPlatform:
 
         return results
 
-    def _build_clone_url(self, repo_full_name: str) -> str:
+    def build_clone_url(self, repo_full_name: str) -> str:
         """
         Build an authenticated clone URL for a GitHub repository.
 

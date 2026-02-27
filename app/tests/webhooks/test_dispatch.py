@@ -124,7 +124,6 @@ class TestEnqueueJob:
             repo_full_name="owner/repo",
             pr_number=1,
             pr_branch="feature",
-            clone_url="",
             event_type=EventType.PR_OPENED,
             pr_title="Add feature",
             pr_author="eve",
