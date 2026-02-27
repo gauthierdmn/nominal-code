@@ -13,9 +13,13 @@ The bot is configured entirely via environment variables. You can set them in a 
 | `ALLOWED_USERS` | Yes | — | Comma-separated usernames allowed to trigger the bot |
 | `WEBHOOK_HOST` | No | `0.0.0.0` | Host to bind the server |
 | `WEBHOOK_PORT` | No | `8080` | Port to bind the server |
-| `GITHUB_TOKEN` | No** | — | GitHub API token for authentication |
+| `GITHUB_TOKEN` | No** | — | GitHub PAT for authentication |
+| `GITHUB_APP_ID` | No** | — | GitHub App ID (used instead of `GITHUB_TOKEN`) |
+| `GITHUB_APP_PRIVATE_KEY` | No | — | Inline PEM-encoded private key for the GitHub App |
+| `GITHUB_APP_PRIVATE_KEY_PATH` | No | — | Path to a PEM private key file (alternative to inline) |
+| `GITHUB_INSTALLATION_ID` | No | — | GitHub App installation ID (required for CLI mode with App auth) |
 | `GITHUB_WEBHOOK_SECRET` | No | — | HMAC secret for GitHub webhook verification |
-| `GITHUB_REVIEWER_TOKEN` | No | — | Separate read-only GitHub token for reviewer bot clones |
+| `GITHUB_REVIEWER_TOKEN` | No | — | Separate read-only GitHub token for reviewer bot clones (PAT mode only) |
 | `GITLAB_TOKEN` | No** | — | GitLab API token for authentication |
 | `GITLAB_WEBHOOK_SECRET` | No | — | Secret token for GitLab webhook verification |
 | `GITLAB_BASE_URL` | No | `https://gitlab.com` | GitLab instance URL (for self-hosted) |
@@ -34,7 +38,7 @@ The bot is configured entirely via environment variables. You can set them in a 
 
 \*At least one of `WORKER_BOT_USERNAME` or `REVIEWER_BOT_USERNAME` must be set. You can deploy worker-only, reviewer-only, or both.
 
-\*\*At least one of `GITHUB_TOKEN` or `GITLAB_TOKEN` must be set.
+\*\*At least one GitHub auth method (`GITHUB_TOKEN` or `GITHUB_APP_ID` + private key) or `GITLAB_TOKEN` must be set. When both a PAT and a GitHub App are configured, the App takes precedence.
 
 ## Prompt File Configuration
 
@@ -93,10 +97,12 @@ Auto-triggered reviews skip the `ALLOWED_USERS` check since there is no comment 
 
 By default, the reviewer bot clones repositories using the same token as the worker bot (`GITHUB_TOKEN` / `GITLAB_TOKEN`). If you want the reviewer to clone with a read-only token (recommended for security), set:
 
-- `GITHUB_REVIEWER_TOKEN` — used for GitHub reviewer clone URLs
+- `GITHUB_REVIEWER_TOKEN` — used for GitHub reviewer clone URLs (PAT mode only)
 - `GITLAB_REVIEWER_TOKEN` — used for GitLab reviewer clone URLs
 
 When set, the reviewer's clone URL uses this token instead, limiting its git-level access to read-only operations.
+
+> **Note:** When using GitHub App authentication, reviewer permissions are scoped through the App's installation settings in GitHub. A separate reviewer token is not needed.
 
 ## Private Dependencies
 

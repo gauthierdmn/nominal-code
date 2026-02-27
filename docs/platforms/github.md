@@ -13,22 +13,54 @@
    - **Pull requests** — required if using `REVIEWER_TRIGGERS` for auto-triggered reviews on PR open/push/reopen
 6. Click **Add webhook**.
 
-## Token Requirements
+## Authentication
 
-### Worker token (`GITHUB_TOKEN`)
+Nominal Code supports two authentication methods for GitHub: a **Personal Access Token (PAT)** or a **GitHub App**. When both are configured, the GitHub App takes precedence.
+
+### Option A: Personal Access Token
 
 Create a **Personal Access Token** (classic) with the `repo` scope, or a **fine-grained token** with read/write access to:
 
 - **Pull Requests** — to read PR metadata, post comments, and submit reviews
 - **Contents** — to clone private repositories and read file contents
 
+```bash
+export GITHUB_TOKEN=ghp_...
+```
+
 This token is used for both API calls and git clone operations.
 
-### Reviewer token (`GITHUB_REVIEWER_TOKEN`)
+#### Reviewer token (`GITHUB_REVIEWER_TOKEN`)
 
 Optional. When set, the reviewer bot uses this token for `git clone` instead of `GITHUB_TOKEN`. This lets you issue a token with **read-only** access to Contents, limiting what the reviewer agent can do at the git level.
 
 The reviewer still uses `GITHUB_TOKEN` for API calls (posting reviews, fetching diffs).
+
+### Option B: GitHub App
+
+Using a GitHub App provides automatic token rotation, fine-grained permissions scoped at the installation level, and no need for a separate reviewer token.
+
+1. [Create a GitHub App](https://docs.github.com/en/apps/creating-github-apps) with the following permissions:
+   - **Pull Requests**: Read & Write
+   - **Contents**: Read & Write
+   - Subscribe to the same webhook events listed in [Webhook Setup](#webhook-setup)
+2. Generate a private key from the App settings page and download the `.pem` file.
+3. Install the App on your repository or organization.
+
+```bash
+export GITHUB_APP_ID=12345
+export GITHUB_APP_PRIVATE_KEY_PATH=/path/to/private-key.pem
+```
+
+Alternatively, pass the key inline via `GITHUB_APP_PRIVATE_KEY` instead of a file path.
+
+In **webhook mode**, the installation ID is extracted automatically from webhook payloads. In **CLI mode**, you must also set:
+
+```bash
+export GITHUB_INSTALLATION_ID=67890
+```
+
+Tokens are generated on the fly and automatically refreshed before they expire.
 
 ## Supported Event Types
 
