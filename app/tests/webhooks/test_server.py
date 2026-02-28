@@ -370,10 +370,6 @@ class TestAutoTrigger:
 
             assert dispatched_event.repo_full_name == event.repo_full_name
             assert dispatched_event.pr_number == event.pr_number
-            assert (
-                dispatched_event.clone_url
-                == "https://x-access-token:test@github.com/owner/repo.git"
-            )
 
     @pytest.mark.asyncio
     async def test_lifecycle_event_ignored_when_triggers_not_configured(

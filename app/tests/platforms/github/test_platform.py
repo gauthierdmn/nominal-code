@@ -17,8 +17,9 @@ from nominal_code.platforms.base import (
 from nominal_code.platforms.github import (
     GitHubPatAuth,
     GitHubPlatform,
-    _create_github_platform,
 )
+from nominal_code.platforms.github.platform import _create_github_platform
+
 
 EXPECTED_AUTH_HEADERS = {
     "Authorization": "token ghp_test123",

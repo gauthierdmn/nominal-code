@@ -125,11 +125,6 @@ async def _handle_webhook(
     if event is None:
         return web.json_response({"status": "ignored"})
 
-    await platform.ensure_auth()
-
-    clone_url: str = platform.build_clone_url(event.repo_full_name)
-    event = replace(event, clone_url=clone_url)
-
     if event.event_type in config.reviewer_triggers:
         if config.reviewer is None:
             return web.json_response({"status": "ignored"})
@@ -143,6 +138,11 @@ async def _handle_webhook(
             from nominal_code.review.handler import review_and_post
 
             await platform.ensure_auth()
+
+            lifecycle_event = replace(
+                lifecycle_event,
+                clone_url=platform.build_clone_url(lifecycle_event.repo_full_name),
+            )
 
             await review_and_post(
                 lifecycle_event,
@@ -191,6 +191,11 @@ async def _handle_webhook(
 
             await platform.ensure_auth()
 
+            comment_event = replace(
+                comment_event,
+                clone_url=platform.build_clone_url(comment_event.repo_full_name),
+            )
+
             await review_and_fix(
                 comment_event,
                 prompt,
@@ -208,8 +213,13 @@ async def _handle_webhook(
 
             await platform.ensure_auth()
 
-            await review_and_post(
+            ready_event: CommentEvent = replace(
                 comment_event,
+                clone_url=platform.build_clone_url(comment_event.repo_full_name),
+            )
+
+            await review_and_post(
+                ready_event,
                 prompt,
                 config,
                 cast("ReviewerPlatform", platform),

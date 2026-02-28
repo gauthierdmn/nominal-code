@@ -6,7 +6,6 @@ from nominal_code.platforms.github.auth import (
 )
 from nominal_code.platforms.github.platform import (
     GitHubPlatform,
-    _create_github_platform,
 )
 
 __all__: list[str] = [
@@ -14,6 +13,5 @@ __all__: list[str] = [
     "GitHubAuth",
     "GitHubPatAuth",
     "GitHubPlatform",
-    "_create_github_platform",
     "load_private_key",
 ]
