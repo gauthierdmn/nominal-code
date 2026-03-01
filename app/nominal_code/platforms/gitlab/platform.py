@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+import hmac
 import json
 import logging
-import os
 from typing import Any
 from urllib.parse import quote
 
 import httpx
 from aiohttp import web
+from environs import Env
 
 from nominal_code.models import ChangedFile, EventType, FileStatus, ReviewFinding
 from nominal_code.platforms.base import (
@@ -109,7 +110,10 @@ class GitLabPlatform:
 
         token: str | None = request.headers.get("X-Gitlab-Token")
 
-        return token == self.webhook_secret
+        if token is None:
+            return False
+
+        return hmac.compare_digest(token, self.webhook_secret)
 
     def parse_event(
         self,
@@ -130,7 +134,13 @@ class GitLabPlatform:
             CommentEvent | LifecycleEvent | None: Parsed event, or None if not relevant.
         """
 
-        payload: dict[str, Any] = json.loads(body)
+        try:
+            payload: dict[str, Any] = json.loads(body)
+        except json.JSONDecodeError:
+            logger.warning("Malformed JSON in GitLab webhook payload")
+
+            return None
+
         object_kind: str = payload.get("object_kind", "")
 
         if object_kind == "note":
@@ -657,14 +667,15 @@ def _create_gitlab_platform() -> GitLabPlatform | None:
         GitLabPlatform | None: A configured client, or None.
     """
 
-    token: str = os.environ.get("GITLAB_TOKEN", "")
+    _env: Env = Env()
+    token: str = _env.str("GITLAB_TOKEN", "")
 
     if not token:
         return None
 
-    webhook_secret: str = os.environ.get("GITLAB_WEBHOOK_SECRET", "")
-    base_url: str = os.environ.get("GITLAB_BASE_URL", "https://gitlab.com")
-    reviewer_token: str = os.environ.get("GITLAB_REVIEWER_TOKEN", "")
+    webhook_secret: str = _env.str("GITLAB_WEBHOOK_SECRET", "")
+    base_url: str = _env.str("GITLAB_BASE_URL", "https://gitlab.com")
+    reviewer_token: str = _env.str("GITLAB_REVIEWER_TOKEN", "")
 
     return GitLabPlatform(
         token=token,

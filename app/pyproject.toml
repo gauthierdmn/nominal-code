@@ -8,6 +8,7 @@ dependencies = [
     "claude-agent-sdk==0.1.39",
     "httpx==0.28.1",
     "PyJWT[crypto]>=2.9.0,<3",
+    "environs>=14.1,<15",
 ]
 
 [project.scripts]

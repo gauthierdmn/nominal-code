@@ -192,7 +192,18 @@ class WorkspaceCleaner:
 
                 return
 
-        shutil.rmtree(pr_dir)
+        try:
+            shutil.rmtree(pr_dir)
+        except OSError:
+            logger.warning(
+                "Failed to delete workspace for %s#%d (%s)",
+                repo_full_name,
+                pr_number,
+                pr_dir,
+            )
+
+            return
+
         logger.info(
             "Deleted workspace for closed PR: %s#%d (%s)",
             repo_full_name,

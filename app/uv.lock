@@ -266,6 +266,19 @@ wheels = [
 ]
 
 [[package]]
+name = "environs"
+version = "14.6.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "marshmallow" },
+    { name = "python-dotenv" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/fb/c7/94f97e6e74482a50b5fc798856b6cc06e8d072ab05a0b74cb5d87bd0d065/environs-14.6.0.tar.gz", hash = "sha256:ed2767588deb503209ffe4dd9bb2b39311c2e4e7e27ce2c64bf62ca83328d068", size = 35563, upload-time = "2026-02-20T04:02:08.869Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/97/a8/c070e1340636acb38d4e6a7e45c46d168a462b48b9b3257e14ca0e5af79b/environs-14.6.0-py3-none-any.whl", hash = "sha256:f8fb3d6c6a55872b0c6db077a28f5a8c7b8984b7c32029613d44cef95cfc0812", size = 17205, upload-time = "2026-02-20T04:02:07.299Z" },
+]
+
+[[package]]
 name = "frozenlist"
 version = "1.8.0"
 source = { registry = "https://pypi.org/simple" }
@@ -477,6 +490,15 @@ wheels = [
 ]
 
 [[package]]
+name = "marshmallow"
+version = "4.2.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f9/03/261af5efb3d3ce0e2db3fd1e11dc5a96b74a4fb76e488da1c845a8f12345/marshmallow-4.2.2.tar.gz", hash = "sha256:ba40340683a2d1c15103647994ff2f6bc2c8c80da01904cbe5d96ee4baa78d9f", size = 221404, upload-time = "2026-02-04T15:47:03.401Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/aa/70/bb89f807a6a6704bdc4d6f850d5d32954f6c1965e3248e31455defdf2f30/marshmallow-4.2.2-py3-none-any.whl", hash = "sha256:084a9466111b7ec7183ca3a65aed758739af919fedc5ebdab60fb39d6b4dc121", size = 48454, upload-time = "2026-02-04T15:47:02.013Z" },
+]
+
+[[package]]
 name = "mcp"
 version = "1.26.0"
 source = { registry = "https://pypi.org/simple" }
@@ -625,6 +647,7 @@ source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
     { name = "claude-agent-sdk" },
+    { name = "environs" },
     { name = "httpx" },
     { name = "pyjwt", extra = ["crypto"] },
 ]
@@ -642,6 +665,7 @@ dev = [
 requires-dist = [
     { name = "aiohttp", specifier = "==3.13.3" },
     { name = "claude-agent-sdk", specifier = "==0.1.39" },
+    { name = "environs", specifier = ">=14.1,<15" },
     { name = "httpx", specifier = "==0.28.1" },
     { name = "pyjwt", extras = ["crypto"], specifier = ">=2.9.0,<3" },
 ]

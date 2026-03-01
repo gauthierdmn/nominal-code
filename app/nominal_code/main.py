@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import sys
 
 from aiohttp import web
+from environs import Env
 
 from nominal_code.agent.session import SessionQueue, SessionStore
 from nominal_code.config import Config
@@ -15,6 +15,7 @@ from nominal_code.webhooks.server import create_app
 from nominal_code.workspace.cleanup import WorkspaceCleaner
 
 logger: logging.Logger = logging.getLogger(__name__)
+env: Env = Env()
 
 
 def setup_logging() -> None:
@@ -24,7 +25,7 @@ def setup_logging() -> None:
     Respects the ``LOG_LEVEL`` environment variable (default: ``INFO``).
     """
 
-    level_name: str = os.environ.get("LOG_LEVEL", "INFO").upper()
+    level_name: str = env.str("LOG_LEVEL", "INFO").upper()
     level: int = getattr(logging, level_name, logging.INFO)
 
     logging.basicConfig(

@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import logging
-import os
 import time
 from abc import ABC, abstractmethod
 from pathlib import Path
 
 import httpx
 import jwt
+from environs import Env
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -208,18 +208,29 @@ class GitHubAppAuth(GitHubAuth):
 
         jwt_token: str = self._generate_jwt()
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response: httpx.Response = await client.post(
-                f"https://api.github.com/app/installations/{self.installation_id}/access_tokens",
-                headers={
-                    "Authorization": f"Bearer {jwt_token}",
-                    "Accept": "application/vnd.github.v3+json",
-                },
-            )
-            response.raise_for_status()
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response: httpx.Response = await client.post(
+                    f"https://api.github.com/app/installations/{self.installation_id}/access_tokens",
+                    headers={
+                        "Authorization": f"Bearer {jwt_token}",
+                        "Accept": "application/vnd.github.v3+json",
+                    },
+                )
+                response.raise_for_status()
 
-        data: dict[str, str] = response.json()
-        self._cached_token = data["token"]
+            data: dict[str, str] = response.json()
+            self._cached_token = data["token"]
+        except httpx.HTTPError as exc:
+            raise RuntimeError(
+                f"Failed to fetch GitHub App installation token "
+                f"for installation {self.installation_id}"
+            ) from exc
+        except KeyError as exc:
+            raise RuntimeError(
+                "GitHub App token response missing 'token' field"
+            ) from exc
+
         self._token_expires_at = time.monotonic() + 3600
 
         logger.info(
@@ -286,14 +297,23 @@ def load_private_key() -> str:
         str: The PEM private key contents, or empty string if not configured.
     """
 
-    inline_key: str = os.environ.get("GITHUB_APP_PRIVATE_KEY", "")
+    _env: Env = Env()
+    inline_key: str = _env.str("GITHUB_APP_PRIVATE_KEY", "")
 
     if inline_key:
         return inline_key
 
-    key_path: str = os.environ.get("GITHUB_APP_PRIVATE_KEY_PATH", "")
+    key_path: str = _env.str("GITHUB_APP_PRIVATE_KEY_PATH", "")
 
     if key_path:
-        return Path(key_path).read_text()
+        try:
+            return Path(key_path).read_text()
+        except OSError:
+            logger.exception(
+                "Failed to read GitHub App private key from %s",
+                key_path,
+            )
+
+            return ""
 
     return ""

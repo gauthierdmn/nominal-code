@@ -3,9 +3,28 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 from dataclasses import dataclass
 
 logger: logging.Logger = logging.getLogger(__name__)
+
+_TOKEN_PATTERN: re.Pattern[str] = re.compile(
+    r"(https?://[^:]+:)[^@]+(@)",
+)
+
+
+def _redact_url(url: str) -> str:
+    """
+    Replace embedded tokens in clone URLs with ``***``.
+
+    Args:
+        url (str): A URL that may contain an embedded token.
+
+    Returns:
+        str: The URL with the token replaced by ``***``.
+    """
+
+    return _TOKEN_PATTERN.sub(r"\1***\2", url)
 
 
 @dataclass(frozen=True)
@@ -140,7 +159,7 @@ class GitWorkspace:
 
         os.makedirs(self.repo_path, exist_ok=True)
 
-        logger.info("Cloning %s into %s", self._clone_url, self.repo_path)
+        logger.info("Cloning %s into %s", _redact_url(self._clone_url), self.repo_path)
 
         await self._run_command(
             "git",
@@ -213,11 +232,11 @@ class GitWorkspace:
         stderr_text: str = stderr_bytes.decode().strip()
 
         if process.returncode != 0:
-            command_str: str = " ".join(args)
+            command_str: str = _redact_url(" ".join(args))
 
             raise RuntimeError(
                 f"Command '{command_str}' failed (exit {process.returncode}): "
-                f"{stderr_text}"
+                f"{_redact_url(stderr_text)}"
             )
 
         if stderr_text:

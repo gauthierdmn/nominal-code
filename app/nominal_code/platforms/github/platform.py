@@ -4,11 +4,11 @@ import hashlib
 import hmac
 import json
 import logging
-import os
 from typing import Any
 
 import httpx
 from aiohttp import web
+from environs import Env
 
 from nominal_code.models import ChangedFile, EventType, FileStatus, ReviewFinding
 from nominal_code.platforms.base import (
@@ -162,7 +162,13 @@ class GitHubPlatform:
         """
 
         event_header: str = request.headers.get("X-GitHub-Event", "")
-        payload: dict[str, Any] = json.loads(body)
+
+        try:
+            payload: dict[str, Any] = json.loads(body)
+        except json.JSONDecodeError:
+            logger.warning("Malformed JSON in GitHub webhook payload")
+
+            return None
 
         installation: dict[str, Any] = payload.get("installation", {})
         installation_id: int = installation.get("id", 0)
@@ -424,10 +430,15 @@ class GitHubPlatform:
                 break
 
             for entry in data:
+                try:
+                    status: FileStatus = FileStatus(entry.get("status", "modified"))
+                except ValueError:
+                    status = FileStatus.MODIFIED
+
                 files.append(
                     ChangedFile(
                         file_path=entry.get("filename", ""),
-                        status=FileStatus(entry.get("status", "modified")),
+                        status=status,
                         patch=entry.get("patch", ""),
                     ),
                 )
@@ -819,15 +830,14 @@ def _create_github_platform() -> GitHubPlatform | None:
         GitHubPlatform | None: A configured client, or None.
     """
 
-    webhook_secret: str = os.environ.get("GITHUB_WEBHOOK_SECRET", "")
+    _env: Env = Env()
+    webhook_secret: str = _env.str("GITHUB_WEBHOOK_SECRET", "")
 
-    app_id: str = os.environ.get("GITHUB_APP_ID", "")
+    app_id: str = _env.str("GITHUB_APP_ID", "")
     private_key: str = load_private_key()
 
     if app_id and private_key:
-        installation_id: int = int(
-            os.environ.get("GITHUB_INSTALLATION_ID", "0"),
-        )
+        installation_id: int = _env.int("GITHUB_INSTALLATION_ID", 0)
         auth: GitHubAuth = GitHubAppAuth(
             app_id=app_id,
             private_key=private_key,
@@ -836,12 +846,12 @@ def _create_github_platform() -> GitHubPlatform | None:
 
         return GitHubPlatform(auth=auth, webhook_secret=webhook_secret)
 
-    token: str = os.environ.get("GITHUB_TOKEN", "")
+    token: str = _env.str("GITHUB_TOKEN", "")
 
     if not token:
         return None
 
-    reviewer_token: str = os.environ.get("GITHUB_REVIEWER_TOKEN", "")
+    reviewer_token: str = _env.str("GITHUB_REVIEWER_TOKEN", "")
     auth = GitHubPatAuth(token=token, reviewer_token=reviewer_token)
 
     return GitHubPlatform(auth=auth, webhook_secret=webhook_secret)
