@@ -133,8 +133,11 @@ class SessionQueue:
 
         queue: asyncio.Queue[Callable[[], Awaitable[None]]] = self._queues[key]
 
-        while not queue.empty():
-            job: Callable[[], Awaitable[None]] = await queue.get()
+        while True:
+            try:
+                job: Callable[[], Awaitable[None]] = queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
 
             try:
                 await job()
@@ -145,6 +148,9 @@ class SessionQueue:
                 )
             finally:
                 queue.task_done()
+
+            if queue.empty():
+                await asyncio.sleep(0)
 
         del self._queues[key]
         del self._consumers[key]

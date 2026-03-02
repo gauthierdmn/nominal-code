@@ -243,7 +243,7 @@ class TestFromEnv:
         }
 
         with patch.dict(os.environ, env, clear=True):
-            with pytest.raises(OSError, match="ALLOWED_USERS"):
+            with pytest.raises(ValueError, match="ALLOWED_USERS"):
                 Config.from_env()
 
     def test_from_env_empty_allowed_users_raises(self):

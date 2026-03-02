@@ -12,9 +12,9 @@ AI-powered code review bot that monitors GitHub PRs and GitLab MRs. When a user 
 
 ## Supported platforms
 
-| Platform | Webhook events | Auth | Self-hosted |
-|----------|---------------|------|-------------|
-| GitHub | `issue_comment`, `pull_request_review_comment`, `pull_request_review`, `pull_request` | Token + HMAC-SHA256 | No |
+| Platform | Webhook events | Auth modes | Self-hosted |
+|----------|---------------|------------|-------------|
+| GitHub | `issue_comment`, `pull_request_review_comment`, `pull_request_review`, `pull_request` | PAT or GitHub App (JWT + installation token) | No |
 | GitLab | Note Hook, Merge Request Hook | Token + header secret | Yes (`GITLAB_BASE_URL`) |
 
 ## Bot types
@@ -42,12 +42,16 @@ AI-powered code review bot that monitors GitHub PRs and GitLab MRs. When a user 
 
 - `ALLOWED_USERS` — comma-separated usernames authorised to trigger jobs.
 - At least one of `WORKER_BOT_USERNAME` / `REVIEWER_BOT_USERNAME`.
-- `GITHUB_TOKEN` and/or `GITLAB_TOKEN`.
+- GitHub auth (one of):
+  - **PAT mode**: `GITHUB_TOKEN`.
+  - **App mode**: `GITHUB_APP_ID` + one of `GITHUB_APP_PRIVATE_KEY` (inline PEM) / `GITHUB_APP_PRIVATE_KEY_PATH` (file path).
+- And/or `GITLAB_TOKEN`.
 
 ### Optional
 
-- `GITHUB_WEBHOOK_SECRET` / `GITLAB_WEBHOOK_SECRET` — webhook signature validation.
-- `GITHUB_REVIEWER_TOKEN` / `GITLAB_REVIEWER_TOKEN` — read-only token for reviewer clones.
+- `GITHUB_WEBHOOK_SECRET` / `GITLAB_WEBHOOK_SECRET` — webhook signature validation (shared by both PAT and App modes).
+- `GITHUB_REVIEWER_TOKEN` / `GITLAB_REVIEWER_TOKEN` — read-only token for reviewer clones (PAT mode only; App mode scopes via installation permissions).
+- `GITHUB_INSTALLATION_ID` — required for CLI mode with App auth; webhook mode extracts it from the payload.
 - `WORKSPACE_BASE_DIR` — workspace root (default: `/tmp/nominal-code`).
 - `AGENT_MODEL`, `AGENT_MAX_TURNS`, `AGENT_CLI_PATH` — agent configuration.
 - `REVIEWER_TRIGGERS` — comma-separated lifecycle events that auto-trigger the reviewer (e.g. `pr_opened,pr_push`).
@@ -63,7 +67,7 @@ nominal_code/
 ├── config.py            # Frozen dataclass config loaded from env vars / files
 ├── models.py            # Shared enums (EventType, BotType, FileStatus) and dataclasses (ReviewFinding, AgentReview, ChangedFile)
 ├── agent/               # Agent invocation, session management, prompt composition
-├── platforms/           # Platform protocol + GitHub/GitLab implementations
+├── platforms/           # Platform protocol + GitHub/GitLab implementations (subpackages)
 ├── review/              # Reviewer bot handler (structured code review)
 ├── webhooks/            # aiohttp webhook server, @mention extraction, job dispatch
 ├── worker/              # Worker bot handler (code fixes)

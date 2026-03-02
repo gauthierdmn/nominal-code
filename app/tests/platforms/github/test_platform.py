@@ -15,28 +15,36 @@ from nominal_code.platforms.base import (
     PlatformName,
 )
 from nominal_code.platforms.github import (
+    GitHubPatAuth,
     GitHubPlatform,
-    _create_github_platform,
 )
+from nominal_code.platforms.github.platform import _create_github_platform
+
+EXPECTED_AUTH_HEADERS = {
+    "Authorization": "token ghp_test123",
+    "Accept": "application/vnd.github.v3+json",
+}
 
 
 @pytest.fixture
 def platform():
-    return GitHubPlatform(token="ghp_test123", webhook_secret="test-secret")
+    auth = GitHubPatAuth(token="ghp_test123")
+
+    return GitHubPlatform(auth=auth, webhook_secret="test-secret")
 
 
 @pytest.fixture
 def platform_no_secret():
-    return GitHubPlatform(token="ghp_test123")
+    auth = GitHubPatAuth(token="ghp_test123")
+
+    return GitHubPlatform(auth=auth)
 
 
 @pytest.fixture
 def platform_with_reviewer_token():
-    return GitHubPlatform(
-        token="ghp_test123",
-        webhook_secret="test-secret",
-        reviewer_token="ghp_readonly456",
-    )
+    auth = GitHubPatAuth(token="ghp_test123", reviewer_token="ghp_readonly456")
+
+    return GitHubPlatform(auth=auth, webhook_secret="test-secret")
 
 
 def _make_request(headers=None, body=b""):
@@ -58,7 +66,6 @@ def _make_comment(event_type=EventType.ISSUE_COMMENT):
         repo_full_name="owner/repo",
         pr_number=42,
         pr_branch="main",
-        clone_url="",
         event_type=event_type,
         comment_id=100,
         author_username="alice",
@@ -227,6 +234,31 @@ class TestParseWebhook:
 
         assert platform.parse_event(request, body) is None
 
+    def test_parse_event_extracts_installation_id(self, platform):
+        payload = {
+            "action": "created",
+            "installation": {"id": 98765},
+            "issue": {
+                "number": 42,
+                "pull_request": {"url": "https://api.github.com/..."},
+            },
+            "comment": {
+                "id": 100,
+                "body": "@bot test",
+                "user": {"login": "alice"},
+            },
+            "repository": {"full_name": "owner/repo"},
+        }
+        body = json.dumps(payload).encode()
+        request = _make_request({"X-GitHub-Event": "issue_comment"})
+
+        platform.parse_event(request, body)
+
+        from nominal_code.platforms.github import GitHubAppAuth
+
+        if isinstance(platform.auth, GitHubAppAuth):
+            assert platform.auth.installation_id == 98765
+
 
 class TestParsePullRequest:
     def test_parse_pr_opened(self, platform):
@@ -347,7 +379,7 @@ class TestParsePullRequest:
 
 class TestBuildCloneUrl:
     def test_build_clone_url(self, platform):
-        url = platform._build_clone_url("owner/repo")
+        url = platform.build_clone_url("owner/repo")
 
         assert url == "https://x-access-token:ghp_test123@github.com/owner/repo.git"
 
@@ -377,7 +409,6 @@ class TestPostReply:
             repo_full_name="owner/repo",
             pr_number=42,
             pr_branch="main",
-            clone_url="",
             event_type=EventType.ISSUE_COMMENT,
             comment_id=100,
             author_username="alice",
@@ -399,6 +430,7 @@ class TestPostReply:
             mock_post.assert_called_once_with(
                 "/repos/owner/repo/issues/42/comments",
                 json={"body": "Fixed it!"},
+                headers=EXPECTED_AUTH_HEADERS,
             )
 
     @pytest.mark.asyncio
@@ -408,7 +440,6 @@ class TestPostReply:
             repo_full_name="owner/repo",
             pr_number=42,
             pr_branch="main",
-            clone_url="",
             event_type=EventType.REVIEW_COMMENT,
             comment_id=200,
             author_username="bob",
@@ -432,6 +463,7 @@ class TestPostReply:
             mock_post.assert_called_once_with(
                 "/repos/owner/repo/pulls/42/comments/200/replies",
                 json={"body": "Refactored!"},
+                headers=EXPECTED_AUTH_HEADERS,
             )
 
     @pytest.mark.asyncio
@@ -441,7 +473,6 @@ class TestPostReply:
             repo_full_name="owner/repo",
             pr_number=42,
             pr_branch="main",
-            clone_url="",
             event_type=EventType.REVIEW,
             comment_id=300,
             author_username="charlie",
@@ -463,6 +494,7 @@ class TestPostReply:
             mock_post.assert_called_once_with(
                 "/repos/owner/repo/issues/42/comments",
                 json={"body": "Done!"},
+                headers=EXPECTED_AUTH_HEADERS,
             )
 
     @pytest.mark.asyncio
@@ -472,7 +504,6 @@ class TestPostReply:
             repo_full_name="owner/repo",
             pr_number=42,
             pr_branch="main",
-            clone_url="",
             event_type=EventType.ISSUE_COMMENT,
             comment_id=100,
             author_username="alice",
@@ -505,7 +536,6 @@ class TestPostReaction:
             repo_full_name="owner/repo",
             pr_number=42,
             pr_branch="main",
-            clone_url="",
             event_type=EventType.ISSUE_COMMENT,
             comment_id=100,
             author_username="alice",
@@ -542,7 +572,10 @@ class TestIsPrOpen:
             result = await platform.is_pr_open("owner/repo", 42)
 
         assert result is True
-        mock_get.assert_called_once_with("/repos/owner/repo/pulls/42")
+        mock_get.assert_called_once_with(
+            "/repos/owner/repo/pulls/42",
+            headers=EXPECTED_AUTH_HEADERS,
+        )
 
     @pytest.mark.asyncio
     async def test_is_pr_open_returns_false_when_closed(self, platform):
@@ -904,7 +937,8 @@ class TestFactory:
 
         assert result is not None
         assert isinstance(result, GitHubPlatform)
-        assert result.token == "ghp_test123"
+        assert isinstance(result.auth, GitHubPatAuth)
+        assert result.auth.get_token() == "ghp_test123"
         assert result.webhook_secret == "secret"
 
     def test_factory_returns_none_when_no_token(self):
@@ -923,4 +957,39 @@ class TestFactory:
             result = _create_github_platform()
 
         assert result is not None
-        assert result.reviewer_token == "ghp_readonly"
+        assert isinstance(result.auth, GitHubPatAuth)
+        assert result.auth.get_reviewer_token() == "ghp_readonly"
+
+    def test_factory_returns_app_auth_when_app_id_and_key_set(self):
+        from nominal_code.platforms.github import GitHubAppAuth
+
+        env = {
+            "GITHUB_APP_ID": "12345",
+            "GITHUB_APP_PRIVATE_KEY": "fake-pem-key",
+            "GITHUB_INSTALLATION_ID": "67890",
+            "GITHUB_WEBHOOK_SECRET": "secret",
+        }
+
+        with patch.dict(os.environ, env, clear=True):
+            result = _create_github_platform()
+
+        assert result is not None
+        assert isinstance(result.auth, GitHubAppAuth)
+        assert result.auth.app_id == "12345"
+        assert result.auth.installation_id == 67890
+        assert result.webhook_secret == "secret"
+
+    def test_factory_prefers_app_auth_over_pat(self):
+        from nominal_code.platforms.github import GitHubAppAuth
+
+        env = {
+            "GITHUB_APP_ID": "12345",
+            "GITHUB_APP_PRIVATE_KEY": "fake-pem-key",
+            "GITHUB_TOKEN": "ghp_test123",
+        }
+
+        with patch.dict(os.environ, env, clear=True):
+            result = _create_github_platform()
+
+        assert result is not None
+        assert isinstance(result.auth, GitHubAppAuth)

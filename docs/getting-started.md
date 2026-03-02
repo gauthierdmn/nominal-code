@@ -39,12 +39,24 @@ For automated reviews triggered by PR comments, deploy the webhook server.
 
 ### Configure
 
-Create a `.env` file (or export the variables directly). The simplest setup is a **reviewer-only bot on GitHub**:
+Create a `.env` file (or export the variables directly). The simplest setup is a **reviewer-only bot on GitHub**.
+
+**Using a PAT:**
 
 ```bash
 REVIEWER_BOT_USERNAME=my-reviewer
 ALLOWED_USERS=alice,bob
 GITHUB_TOKEN=ghp_...
+GITHUB_WEBHOOK_SECRET=your-secret
+```
+
+**Using a GitHub App:**
+
+```bash
+REVIEWER_BOT_USERNAME=my-reviewer
+ALLOWED_USERS=alice,bob
+GITHUB_APP_ID=12345
+GITHUB_APP_PRIVATE_KEY_PATH=/path/to/private-key.pem
 GITHUB_WEBHOOK_SECRET=your-secret
 ```
 

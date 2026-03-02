@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+import hmac
 import json
 import logging
-import os
 from typing import Any
 from urllib.parse import quote
 
 import httpx
 from aiohttp import web
+from environs import Env
 
 from nominal_code.models import ChangedFile, EventType, FileStatus, ReviewFinding
 from nominal_code.platforms.base import (
@@ -109,7 +110,10 @@ class GitLabPlatform:
 
         token: str | None = request.headers.get("X-Gitlab-Token")
 
-        return token == self.webhook_secret
+        if token is None:
+            return False
+
+        return hmac.compare_digest(token, self.webhook_secret)
 
     def parse_event(
         self,
@@ -130,7 +134,13 @@ class GitLabPlatform:
             CommentEvent | LifecycleEvent | None: Parsed event, or None if not relevant.
         """
 
-        payload: dict[str, Any] = json.loads(body)
+        try:
+            payload: dict[str, Any] = json.loads(body)
+        except json.JSONDecodeError:
+            logger.warning("Malformed JSON in GitLab webhook payload")
+
+            return None
+
         object_kind: str = payload.get("object_kind", "")
 
         if object_kind == "note":
@@ -508,6 +518,11 @@ class GitLabPlatform:
                     pr_number,
                 )
 
+    async def ensure_auth(self) -> None:
+        """
+        No-op for GitLab PAT authentication.
+        """
+
     def build_reviewer_clone_url(self, repo_full_name: str) -> str:
         """
         Build a clone URL using the read-only reviewer token.
@@ -571,7 +586,6 @@ class GitLabPlatform:
             repo_full_name=repo_full_name,
             pr_number=merge_request.get("iid", 0),
             pr_branch=merge_request.get("source_branch", ""),
-            clone_url=f"https://oauth2:{self.token}@{self.host}/{repo_full_name}.git",
             event_type=EventType.NOTE,
             comment_id=object_attributes.get("id", 0),
             author_username=user.get("username", ""),
@@ -623,13 +637,12 @@ class GitLabPlatform:
             repo_full_name=repo_full_name,
             pr_number=object_attributes.get("iid", 0),
             pr_branch=object_attributes.get("source_branch", ""),
-            clone_url=f"https://oauth2:{self.token}@{self.host}/{repo_full_name}.git",
             event_type=event_type,
             pr_title=object_attributes.get("title", ""),
             pr_author=payload.get("user", {}).get("username", ""),
         )
 
-    def _build_clone_url(self, repo_full_name: str) -> str:
+    def build_clone_url(self, repo_full_name: str) -> str:
         """
         Build an authenticated clone URL for a GitLab repository.
 
@@ -654,14 +667,15 @@ def _create_gitlab_platform() -> GitLabPlatform | None:
         GitLabPlatform | None: A configured client, or None.
     """
 
-    token: str = os.environ.get("GITLAB_TOKEN", "")
+    _env: Env = Env()
+    token: str = _env.str("GITLAB_TOKEN", "")
 
     if not token:
         return None
 
-    webhook_secret: str = os.environ.get("GITLAB_WEBHOOK_SECRET", "")
-    base_url: str = os.environ.get("GITLAB_BASE_URL", "https://gitlab.com")
-    reviewer_token: str = os.environ.get("GITLAB_REVIEWER_TOKEN", "")
+    webhook_secret: str = _env.str("GITLAB_WEBHOOK_SECRET", "")
+    base_url: str = _env.str("GITLAB_BASE_URL", "https://gitlab.com")
+    reviewer_token: str = _env.str("GITLAB_REVIEWER_TOKEN", "")
 
     return GitLabPlatform(
         token=token,

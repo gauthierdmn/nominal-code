@@ -33,16 +33,18 @@ class PullRequestEvent:
         repo_full_name (str): Full repository name (e.g. ``owner/repo``).
         pr_number (int): Pull request or merge request number.
         pr_branch (str): The head branch name of the PR/MR.
-        clone_url (str): Authenticated clone URL for the repository.
         event_type (EventType): The event type that produced this event.
+        clone_url (str): Authenticated clone URL for the repository.
+            Defaults to empty; populated after ``ensure_auth()`` by the
+            webhook handler or CLI.
     """
 
     platform: PlatformName
     repo_full_name: str
     pr_number: int
     pr_branch: str
-    clone_url: str
     event_type: EventType
+    clone_url: str = ""
 
 
 @dataclass(frozen=True)
@@ -227,6 +229,31 @@ class Platform(Protocol):
 
         Returns:
             str: The head branch name, or empty string if unavailable.
+        """
+
+        ...
+
+    async def ensure_auth(self) -> None:
+        """
+        Ensure the platform has a valid authentication token.
+
+        Refreshes expired tokens for App-based auth. No-op for static tokens.
+        """
+
+        ...
+
+    def build_clone_url(self, repo_full_name: str) -> str:
+        """
+        Build an authenticated clone URL for a repository.
+
+        Must be called after ``ensure_auth()`` so that a valid token is
+        available for App-based auth modes.
+
+        Args:
+            repo_full_name (str): Full repository name (e.g. ``owner/repo``).
+
+        Returns:
+            str: The authenticated HTTPS clone URL.
         """
 
         ...

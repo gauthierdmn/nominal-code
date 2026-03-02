@@ -41,6 +41,10 @@ def _make_github_platform():
     platform.post_reaction = AsyncMock()
     platform.post_reply = AsyncMock()
     platform.fetch_pr_branch = AsyncMock(return_value="")
+    platform.ensure_auth = AsyncMock()
+    platform.build_clone_url = MagicMock(
+        return_value="https://x-access-token:test@github.com/owner/repo.git"
+    )
 
     return platform
 
@@ -114,7 +118,6 @@ class TestGitHubWebhook:
             repo_full_name="owner/repo",
             pr_number=1,
             pr_branch="main",
-            clone_url="",
             event_type=EventType.ISSUE_COMMENT,
             comment_id=100,
             author_username="alice",
@@ -141,7 +144,6 @@ class TestGitHubWebhook:
             repo_full_name="owner/repo",
             pr_number=1,
             pr_branch="main",
-            clone_url="",
             event_type=EventType.ISSUE_COMMENT,
             comment_id=100,
             author_username="alice",
@@ -177,7 +179,6 @@ class TestGitHubWebhook:
             repo_full_name="owner/repo",
             pr_number=1,
             pr_branch="main",
-            clone_url="",
             event_type=EventType.ISSUE_COMMENT,
             comment_id=100,
             author_username="alice",
@@ -217,7 +218,6 @@ class TestGitHubWebhook:
             repo_full_name="owner/repo",
             pr_number=1,
             pr_branch="main",
-            clone_url="",
             event_type=EventType.ISSUE_COMMENT,
             comment_id=100,
             author_username="alice",
@@ -261,7 +261,6 @@ class TestSingleBotConfig:
             repo_full_name="owner/repo",
             pr_number=1,
             pr_branch="main",
-            clone_url="",
             event_type=EventType.ISSUE_COMMENT,
             comment_id=100,
             author_username="alice",
@@ -300,7 +299,6 @@ class TestSingleBotConfig:
             repo_full_name="owner/repo",
             pr_number=1,
             pr_branch="main",
-            clone_url="",
             event_type=EventType.ISSUE_COMMENT,
             comment_id=100,
             author_username="alice",
@@ -344,7 +342,6 @@ class TestAutoTrigger:
             repo_full_name="owner/repo",
             pr_number=1,
             pr_branch="feature",
-            clone_url="",
             event_type=EventType.PR_OPENED,
             pr_title="Add new feature",
             pr_author="alice",
@@ -369,7 +366,10 @@ class TestAutoTrigger:
             mock_auto.assert_called_once()
             call_kwargs = mock_auto.call_args.kwargs
 
-            assert call_kwargs["event"] is event
+            dispatched_event = call_kwargs["event"]
+
+            assert dispatched_event.repo_full_name == event.repo_full_name
+            assert dispatched_event.pr_number == event.pr_number
 
     @pytest.mark.asyncio
     async def test_lifecycle_event_ignored_when_triggers_not_configured(
@@ -393,7 +393,6 @@ class TestAutoTrigger:
             repo_full_name="owner/repo",
             pr_number=1,
             pr_branch="feature",
-            clone_url="",
             event_type=EventType.PR_OPENED,
             pr_title="New feature",
             pr_author="alice",
@@ -434,7 +433,6 @@ class TestAutoTrigger:
             repo_full_name="owner/repo",
             pr_number=1,
             pr_branch="feature",
-            clone_url="",
             event_type=EventType.PR_PUSH,
             pr_title="Push event",
             pr_author="bob",

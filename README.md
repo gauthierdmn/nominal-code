@@ -9,12 +9,12 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License: Apache 2.0"></a>
 </p>
 
-A bot that monitors GitHub PRs and GitLab MRs for review comments mentioning it, then uses an AI agent to respond, review code, and optionally push changes. Comment `@your-bot fix this bug` on a pull request, and the bot clones the repo, runs the agent, and replies with comments and/or code commits.
+AI agents that review, comment, and fix code. Right from your pull requests.
 
 ## Features
 
-- **Worker bot** — receives a prompt, clones the repo, runs an agent with full tool access, commits and pushes changes
 - **Reviewer bot** — fetches the PR diff, runs an agent with read-only tools, posts structured inline code reviews
+- **Worker bot** — receives a prompt, clones the repo, runs an agent with full tool access, commits and pushes changes
 - **Auto-trigger** — optionally run the reviewer automatically on PR open, push, or reopen via `REVIEWER_TRIGGERS`
 - **CLI mode** — run a one-off review on any PR without deploying a webhook server
 - **GitHub and GitLab** — supports both platforms simultaneously
@@ -45,11 +45,14 @@ uv run nominal-code review owner/repo#42 --prompt "focus on security"
 
 ### Webhook Server Mode
 
+Nominal Code supports two authentication methods for GitHub: a Personal Access Token (PAT) or a GitHub App.
+
+**Using a PAT:**
+
 ```bash
 cd nominal-code/app
 uv sync
 
-# Configure (see docs/configuration.md for all options)
 export REVIEWER_BOT_USERNAME=my-reviewer
 export ALLOWED_USERS=alice,bob
 export GITHUB_TOKEN=ghp_...
@@ -57,6 +60,18 @@ export GITHUB_WEBHOOK_SECRET=your-secret
 
 uv run nominal-code
 ```
+
+**Using a GitHub App:**
+
+```bash
+export GITHUB_APP_ID=12345
+export GITHUB_APP_PRIVATE_KEY_PATH=/path/to/private-key.pem
+export GITHUB_WEBHOOK_SECRET=your-secret
+
+uv run nominal-code
+```
+
+See [Configuration](docs/configuration.md) for all options.
 
 ## Documentation
 

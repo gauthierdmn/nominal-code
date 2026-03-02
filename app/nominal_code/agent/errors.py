@@ -40,14 +40,23 @@ async def handle_agent_errors(
     except RuntimeError:
         logger.exception("Failed to set up workspace")
 
-        await platform.post_reply(
-            event,
-            CommentReply(body="Failed to set up the git workspace."),
-        )
+        try:
+            await platform.post_reply(
+                event,
+                CommentReply(body="Failed to set up the git workspace."),
+            )
+        except Exception:
+            logger.exception("Failed to post workspace error reply")
+
     except Exception:
         logger.exception("Error running agent (%s)", agent_label)
 
-        await platform.post_reply(
-            event,
-            CommentReply(body="An unexpected error occurred while running the agent."),
-        )
+        try:
+            await platform.post_reply(
+                event,
+                CommentReply(
+                    body="An unexpected error occurred while running the agent.",
+                ),
+            )
+        except Exception:
+            logger.exception("Failed to post agent error reply")

@@ -6,9 +6,12 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from environs import Env
+
 from nominal_code.models import EventType
 
 logger: logging.Logger = logging.getLogger(__name__)
+env: Env = Env()
 
 DEFAULT_REVIEWER_PROMPT_PATH: str = "prompts/reviewer_prompt.md"
 DEFAULT_WORKER_PROMPT_PATH: str = "prompts/system_prompt.md"
@@ -108,19 +111,19 @@ class Config:
         """
 
         reviewer_system_prompt: str = _load_file_content(
-            os.environ.get("REVIEWER_SYSTEM_PROMPT", DEFAULT_REVIEWER_PROMPT_PATH),
+            env.str("REVIEWER_SYSTEM_PROMPT", DEFAULT_REVIEWER_PROMPT_PATH),
         )
 
-        workspace_base_dir: str = os.environ.get(
+        workspace_base_dir: str = env.str(
             "WORKSPACE_BASE_DIR",
             os.path.join(tempfile.gettempdir(), "nominal-code"),
         )
 
         coding_guidelines: str = _load_file_content(
-            os.environ.get("CODING_GUIDELINES", DEFAULT_CODING_GUIDELINES_PATH),
+            env.str("CODING_GUIDELINES", DEFAULT_CODING_GUIDELINES_PATH),
         )
         language_guidelines: dict[str, str] = _load_language_guidelines(
-            os.environ.get("LANGUAGE_GUIDELINES_DIR", DEFAULT_LANGUAGE_GUIDELINES_DIR),
+            env.str("LANGUAGE_GUIDELINES_DIR", DEFAULT_LANGUAGE_GUIDELINES_DIR),
         )
 
         return cls(
@@ -133,9 +136,9 @@ class Config:
             webhook_port=0,
             allowed_users=frozenset(),
             workspace_base_dir=workspace_base_dir,
-            agent_max_turns=max_turns or int(os.environ.get("AGENT_MAX_TURNS", "0")),
-            agent_model=model or os.environ.get("AGENT_MODEL", ""),
-            agent_cli_path=os.environ.get("AGENT_CLI_PATH", ""),
+            agent_max_turns=max_turns or env.int("AGENT_MAX_TURNS", 0),
+            agent_model=model or env.str("AGENT_MODEL", ""),
+            agent_cli_path=env.str("AGENT_CLI_PATH", ""),
             coding_guidelines=coding_guidelines,
             language_guidelines=language_guidelines,
             cleanup_interval_hours=0,
@@ -152,28 +155,28 @@ class Config:
             Config: A fully populated configuration instance.
 
         Raises:
-            OSError: If a required environment variable is missing.
-            ValueError: If ALLOWED_USERS is empty or no bot is configured.
+            ValueError: If ALLOWED_USERS is empty, no bot is configured, or an
+                environment variable has an invalid value.
         """
 
-        worker_bot_username: str | None = os.environ.get("WORKER_BOT_USERNAME")
+        worker_bot_username: str = env.str("WORKER_BOT_USERNAME", "")
         worker: WorkerConfig | None = None
 
         if worker_bot_username:
             worker_system_prompt: str = _load_file_content(
-                os.environ.get("WORKER_SYSTEM_PROMPT", DEFAULT_WORKER_PROMPT_PATH),
+                env.str("WORKER_SYSTEM_PROMPT", DEFAULT_WORKER_PROMPT_PATH),
             )
             worker = WorkerConfig(
                 bot_username=worker_bot_username,
                 system_prompt=worker_system_prompt,
             )
 
-        reviewer_bot_username: str | None = os.environ.get("REVIEWER_BOT_USERNAME")
+        reviewer_bot_username: str = env.str("REVIEWER_BOT_USERNAME", "")
         reviewer: ReviewerConfig | None = None
 
         if reviewer_bot_username:
             reviewer_system_prompt: str = _load_file_content(
-                os.environ.get("REVIEWER_SYSTEM_PROMPT", DEFAULT_REVIEWER_PROMPT_PATH),
+                env.str("REVIEWER_SYSTEM_PROMPT", DEFAULT_REVIEWER_PROMPT_PATH),
             )
             reviewer = ReviewerConfig(
                 bot_username=reviewer_bot_username,
@@ -186,12 +189,16 @@ class Config:
                 "must be set",
             )
 
-        webhook_host: str = os.environ.get("WEBHOOK_HOST", DEFAULT_WEBHOOK_HOST)
-        webhook_port: int = int(
-            os.environ.get("WEBHOOK_PORT", str(DEFAULT_WEBHOOK_PORT)),
-        )
+        webhook_host: str = env.str("WEBHOOK_HOST", DEFAULT_WEBHOOK_HOST)
+        webhook_port: int = env.int("WEBHOOK_PORT", DEFAULT_WEBHOOK_PORT)
 
-        users_raw: str = _require_env("ALLOWED_USERS")
+        try:
+            users_raw: str = env.str("ALLOWED_USERS")
+        except Exception as exc:
+            raise ValueError(
+                "Required environment variable 'ALLOWED_USERS' is not set"
+            ) from exc
+
         allowed_users: frozenset[str] = frozenset(
             user.strip() for user in users_raw.split(",") if user.strip()
         )
@@ -199,30 +206,28 @@ class Config:
         if not allowed_users:
             raise ValueError("ALLOWED_USERS must contain at least one username")
 
-        workspace_base_dir: str = os.environ.get(
+        workspace_base_dir: str = env.str(
             "WORKSPACE_BASE_DIR",
             os.path.join(tempfile.gettempdir(), "nominal-code"),
         )
 
-        agent_max_turns: int = int(os.environ.get("AGENT_MAX_TURNS", "0"))
-        agent_model: str = os.environ.get("AGENT_MODEL", "")
-        agent_cli_path: str = os.environ.get("AGENT_CLI_PATH", "")
+        agent_max_turns: int = env.int("AGENT_MAX_TURNS", 0)
+        agent_model: str = env.str("AGENT_MODEL", "")
+        agent_cli_path: str = env.str("AGENT_CLI_PATH", "")
         coding_guidelines: str = _load_file_content(
-            os.environ.get("CODING_GUIDELINES", DEFAULT_CODING_GUIDELINES_PATH),
+            env.str("CODING_GUIDELINES", DEFAULT_CODING_GUIDELINES_PATH),
         )
         language_guidelines: dict[str, str] = _load_language_guidelines(
-            os.environ.get("LANGUAGE_GUIDELINES_DIR", DEFAULT_LANGUAGE_GUIDELINES_DIR),
+            env.str("LANGUAGE_GUIDELINES_DIR", DEFAULT_LANGUAGE_GUIDELINES_DIR),
         )
 
-        cleanup_interval_hours: int = int(
-            os.environ.get(
-                "CLEANUP_INTERVAL_HOURS",
-                str(DEFAULT_CLEANUP_INTERVAL_HOURS),
-            ),
+        cleanup_interval_hours: int = env.int(
+            "CLEANUP_INTERVAL_HOURS",
+            DEFAULT_CLEANUP_INTERVAL_HOURS,
         )
 
         reviewer_triggers: frozenset[EventType] = _parse_reviewer_triggers(
-            os.environ.get("REVIEWER_TRIGGERS", ""),
+            env.str("REVIEWER_TRIGGERS", ""),
         )
 
         return cls(
@@ -325,25 +330,3 @@ def _load_language_guidelines(directory: str) -> dict[str, str]:
             guidelines[file_path.stem] = content
 
     return guidelines
-
-
-def _require_env(key: str) -> str:
-    """
-    Read and return a required environment variable.
-
-    Args:
-        key (str): The environment variable name.
-
-    Returns:
-        str: The variable's value.
-
-    Raises:
-        OSError: If the variable is unset or empty.
-    """
-
-    value: str | None = os.environ.get(key)
-
-    if not value:
-        raise OSError(f"Required environment variable '{key}' is not set")
-
-    return value

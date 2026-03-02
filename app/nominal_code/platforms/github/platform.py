@@ -4,11 +4,11 @@ import hashlib
 import hmac
 import json
 import logging
-import os
 from typing import Any
 
 import httpx
 from aiohttp import web
+from environs import Env
 
 from nominal_code.models import ChangedFile, EventType, FileStatus, ReviewFinding
 from nominal_code.platforms.base import (
@@ -18,6 +18,12 @@ from nominal_code.platforms.base import (
     LifecycleEvent,
     PlatformName,
     PullRequestEvent,
+)
+from nominal_code.platforms.github.auth import (
+    GitHubAppAuth,
+    GitHubAuth,
+    GitHubPatAuth,
+    load_private_key,
 )
 from nominal_code.platforms.registry import register_platform
 
@@ -43,35 +49,27 @@ class GitHubPlatform:
     relevant actions). Verifies webhooks via HMAC-SHA256.
 
     Attributes:
-        token (str): GitHub personal access token or app token.
+        auth (GitHubAuth): Authentication provider for API tokens.
         webhook_secret (str): HMAC secret for signature verification.
-        reviewer_token (str): Read-only token for reviewer clone URLs.
     """
 
     def __init__(
         self,
-        token: str,
+        auth: GitHubAuth,
         webhook_secret: str = "",
-        reviewer_token: str = "",
     ) -> None:
         """
         Initialize the GitHub platform client.
 
         Args:
-            token (str): GitHub API token.
+            auth (GitHubAuth): Authentication provider for API tokens.
             webhook_secret (str): HMAC secret for webhook verification.
-            reviewer_token (str): Read-only token for reviewer clone URLs.
         """
 
-        self.token: str = token
+        self.auth: GitHubAuth = auth
         self.webhook_secret: str = webhook_secret
-        self.reviewer_token: str = reviewer_token
         self._client: httpx.AsyncClient = httpx.AsyncClient(
             base_url=GITHUB_API_BASE,
-            headers={
-                "Authorization": f"token {token}",
-                "Accept": "application/vnd.github.v3+json",
-            },
             timeout=30.0,
         )
 
@@ -85,6 +83,26 @@ class GitHubPlatform:
         """
 
         return "github"
+
+    def _auth_headers(self) -> dict[str, str]:
+        """
+        Build authorization headers for GitHub API requests.
+
+        Returns:
+            dict[str, str]: Headers with Authorization and Accept fields.
+        """
+
+        return {
+            "Authorization": f"token {self.auth.get_token()}",
+            "Accept": "application/vnd.github.v3+json",
+        }
+
+    async def ensure_auth(self) -> None:
+        """
+        Ensure the auth provider has a valid token, refreshing if needed.
+        """
+
+        await self.auth.refresh_if_needed()
 
     def verify_webhook(self, request: web.Request, body: bytes) -> bool:
         """
@@ -144,7 +162,19 @@ class GitHubPlatform:
         """
 
         event_header: str = request.headers.get("X-GitHub-Event", "")
-        payload: dict[str, Any] = json.loads(body)
+
+        try:
+            payload: dict[str, Any] = json.loads(body)
+        except json.JSONDecodeError:
+            logger.warning("Malformed JSON in GitHub webhook payload")
+
+            return None
+
+        installation: dict[str, Any] = payload.get("installation", {})
+        installation_id: int = installation.get("id", 0)
+
+        if installation_id:
+            self.auth.set_installation_id(installation_id)
 
         if event_header == "issue_comment":
             return self._parse_issue_comment(payload)
@@ -196,6 +226,7 @@ class GitHubPlatform:
             response: httpx.Response = await self._client.post(
                 url,
                 json={"body": body},
+                headers=self._auth_headers(),
             )
             response.raise_for_status()
         except httpx.HTTPError:
@@ -237,6 +268,7 @@ class GitHubPlatform:
                 response: httpx.Response = await self._client.post(
                     url,
                     json={"content": reaction},
+                    headers=self._auth_headers(),
                 )
 
                 if response.status_code < 400:
@@ -269,7 +301,10 @@ class GitHubPlatform:
         url: str = f"/repos/{repo_full_name}/pulls/{pr_number}"
 
         try:
-            response: httpx.Response = await self._client.get(url)
+            response: httpx.Response = await self._client.get(
+                url,
+                headers=self._auth_headers(),
+            )
             response.raise_for_status()
             data: dict[str, Any] = response.json()
 
@@ -298,7 +333,10 @@ class GitHubPlatform:
         url: str = f"/repos/{repo_full_name}/pulls/{pr_number}"
 
         try:
-            response: httpx.Response = await self._client.get(url)
+            response: httpx.Response = await self._client.get(
+                url,
+                headers=self._auth_headers(),
+            )
             response.raise_for_status()
             data: dict[str, Any] = response.json()
 
@@ -372,7 +410,10 @@ class GitHubPlatform:
             )
 
             try:
-                response: httpx.Response = await self._client.get(url)
+                response: httpx.Response = await self._client.get(
+                    url,
+                    headers=self._auth_headers(),
+                )
                 response.raise_for_status()
                 data: list[dict[str, Any]] = response.json()
             except httpx.HTTPError:
@@ -389,10 +430,15 @@ class GitHubPlatform:
                 break
 
             for entry in data:
+                try:
+                    status: FileStatus = FileStatus(entry.get("status", "modified"))
+                except ValueError:
+                    status = FileStatus.MODIFIED
+
                 files.append(
                     ChangedFile(
                         file_path=entry.get("filename", ""),
-                        status=FileStatus(entry.get("status", "modified")),
+                        status=status,
                         patch=entry.get("patch", ""),
                     ),
                 )
@@ -445,6 +491,7 @@ class GitHubPlatform:
                     "body": summary,
                     "comments": review_comments,
                 },
+                headers=self._auth_headers(),
             )
             response.raise_for_status()
         except httpx.HTTPError:
@@ -469,7 +516,7 @@ class GitHubPlatform:
             str: The authenticated HTTPS clone URL.
         """
 
-        effective_token: str = self.reviewer_token or self.token
+        effective_token: str = self.auth.get_reviewer_token()
 
         return (
             f"https://x-access-token:{effective_token}@github.com/{repo_full_name}.git"
@@ -508,7 +555,6 @@ class GitHubPlatform:
             repo_full_name=repo_full_name,
             pr_number=pr_number,
             pr_branch="",
-            clone_url=self._build_clone_url(repo_full_name),
             event_type=EventType.ISSUE_COMMENT,
             comment_id=comment.get("id", 0),
             author_username=comment.get("user", {}).get("login", ""),
@@ -544,7 +590,6 @@ class GitHubPlatform:
             repo_full_name=repo_full_name,
             pr_number=pull_request.get("number", 0),
             pr_branch=pull_request.get("head", {}).get("ref", ""),
-            clone_url=self._build_clone_url(repo_full_name),
             event_type=EventType.REVIEW_COMMENT,
             comment_id=comment.get("id", 0),
             author_username=comment.get("user", {}).get("login", ""),
@@ -587,7 +632,6 @@ class GitHubPlatform:
             repo_full_name=repo_full_name,
             pr_number=pull_request.get("number", 0),
             pr_branch=pull_request.get("head", {}).get("ref", ""),
-            clone_url=self._build_clone_url(repo_full_name),
             event_type=EventType.REVIEW,
             comment_id=review.get("id", 0),
             author_username=review.get("user", {}).get("login", ""),
@@ -631,7 +675,6 @@ class GitHubPlatform:
             repo_full_name=repo_full_name,
             pr_number=pull_request.get("number", 0),
             pr_branch=pull_request.get("head", {}).get("ref", ""),
-            clone_url=self._build_clone_url(repo_full_name),
             event_type=event_type,
             pr_title=pull_request.get("title", ""),
             pr_author=pull_request.get("user", {}).get("login", ""),
@@ -663,7 +706,10 @@ class GitHubPlatform:
             )
 
             try:
-                response: httpx.Response = await self._client.get(url)
+                response: httpx.Response = await self._client.get(
+                    url,
+                    headers=self._auth_headers(),
+                )
                 response.raise_for_status()
                 data: list[dict[str, Any]] = response.json()
             except httpx.HTTPError:
@@ -721,7 +767,10 @@ class GitHubPlatform:
             )
 
             try:
-                response: httpx.Response = await self._client.get(url)
+                response: httpx.Response = await self._client.get(
+                    url,
+                    headers=self._auth_headers(),
+                )
                 response.raise_for_status()
                 data: list[dict[str, Any]] = response.json()
             except httpx.HTTPError:
@@ -755,7 +804,7 @@ class GitHubPlatform:
 
         return results
 
-    def _build_clone_url(self, repo_full_name: str) -> str:
+    def build_clone_url(self, repo_full_name: str) -> str:
         """
         Build an authenticated clone URL for a GitHub repository.
 
@@ -766,33 +815,46 @@ class GitHubPlatform:
             str: The authenticated HTTPS clone URL.
         """
 
-        return f"https://x-access-token:{self.token}@github.com/{repo_full_name}.git"
+        return f"https://x-access-token:{self.auth.get_token()}@github.com/{repo_full_name}.git"
 
 
 def _create_github_platform() -> GitHubPlatform | None:
     """
     Factory that builds a GitHubPlatform from environment variables.
 
-    Returns None if ``GITHUB_TOKEN`` is not set, indicating GitHub is not
-    configured.
+    Detects auth mode: if ``GITHUB_APP_ID`` and a private key are set,
+    uses GitHub App authentication. Otherwise falls back to PAT via
+    ``GITHUB_TOKEN``. Returns None if neither is configured.
 
     Returns:
         GitHubPlatform | None: A configured client, or None.
     """
 
-    token: str = os.environ.get("GITHUB_TOKEN", "")
+    _env: Env = Env()
+    webhook_secret: str = _env.str("GITHUB_WEBHOOK_SECRET", "")
+
+    app_id: str = _env.str("GITHUB_APP_ID", "")
+    private_key: str = load_private_key()
+
+    if app_id and private_key:
+        installation_id: int = _env.int("GITHUB_INSTALLATION_ID", 0)
+        auth: GitHubAuth = GitHubAppAuth(
+            app_id=app_id,
+            private_key=private_key,
+            installation_id=installation_id,
+        )
+
+        return GitHubPlatform(auth=auth, webhook_secret=webhook_secret)
+
+    token: str = _env.str("GITHUB_TOKEN", "")
 
     if not token:
         return None
 
-    webhook_secret: str = os.environ.get("GITHUB_WEBHOOK_SECRET", "")
-    reviewer_token: str = os.environ.get("GITHUB_REVIEWER_TOKEN", "")
+    reviewer_token: str = _env.str("GITHUB_REVIEWER_TOKEN", "")
+    auth = GitHubPatAuth(token=token, reviewer_token=reviewer_token)
 
-    return GitHubPlatform(
-        token=token,
-        webhook_secret=webhook_secret,
-        reviewer_token=reviewer_token,
-    )
+    return GitHubPlatform(auth=auth, webhook_secret=webhook_secret)
 
 
 register_platform("github", _create_github_platform)

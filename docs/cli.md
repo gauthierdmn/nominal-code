@@ -28,7 +28,11 @@ CLI mode reads a subset of the environment variables used by the webhook server.
 
 | Variable | Required | Description |
 |---|---|---|
-| `GITHUB_TOKEN` | Yes (for GitHub) | GitHub API token |
+| `GITHUB_TOKEN` | Yes (for GitHub)* | GitHub PAT |
+| `GITHUB_APP_ID` | Yes (for GitHub)* | GitHub App ID |
+| `GITHUB_APP_PRIVATE_KEY` | No | Inline PEM private key for the GitHub App |
+| `GITHUB_APP_PRIVATE_KEY_PATH` | No | Path to PEM private key file |
+| `GITHUB_INSTALLATION_ID` | Yes (with App auth) | GitHub App installation ID |
 | `GITLAB_TOKEN` | Yes (for GitLab) | GitLab API token |
 | `GITLAB_BASE_URL` | No | GitLab instance URL (default: `https://gitlab.com`) |
 | `REVIEWER_SYSTEM_PROMPT` | No | Path to a system prompt file |
@@ -42,10 +46,21 @@ CLI mode reads a subset of the environment variables used by the webhook server.
 
 ## Examples
 
-### Basic review
+\*Either `GITHUB_TOKEN` or `GITHUB_APP_ID` + private key is required for GitHub. When using App auth in CLI mode, `GITHUB_INSTALLATION_ID` is also required.
+
+### Basic review (PAT)
 
 ```bash
 export GITHUB_TOKEN=ghp_...
+uv run nominal-code review myorg/myrepo#123
+```
+
+### Basic review (GitHub App)
+
+```bash
+export GITHUB_APP_ID=12345
+export GITHUB_APP_PRIVATE_KEY_PATH=/path/to/private-key.pem
+export GITHUB_INSTALLATION_ID=67890
 uv run nominal-code review myorg/myrepo#123
 ```
 

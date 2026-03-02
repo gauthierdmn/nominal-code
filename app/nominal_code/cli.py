@@ -3,9 +3,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-import os
 import re
 import sys
+
+from environs import Env
 
 from nominal_code.config import Config
 from nominal_code.main import setup_logging
@@ -24,6 +25,7 @@ PR_REF_PATTERN: re.Pattern[str] = re.compile(
 CLI_AUTHOR_USERNAME: str = "cli"
 
 logger: logging.Logger = logging.getLogger(__name__)
+env: Env = Env()
 
 
 def parse_pr_ref(ref: str) -> tuple[str, int]:
@@ -117,6 +119,8 @@ def build_platform(platform_name: PlatformName) -> ReviewerPlatform:
     """
     Construct a platform instance for CLI use from environment tokens.
 
+    For GitHub, supports both PAT and App authentication. App mode requires
+    ``GITHUB_APP_ID``, a private key, and ``GITHUB_INSTALLATION_ID``.
     No webhook secret is required since CLI mode does not receive webhooks.
 
     Args:
@@ -130,18 +134,47 @@ def build_platform(platform_name: PlatformName) -> ReviewerPlatform:
     """
 
     if platform_name == PlatformName.GITHUB:
-        token: str = os.environ.get("GITHUB_TOKEN", "")
+        from nominal_code.platforms.github import (
+            GitHubAppAuth,
+            GitHubAuth,
+            GitHubPatAuth,
+            GitHubPlatform,
+            load_private_key,
+        )
+
+        app_id: str = env.str("GITHUB_APP_ID", "")
+        private_key: str = load_private_key()
+
+        if app_id and private_key:
+            installation_id: int = env.int("GITHUB_INSTALLATION_ID", 0)
+
+            if not installation_id:
+                logger.error(
+                    "GITHUB_INSTALLATION_ID is required for CLI mode "
+                    "with GitHub App auth",
+                )
+                sys.exit(1)
+
+            auth: GitHubAuth = GitHubAppAuth(
+                app_id=app_id,
+                private_key=private_key,
+                installation_id=installation_id,
+            )
+
+            return GitHubPlatform(auth=auth)
+
+        token: str = env.str("GITHUB_TOKEN", "")
 
         if not token:
             logger.error("GITHUB_TOKEN is required for GitHub reviews")
             sys.exit(1)
 
-        from nominal_code.platforms.github import GitHubPlatform
+        auth = GitHubPatAuth(token=token)
 
-        return GitHubPlatform(token=token)
+        return GitHubPlatform(auth=auth)
 
     if platform_name == PlatformName.GITLAB:
-        token = os.environ.get("GITLAB_TOKEN", "")
+        token = env.str("GITLAB_TOKEN", "")
 
         if not token:
             logger.error("GITLAB_TOKEN is required for GitLab reviews")
@@ -149,7 +182,7 @@ def build_platform(platform_name: PlatformName) -> ReviewerPlatform:
 
         from nominal_code.platforms.gitlab import GitLabPlatform
 
-        base_url: str = os.environ.get("GITLAB_BASE_URL", "https://gitlab.com")
+        base_url: str = env.str("GITLAB_BASE_URL", "https://gitlab.com")
 
         return GitLabPlatform(token=token, base_url=base_url)
 
@@ -218,6 +251,8 @@ async def run_review(args: argparse.Namespace) -> int:
     platform_name: PlatformName = PlatformName(args.platform)
     platform: ReviewerPlatform = build_platform(platform_name)
 
+    await platform.ensure_auth()
+
     branch: str = await platform.fetch_pr_branch(repo_full_name, pr_number)
 
     if not branch:
@@ -234,7 +269,7 @@ async def run_review(args: argparse.Namespace) -> int:
         repo_full_name=repo_full_name,
         pr_number=pr_number,
         pr_branch=branch,
-        clone_url="",
+        clone_url=platform.build_clone_url(repo_full_name),
         event_type=EventType.PR_OPENED,
     )
 

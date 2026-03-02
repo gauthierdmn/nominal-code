@@ -59,6 +59,8 @@ async def enqueue_job(
             event.body[:100],
         )
 
+        await platform.ensure_auth()
+
         await platform.post_reaction(event, EYES_REACTION)
     else:
         logger.info(
