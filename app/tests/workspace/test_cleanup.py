@@ -1,5 +1,6 @@
 # type: ignore
 import asyncio
+from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -24,9 +25,9 @@ def mock_platform():
 @pytest.fixture
 def cleaner(base_dir, mock_platform):
     return WorkspaceCleaner(
-        base_dir=str(base_dir),
+        base_dir=base_dir,
         platforms={"github": mock_platform},
-        interval_seconds=3600,
+        cleanup_wait=timedelta(hours=1),
     )
 
 
@@ -132,9 +133,9 @@ class TestRunOnce:
         mock_platform.is_pr_open.return_value = False
 
         cleaner = WorkspaceCleaner(
-            base_dir=str(base_dir),
+            base_dir=base_dir,
             platforms={"github": mock_platform, "gitlab": second_platform},
-            interval_seconds=3600,
+            cleanup_wait=timedelta(hours=1),
         )
         pr_dir = _create_pr_dir(base_dir, "owner", "repo", 5)
 
@@ -221,3 +222,199 @@ class TestStartStop:
         await cleaner.stop()
 
         assert cleaner._task is None
+
+
+class TestWorkspaceCleanerInit:
+    def test_init_stores_base_dir(self, tmp_path):
+        cleaner = WorkspaceCleaner(
+            base_dir=tmp_path,
+            platforms={},
+            cleanup_wait=timedelta(hours=2),
+        )
+
+        assert cleaner.base_dir == tmp_path
+
+    def test_init_stores_platforms(self, tmp_path, mock_platform):
+        cleaner = WorkspaceCleaner(
+            base_dir=tmp_path,
+            platforms={"github": mock_platform},
+            cleanup_wait=timedelta(hours=1),
+        )
+
+        assert "github" in cleaner.platforms
+
+    def test_init_stores_cleanup_wait(self, tmp_path):
+        wait = timedelta(hours=3)
+        cleaner = WorkspaceCleaner(
+            base_dir=tmp_path,
+            platforms={},
+            cleanup_wait=wait,
+        )
+
+        assert cleaner.cleanup_wait == wait
+
+    def test_init_task_is_none(self, tmp_path):
+        cleaner = WorkspaceCleaner(
+            base_dir=tmp_path,
+            platforms={},
+            cleanup_wait=timedelta(hours=1),
+        )
+
+        assert cleaner._task is None
+
+
+class TestCleanupOrphanedDeps:
+    def test_cleanup_orphaned_deps_removes_deps_when_no_prs(self, base_dir):
+        from nominal_code.workspace.git import DEPS_FOLDER_NAME
+
+        repo_dir = base_dir / "owner" / "repo"
+        repo_dir.mkdir(parents=True)
+        deps_dir = repo_dir / DEPS_FOLDER_NAME
+        deps_dir.mkdir()
+        (deps_dir / "dep.txt").write_text("placeholder")
+        cleaner = WorkspaceCleaner(
+            base_dir=base_dir,
+            platforms={},
+            cleanup_wait=timedelta(hours=1),
+        )
+
+        cleaner._cleanup_orphaned_deps(repo_dir)
+
+        assert not deps_dir.exists()
+
+    def test_cleanup_orphaned_deps_keeps_deps_when_pr_dirs_exist(self, base_dir):
+        from nominal_code.workspace.git import DEPS_FOLDER_NAME
+
+        repo_dir = base_dir / "owner" / "repo"
+        repo_dir.mkdir(parents=True)
+        pr_dir = repo_dir / "pr-1"
+        pr_dir.mkdir()
+        deps_dir = repo_dir / DEPS_FOLDER_NAME
+        deps_dir.mkdir()
+        cleaner = WorkspaceCleaner(
+            base_dir=base_dir,
+            platforms={},
+            cleanup_wait=timedelta(hours=1),
+        )
+
+        cleaner._cleanup_orphaned_deps(repo_dir)
+
+        assert deps_dir.exists()
+
+    def test_cleanup_orphaned_deps_noop_when_deps_missing(self, base_dir):
+        repo_dir = base_dir / "owner" / "repo"
+        repo_dir.mkdir(parents=True)
+        cleaner = WorkspaceCleaner(
+            base_dir=base_dir,
+            platforms={},
+            cleanup_wait=timedelta(hours=1),
+        )
+
+        cleaner._cleanup_orphaned_deps(repo_dir)
+
+
+class TestMaybeDelete:
+    @pytest.mark.asyncio
+    async def test_maybe_delete_removes_when_all_platforms_say_closed(
+        self, base_dir, mock_platform
+    ):
+        pr_dir = base_dir / "owner" / "repo" / "pr-5"
+        pr_dir.mkdir(parents=True)
+        mock_platform.is_pr_open.return_value = False
+        cleaner = WorkspaceCleaner(
+            base_dir=base_dir,
+            platforms={"github": mock_platform},
+            cleanup_wait=timedelta(hours=1),
+        )
+
+        await cleaner._maybe_delete(pr_dir, "owner/repo", 5)
+
+        assert not pr_dir.exists()
+
+    @pytest.mark.asyncio
+    async def test_maybe_delete_keeps_when_platform_says_open(
+        self, base_dir, mock_platform
+    ):
+        pr_dir = base_dir / "owner" / "repo" / "pr-5"
+        pr_dir.mkdir(parents=True)
+        mock_platform.is_pr_open.return_value = True
+        cleaner = WorkspaceCleaner(
+            base_dir=base_dir,
+            platforms={"github": mock_platform},
+            cleanup_wait=timedelta(hours=1),
+        )
+
+        await cleaner._maybe_delete(pr_dir, "owner/repo", 5)
+
+        assert pr_dir.exists()
+
+    @pytest.mark.asyncio
+    async def test_maybe_delete_keeps_on_platform_error(self, base_dir, mock_platform):
+        pr_dir = base_dir / "owner" / "repo" / "pr-5"
+        pr_dir.mkdir(parents=True)
+        mock_platform.is_pr_open.side_effect = RuntimeError("API down")
+        cleaner = WorkspaceCleaner(
+            base_dir=base_dir,
+            platforms={"github": mock_platform},
+            cleanup_wait=timedelta(hours=1),
+        )
+
+        await cleaner._maybe_delete(pr_dir, "owner/repo", 5)
+
+        assert pr_dir.exists()
+
+    @pytest.mark.asyncio
+    async def test_maybe_delete_no_platforms_deletes_dir(self, base_dir):
+        pr_dir = base_dir / "owner" / "repo" / "pr-5"
+        pr_dir.mkdir(parents=True)
+        cleaner = WorkspaceCleaner(
+            base_dir=base_dir,
+            platforms={},
+            cleanup_wait=timedelta(hours=1),
+        )
+
+        await cleaner._maybe_delete(pr_dir, "owner/repo", 5)
+
+        assert not pr_dir.exists()
+
+
+class TestCleanupLoop:
+    @pytest.mark.asyncio
+    async def test_loop_runs_cleanup_after_wait(self, cleaner):
+        call_count = []
+
+        async def fake_run_once():
+            call_count.append(1)
+
+        with patch.object(cleaner, "run_once", side_effect=fake_run_once):
+            with patch(
+                "nominal_code.workspace.cleanup.asyncio.sleep",
+                new=AsyncMock(side_effect=[None, asyncio.CancelledError()]),
+            ):
+                try:
+                    await cleaner._loop()
+                except asyncio.CancelledError:
+                    pass
+
+        assert len(call_count) >= 1
+
+    @pytest.mark.asyncio
+    async def test_loop_continues_after_run_once_exception(self, cleaner):
+        call_count = []
+
+        async def fake_run_once():
+            call_count.append(1)
+
+            raise RuntimeError("cleanup failed")
+
+        with patch.object(cleaner, "run_once", side_effect=fake_run_once):
+            with patch(
+                "nominal_code.workspace.cleanup.asyncio.sleep",
+                new=AsyncMock(side_effect=[None, asyncio.CancelledError()]),
+            ):
+                try:
+                    await cleaner._loop()
+                except asyncio.CancelledError:
+                    pass
+
+        assert len(call_count) >= 1

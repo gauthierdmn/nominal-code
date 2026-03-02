@@ -68,6 +68,7 @@ class GitHubPlatform:
 
         self.auth: GitHubAuth = auth
         self.webhook_secret: str = webhook_secret
+
         self._client: httpx.AsyncClient = httpx.AsyncClient(
             base_url=GITHUB_API_BASE,
             timeout=30.0,
@@ -501,7 +502,10 @@ class GitHubPlatform:
                 pr_number,
             )
 
-            await self.post_reply(event, CommentReply(body=summary))
+            await self.post_reply(
+                event=event,
+                reply=CommentReply(body=summary),
+            )
 
     def build_reviewer_clone_url(self, repo_full_name: str) -> str:
         """
@@ -830,14 +834,14 @@ def _create_github_platform() -> GitHubPlatform | None:
         GitHubPlatform | None: A configured client, or None.
     """
 
-    _env: Env = Env()
-    webhook_secret: str = _env.str("GITHUB_WEBHOOK_SECRET", "")
+    env: Env = Env()
+    webhook_secret: str = env.str("GITHUB_WEBHOOK_SECRET", "")
 
-    app_id: str = _env.str("GITHUB_APP_ID", "")
+    app_id: str = env.str("GITHUB_APP_ID", "")
     private_key: str = load_private_key()
 
     if app_id and private_key:
-        installation_id: int = _env.int("GITHUB_INSTALLATION_ID", 0)
+        installation_id: int = env.int("GITHUB_INSTALLATION_ID", 0)
         auth: GitHubAuth = GitHubAppAuth(
             app_id=app_id,
             private_key=private_key,
@@ -846,12 +850,12 @@ def _create_github_platform() -> GitHubPlatform | None:
 
         return GitHubPlatform(auth=auth, webhook_secret=webhook_secret)
 
-    token: str = _env.str("GITHUB_TOKEN", "")
+    token: str = env.str("GITHUB_TOKEN", "")
 
     if not token:
         return None
 
-    reviewer_token: str = _env.str("GITHUB_REVIEWER_TOKEN", "")
+    reviewer_token: str = env.str("GITHUB_REVIEWER_TOKEN", "")
     auth = GitHubPatAuth(token=token, reviewer_token=reviewer_token)
 
     return GitHubPlatform(auth=auth, webhook_secret=webhook_secret)

@@ -42,8 +42,8 @@ async def handle_agent_errors(
 
         try:
             await platform.post_reply(
-                event,
-                CommentReply(body="Failed to set up the git workspace."),
+                event=event,
+                reply=CommentReply(body="Failed to set up the git workspace."),
             )
         except Exception:
             logger.exception("Failed to post workspace error reply")
@@ -53,8 +53,8 @@ async def handle_agent_errors(
 
         try:
             await platform.post_reply(
-                event,
-                CommentReply(
+                event=event,
+                reply=CommentReply(
                     body="An unexpected error occurred while running the agent.",
                 ),
             )

@@ -1,10 +1,16 @@
 # type: ignore
 import os
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-from nominal_code.config import Config, _parse_reviewer_triggers
+from nominal_code.config import (
+    Config,
+    _load_file_content,
+    _load_language_guidelines,
+    _parse_reviewer_triggers,
+)
 from nominal_code.models import EventType
 
 
@@ -132,7 +138,7 @@ class TestFromEnv:
         assert config.webhook_host == "127.0.0.1"
         assert config.webhook_port == 9090
         assert config.allowed_users == frozenset({"alice", "bob", "charlie"})
-        assert config.workspace_base_dir == "/tmp/workspaces"
+        assert config.workspace_base_dir == Path("/tmp/workspaces")
         assert config.agent_max_turns == 10
         assert config.agent_model == "claude-sonnet-4-20250514"
         assert config.agent_cli_path == "/usr/local/bin/claude"
@@ -312,3 +318,119 @@ class TestParseReviewerTriggers:
         result = _parse_reviewer_triggers("pr_opened,")
 
         assert result == frozenset({EventType.PR_OPENED})
+
+
+class TestLoadFileContent:
+    def test_load_file_content_reads_existing_file(self, tmp_path):
+        target = tmp_path / "prompt.md"
+        target.write_text("  System prompt here  \n", encoding="utf-8")
+
+        result = _load_file_content(target)
+
+        assert result == "System prompt here"
+
+    def test_load_file_content_returns_empty_for_missing_file(self, tmp_path):
+        result = _load_file_content(tmp_path / "nonexistent.md")
+
+        assert result == ""
+
+    def test_load_file_content_strips_whitespace(self, tmp_path):
+        target = tmp_path / "file.md"
+        target.write_text("\n\nContent\n\n", encoding="utf-8")
+
+        result = _load_file_content(target)
+
+        assert result == "Content"
+
+    def test_load_file_content_empty_file_returns_empty(self, tmp_path):
+        target = tmp_path / "empty.md"
+        target.write_text("", encoding="utf-8")
+
+        result = _load_file_content(target)
+
+        assert result == ""
+
+
+class TestLoadLanguageGuidelines:
+    def test_load_language_guidelines_reads_md_files(self, tmp_path):
+        lang_dir = tmp_path / "languages"
+        lang_dir.mkdir()
+        (lang_dir / "python.md").write_text("Python rules.", encoding="utf-8")
+        (lang_dir / "go.md").write_text("Go rules.", encoding="utf-8")
+
+        result = _load_language_guidelines(lang_dir)
+
+        assert result["python"] == "Python rules."
+        assert result["go"] == "Go rules."
+
+    def test_load_language_guidelines_returns_empty_dict_for_missing_dir(
+        self, tmp_path
+    ):
+        result = _load_language_guidelines(tmp_path / "nonexistent")
+
+        assert result == {}
+
+    def test_load_language_guidelines_skips_empty_files(self, tmp_path):
+        lang_dir = tmp_path / "languages"
+        lang_dir.mkdir()
+        (lang_dir / "python.md").write_text("", encoding="utf-8")
+        (lang_dir / "go.md").write_text("  \n  ", encoding="utf-8")
+
+        result = _load_language_guidelines(lang_dir)
+
+        assert result == {}
+
+    def test_load_language_guidelines_ignores_non_md_files(self, tmp_path):
+        lang_dir = tmp_path / "languages"
+        lang_dir.mkdir()
+        (lang_dir / "python.txt").write_text("Should be ignored.", encoding="utf-8")
+        (lang_dir / "python.md").write_text("Python rules.", encoding="utf-8")
+
+        result = _load_language_guidelines(lang_dir)
+
+        assert list(result.keys()) == ["python"]
+
+    def test_load_language_guidelines_uses_stem_as_key(self, tmp_path):
+        lang_dir = tmp_path / "languages"
+        lang_dir.mkdir()
+        (lang_dir / "typescript.md").write_text("TS rules.", encoding="utf-8")
+
+        result = _load_language_guidelines(lang_dir)
+
+        assert "typescript" in result
+
+
+class TestConfigForCli:
+    def test_config_for_cli_creates_valid_config(self, tmp_path):
+        with patch.dict(os.environ, {"WORKSPACE_BASE_DIR": str(tmp_path)}, clear=True):
+            config = Config.for_cli()
+
+        assert config.worker is None
+        assert config.reviewer is not None
+        assert config.reviewer.bot_username == ""
+
+    def test_config_for_cli_applies_model_override(self, tmp_path):
+        with patch.dict(os.environ, {"WORKSPACE_BASE_DIR": str(tmp_path)}, clear=True):
+            config = Config.for_cli(model="claude-opus-4-6")
+
+        assert config.agent_model == "claude-opus-4-6"
+
+    def test_config_for_cli_applies_max_turns_override(self, tmp_path):
+        with patch.dict(os.environ, {"WORKSPACE_BASE_DIR": str(tmp_path)}, clear=True):
+            config = Config.for_cli(max_turns=5)
+
+        assert config.agent_max_turns == 5
+
+    def test_config_for_cli_no_webhook_settings_required(self, tmp_path):
+        with patch.dict(os.environ, {"WORKSPACE_BASE_DIR": str(tmp_path)}, clear=True):
+            config = Config.for_cli()
+
+        assert config.webhook_host == ""
+        assert config.webhook_port == 0
+        assert config.allowed_users == frozenset()
+
+    def test_config_for_cli_cleanup_interval_is_zero(self, tmp_path):
+        with patch.dict(os.environ, {"WORKSPACE_BASE_DIR": str(tmp_path)}, clear=True):
+            config = Config.for_cli()
+
+        assert config.cleanup_interval_hours == 0

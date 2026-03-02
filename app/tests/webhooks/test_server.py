@@ -450,3 +450,170 @@ class TestAutoTrigger:
         data = await response.json()
 
         assert data["status"] == "ignored"
+
+
+class TestHandleHealth:
+    @pytest.mark.asyncio
+    async def test_handle_health_returns_200(self, client):
+        response = await client.get("/health")
+
+        assert response.status == 200
+
+    @pytest.mark.asyncio
+    async def test_handle_health_returns_status_ok(self, client):
+        response = await client.get("/health")
+        data = await response.json()
+
+        assert data == {"status": "ok"}
+
+
+class TestMakeWebhookHandler:
+    def test_make_webhook_handler_returns_callable(self, app):
+        from nominal_code.webhooks.server import _make_webhook_handler
+
+        handler = _make_webhook_handler("github")
+
+        assert callable(handler)
+
+    @pytest.mark.asyncio
+    async def test_make_webhook_handler_routes_correctly(self, client, app):
+        app["platforms"]["github"].parse_event.return_value = None
+        app["platforms"]["github"].verify_webhook.return_value = True
+
+        response = await client.post(
+            "/webhooks/github",
+            data=b"{}",
+            headers={"X-GitHub-Event": "unknown"},
+        )
+
+        assert response.status == 200
+
+
+class TestHandleWebhook:
+    @pytest.mark.asyncio
+    async def test_handle_webhook_invalid_signature_returns_401(self, client, app):
+        app["platforms"]["github"].verify_webhook.return_value = False
+
+        response = await client.post(
+            "/webhooks/github",
+            data=b"{}",
+        )
+
+        assert response.status == 401
+
+    @pytest.mark.asyncio
+    async def test_handle_webhook_ignored_event_returns_ignored(self, client, app):
+        app["platforms"]["github"].verify_webhook.return_value = True
+        app["platforms"]["github"].parse_event.return_value = None
+
+        response = await client.post(
+            "/webhooks/github",
+            data=b"{}",
+        )
+
+        data = await response.json()
+
+        assert data["status"] == "ignored"
+
+    @pytest.mark.asyncio
+    async def test_handle_webhook_no_mention_returns_no_mention(self, client, app):
+        from nominal_code.models import EventType
+        from nominal_code.platforms.base import CommentEvent, PlatformName
+
+        event = CommentEvent(
+            platform=PlatformName.GITHUB,
+            repo_full_name="owner/repo",
+            pr_number=1,
+            pr_branch="main",
+            event_type=EventType.ISSUE_COMMENT,
+            comment_id=1,
+            author_username="alice",
+            body="No mention here",
+        )
+        app["platforms"]["github"].verify_webhook.return_value = True
+        app["platforms"]["github"].parse_event.return_value = event
+
+        response = await client.post("/webhooks/github", data=b"{}")
+        data = await response.json()
+
+        assert data["status"] == "no_mention"
+
+    @pytest.mark.asyncio
+    async def test_handle_webhook_worker_mention_returns_accepted(self, client, app):
+        from nominal_code.models import EventType
+        from nominal_code.platforms.base import CommentEvent, PlatformName
+
+        event = CommentEvent(
+            platform=PlatformName.GITHUB,
+            repo_full_name="owner/repo",
+            pr_number=1,
+            pr_branch="main",
+            event_type=EventType.ISSUE_COMMENT,
+            comment_id=1,
+            author_username="alice",
+            body="@claude-worker please fix this",
+        )
+        app["platforms"]["github"].verify_webhook.return_value = True
+        app["platforms"]["github"].parse_event.return_value = event
+
+        with patch("nominal_code.webhooks.server.enqueue_job", new=AsyncMock()):
+            response = await client.post("/webhooks/github", data=b"{}")
+
+        data = await response.json()
+
+        assert data["status"] == "accepted"
+
+    @pytest.mark.asyncio
+    async def test_handle_webhook_internal_error_returns_500(self, client, app):
+        app["platforms"]["github"].verify_webhook.side_effect = RuntimeError("crash")
+
+        response = await client.post("/webhooks/github", data=b"{}")
+
+        assert response.status == 500
+
+
+class TestAutoTriggerJob:
+    @pytest.mark.asyncio
+    async def test_auto_trigger_lifecycle_event_returns_accepted(self, client, app):
+        from nominal_code.models import EventType
+        from nominal_code.platforms.base import LifecycleEvent, PlatformName
+
+        event = LifecycleEvent(
+            platform=PlatformName.GITHUB,
+            repo_full_name="owner/repo",
+            pr_number=1,
+            pr_branch="main",
+            event_type=EventType.PR_OPENED,
+        )
+        app["config"].reviewer_triggers = frozenset([EventType.PR_OPENED])
+        app["platforms"]["github"].verify_webhook.return_value = True
+        app["platforms"]["github"].parse_event.return_value = event
+
+        with patch("nominal_code.webhooks.server.enqueue_job", new=AsyncMock()):
+            response = await client.post("/webhooks/github", data=b"{}")
+
+        data = await response.json()
+
+        assert data["status"] == "accepted"
+
+    @pytest.mark.asyncio
+    async def test_auto_trigger_no_reviewer_returns_ignored(self, client, app):
+        from nominal_code.models import EventType
+        from nominal_code.platforms.base import LifecycleEvent, PlatformName
+
+        event = LifecycleEvent(
+            platform=PlatformName.GITHUB,
+            repo_full_name="owner/repo",
+            pr_number=1,
+            pr_branch="main",
+            event_type=EventType.PR_OPENED,
+        )
+        app["config"].reviewer_triggers = frozenset([EventType.PR_OPENED])
+        app["config"].reviewer = None
+        app["platforms"]["github"].verify_webhook.return_value = True
+        app["platforms"]["github"].parse_event.return_value = event
+
+        response = await client.post("/webhooks/github", data=b"{}")
+        data = await response.json()
+
+        assert data["status"] == "ignored"

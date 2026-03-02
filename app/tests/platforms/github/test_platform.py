@@ -993,3 +993,160 @@ class TestFactory:
 
         assert result is not None
         assert isinstance(result.auth, GitHubAppAuth)
+
+
+class TestGitHubPlatformInit:
+    def test_init_stores_auth(self):
+        auth = GitHubPatAuth(token="ghp_test")
+        platform = GitHubPlatform(auth=auth)
+
+        assert platform.auth is auth
+
+    def test_init_stores_webhook_secret(self):
+        auth = GitHubPatAuth(token="ghp_test")
+        platform = GitHubPlatform(auth=auth, webhook_secret="my-secret")
+
+        assert platform.webhook_secret == "my-secret"
+
+    def test_init_webhook_secret_defaults_to_empty(self):
+        auth = GitHubPatAuth(token="ghp_test")
+        platform = GitHubPlatform(auth=auth)
+
+        assert platform.webhook_secret == ""
+
+    def test_init_creates_http_client(self):
+        auth = GitHubPatAuth(token="ghp_test")
+        platform = GitHubPlatform(auth=auth)
+
+        assert platform._client is not None
+
+
+class TestAuthHeaders:
+    def test_auth_headers_contains_authorization(self, platform):
+        headers = platform._auth_headers()
+
+        assert "Authorization" in headers
+        assert headers["Authorization"] == "token ghp_test123"
+
+    def test_auth_headers_contains_accept(self, platform):
+        headers = platform._auth_headers()
+
+        assert headers["Accept"] == "application/vnd.github.v3+json"
+
+
+class TestEnsureAuth:
+    @pytest.mark.asyncio
+    async def test_ensure_auth_calls_refresh_if_needed(self, platform):
+        with patch.object(platform.auth, "refresh_if_needed", new=AsyncMock()) as mock:
+            await platform.ensure_auth()
+
+            mock.assert_awaited_once()
+
+
+class TestFetchIssueComments:
+    @pytest.mark.asyncio
+    async def test_fetch_issue_comments_single_page(self, platform):
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = [
+            {
+                "user": {"login": "alice"},
+                "body": "Nice work!",
+                "created_at": "2024-01-01T00:00:00Z",
+            }
+        ]
+
+        with patch.object(
+            platform._client,
+            "get",
+            new=AsyncMock(return_value=mock_response),
+        ):
+            result = await platform._fetch_issue_comments("owner/repo", 42)
+
+        assert len(result) == 1
+        assert result[0].author == "alice"
+        assert result[0].body == "Nice work!"
+
+    @pytest.mark.asyncio
+    async def test_fetch_issue_comments_empty_page_stops(self, platform):
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = []
+
+        with patch.object(
+            platform._client,
+            "get",
+            new=AsyncMock(return_value=mock_response),
+        ):
+            result = await platform._fetch_issue_comments("owner/repo", 42)
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_fetch_issue_comments_http_error_returns_empty(self, platform):
+        import httpx
+
+        with patch.object(
+            platform._client,
+            "get",
+            new=AsyncMock(side_effect=httpx.HTTPError("connection error")),
+        ):
+            result = await platform._fetch_issue_comments("owner/repo", 42)
+
+        assert result == []
+
+
+class TestFetchReviewComments:
+    @pytest.mark.asyncio
+    async def test_fetch_review_comments_returns_inline_comments(self, platform):
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = [
+            {
+                "user": {"login": "bob"},
+                "body": "Fix this line.",
+                "path": "src/main.py",
+                "line": 42,
+                "created_at": "2024-01-01T00:00:00Z",
+            }
+        ]
+
+        with patch.object(
+            platform._client,
+            "get",
+            new=AsyncMock(return_value=mock_response),
+        ):
+            result = await platform._fetch_review_comments("owner/repo", 42)
+
+        assert len(result) == 1
+        assert result[0].author == "bob"
+        assert result[0].file_path == "src/main.py"
+        assert result[0].line == 42
+
+    @pytest.mark.asyncio
+    async def test_fetch_review_comments_http_error_returns_empty(self, platform):
+        import httpx
+
+        with patch.object(
+            platform._client,
+            "get",
+            new=AsyncMock(side_effect=httpx.HTTPError("timeout")),
+        ):
+            result = await platform._fetch_review_comments("owner/repo", 42)
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_fetch_review_comments_empty_response(self, platform):
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = []
+
+        with patch.object(
+            platform._client,
+            "get",
+            new=AsyncMock(return_value=mock_response),
+        ):
+            result = await platform._fetch_review_comments("owner/repo", 42)
+
+        assert result == []

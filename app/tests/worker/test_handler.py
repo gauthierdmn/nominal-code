@@ -1,4 +1,5 @@
 # type: ignore
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -8,7 +9,7 @@ from nominal_code.agent.session import SessionStore
 from nominal_code.config import WorkerConfig
 from nominal_code.models import EventType
 from nominal_code.platforms.base import CommentEvent, PlatformName
-from nominal_code.worker.handler import build_prompt, review_and_fix
+from nominal_code.worker.handler import _build_prompt, review_and_fix
 
 
 def _make_config(allowed_users=None):
@@ -88,7 +89,7 @@ class TestWorkerProcessComment:
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
-                mock_ws.repo_path = "/tmp/workspaces/owner/repo/pr-42"
+                mock_ws.repo_path = Path("/tmp/workspaces/owner/repo/pr-42")
                 mock_ws_class.return_value = mock_ws
 
                 await review_and_fix(
@@ -130,11 +131,11 @@ class TestWorkerProcessComment:
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
-                mock_ws.repo_path = "/tmp/workspaces/owner/repo/pr-42"
+                mock_ws.repo_path = Path("/tmp/workspaces/owner/repo/pr-42")
                 mock_ws_class.return_value = mock_ws
 
                 with patch(
-                    "nominal_code.agent.prompts.resolve_guidelines",
+                    "nominal_code.agent.prompts._resolve_guidelines",
                     return_value="Repo guidelines override",
                 ) as mock_resolve:
                     await review_and_fix(
@@ -146,10 +147,10 @@ class TestWorkerProcessComment:
                     )
 
                     mock_resolve.assert_called_once_with(
-                        "/tmp/workspaces/owner/repo/pr-42",
-                        "Use snake_case.",
-                        {"python": "Python style rules."},
-                        [],
+                        repo_path=Path("/tmp/workspaces/owner/repo/pr-42"),
+                        default_guidelines="Use snake_case.",
+                        language_guidelines={"python": "Python style rules."},
+                        file_paths=[],
                     )
 
                 call_kwargs = mock_run.call_args.kwargs
@@ -158,33 +159,33 @@ class TestWorkerProcessComment:
 
 
 class TestBuildPrompt:
-    def test_build_prompt_basic(self):
+    def test__build_prompt_basic(self):
         comment = _make_comment()
-        result = build_prompt(comment, "fix the bug")
+        result = _build_prompt(comment, "fix the bug")
 
         assert "fix the bug" in result
         assert "owner/repo" in result
         assert "#42" in result
 
-    def test_build_prompt_with_deps_path(self):
+    def test__build_prompt_with_deps_path(self):
         comment = _make_comment()
-        result = build_prompt(comment, "fix the bug", deps_path="/tmp/.deps")
+        result = _build_prompt(comment, "fix the bug", deps_path=Path("/tmp/.deps"))
 
         assert "Dependencies directory: /tmp/.deps" in result
         assert "git clone" in result
 
-    def test_build_prompt_without_deps_path(self):
+    def test__build_prompt_without_deps_path(self):
         comment = _make_comment()
-        result = build_prompt(comment, "fix the bug")
+        result = _build_prompt(comment, "fix the bug")
 
         assert "Dependencies directory" not in result
 
-    def test_build_prompt_with_file_and_diff(self):
+    def test__build_prompt_with_file_and_diff(self):
         comment = _make_comment(
             file_path="src/main.py",
             diff_hunk="@@ -1,3 +1,5 @@",
         )
-        result = build_prompt(comment, "refactor this")
+        result = _build_prompt(comment, "refactor this")
 
         assert "src/main.py" in result
         assert "@@ -1,3 +1,5 @@" in result

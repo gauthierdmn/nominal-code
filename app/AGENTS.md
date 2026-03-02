@@ -15,7 +15,7 @@ AI-powered code review bot that monitors GitHub PRs and GitLab MRs. When a user 
 | Platform | Webhook events | Auth modes | Self-hosted |
 |----------|---------------|------------|-------------|
 | GitHub | `issue_comment`, `pull_request_review_comment`, `pull_request_review`, `pull_request` | PAT or GitHub App (JWT + installation token) | No |
-| GitLab | Note Hook, Merge Request Hook | Token + header secret | Yes (`GITLAB_BASE_URL`) |
+| GitLab | Note Hook, Merge Request Hook | Token + header secret | Yes (`GITLAB_API_BASE`) |
 
 ## Bot types
 

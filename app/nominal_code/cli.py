@@ -28,7 +28,25 @@ logger: logging.Logger = logging.getLogger(__name__)
 env: Env = Env()
 
 
-def parse_pr_ref(ref: str) -> tuple[str, int]:
+def cli_main() -> None:
+    """
+    Entry point for the ``review`` CLI subcommand.
+    """
+
+    setup_logging()
+
+    parser: argparse.ArgumentParser = _build_cli_parser()
+    args: argparse.Namespace = parser.parse_args()
+
+    if args.command != "review":
+        parser.print_help()
+        sys.exit(1)
+
+    exit_code: int = asyncio.run(_run_review(args))
+    sys.exit(exit_code)
+
+
+def _parse_pr_ref(ref: str) -> tuple[str, int]:
     """
     Parse a PR reference like ``owner/repo#42`` into repo name and number.
 
@@ -52,7 +70,7 @@ def parse_pr_ref(ref: str) -> tuple[str, int]:
     return match.group("repo"), int(match.group("number"))
 
 
-def build_cli_parser() -> argparse.ArgumentParser:
+def _build_cli_parser() -> argparse.ArgumentParser:
     """
     Build the argument parser for the CLI ``review`` subcommand.
 
@@ -115,7 +133,7 @@ def build_cli_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def build_platform(platform_name: PlatformName) -> ReviewerPlatform:
+def _build_platform(platform_name: PlatformName) -> ReviewerPlatform:
     """
     Construct a platform instance for CLI use from environment tokens.
 
@@ -181,8 +199,9 @@ def build_platform(platform_name: PlatformName) -> ReviewerPlatform:
             sys.exit(1)
 
         from nominal_code.platforms.gitlab import GitLabPlatform
+        from nominal_code.platforms.gitlab.platform import GITLAB_API_BASE
 
-        base_url: str = env.str("GITLAB_BASE_URL", "https://gitlab.com")
+        base_url: str = env.str("GITLAB_API_BASE", GITLAB_API_BASE)
 
         return GitLabPlatform(token=token, base_url=base_url)
 
@@ -190,7 +209,7 @@ def build_platform(platform_name: PlatformName) -> ReviewerPlatform:
     sys.exit(1)
 
 
-def print_review(result: ReviewResult) -> None:
+def _print_review(result: ReviewResult) -> None:
     """
     Format and print review results to stdout in plain text.
 
@@ -225,7 +244,7 @@ def print_review(result: ReviewResult) -> None:
         print("No issues found.")
 
 
-async def run_review(args: argparse.Namespace) -> int:
+async def _run_review(args: argparse.Namespace) -> int:
     """
     Main CLI review flow: parse ref, build config and platform, run review.
 
@@ -237,7 +256,7 @@ async def run_review(args: argparse.Namespace) -> int:
     """
 
     try:
-        repo_full_name, pr_number = parse_pr_ref(args.pr_ref)
+        repo_full_name, pr_number = _parse_pr_ref(args.pr_ref)
     except ValueError as exc:
         logger.error("%s", exc)
 
@@ -249,11 +268,14 @@ async def run_review(args: argparse.Namespace) -> int:
     )
 
     platform_name: PlatformName = PlatformName(args.platform)
-    platform: ReviewerPlatform = build_platform(platform_name)
+    platform: ReviewerPlatform = _build_platform(platform_name=platform_name)
 
     await platform.ensure_auth()
 
-    branch: str = await platform.fetch_pr_branch(repo_full_name, pr_number)
+    branch: str = await platform.fetch_pr_branch(
+        repo_full_name=repo_full_name,
+        pr_number=pr_number,
+    )
 
     if not branch:
         logger.error(
@@ -289,7 +311,7 @@ async def run_review(args: argparse.Namespace) -> int:
 
         return 1
 
-    print_review(result)
+    _print_review(result)
 
     if not args.dry_run and result.agent_review is not None:
         if result.valid_findings:
@@ -302,28 +324,10 @@ async def run_review(args: argparse.Namespace) -> int:
             )
         else:
             await platform.post_reply(
-                event,
-                CommentReply(body=result.effective_summary),
+                event=event,
+                reply=CommentReply(body=result.effective_summary),
             )
 
         logger.info("Review posted to %s#%d", repo_full_name, pr_number)
 
     return 0
-
-
-def cli_main() -> None:
-    """
-    Entry point for the ``review`` CLI subcommand.
-    """
-
-    setup_logging()
-
-    parser: argparse.ArgumentParser = build_cli_parser()
-    args: argparse.Namespace = parser.parse_args()
-
-    if args.command != "review":
-        parser.print_help()
-        sys.exit(1)
-
-    exit_code: int = asyncio.run(run_review(args))
-    sys.exit(exit_code)

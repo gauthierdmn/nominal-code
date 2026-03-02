@@ -25,7 +25,7 @@ workspace/
 - **All git operations** are async (`asyncio.create_subprocess_exec`) and raise `RuntimeError` on non-zero exit codes.
 - **resolve_branch()** fetches the branch from the platform API when the webhook payload doesn't include it. Posts an error reply and returns `None` on failure.
 - **create_workspace()** constructs a `GitWorkspace` without any I/O — useful when you want to call `ensure_ready()` inside an `asyncio.gather()`.
-- **setup_workspace()** combines `create_workspace()` + `ensure_ready()` + `ensure_deps_dir()` for the common synchronous-style setup.
+- **setup_workspace()** combines `create_workspace()` + `ensure_ready()` + `maybe_create_deps_dir()` for the common synchronous-style setup.
 - **WorkspaceCleaner** scans `pr-{N}` directories, queries all configured platforms, and only deletes if every platform reports the PR as closed/merged. Defaults to keeping the workspace on API errors.
 - **Orphaned deps cleanup** — if no `pr-{N}` directories remain for a repo, the `.deps/` directory and empty parent directories are removed.
 - Cleanup interval is configured via `CLEANUP_INTERVAL_HOURS` (default 6; 0 disables).

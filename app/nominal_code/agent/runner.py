@@ -1,5 +1,6 @@
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Literal
 
 from claude_agent_sdk import (
@@ -88,7 +89,7 @@ class AgentResult:
 
 async def run_agent(
     prompt: str,
-    cwd: str,
+    cwd: Path,
     model: str = "",
     max_turns: int = 0,
     cli_path: str = "",
@@ -107,7 +108,7 @@ async def run_agent(
 
     Args:
         prompt (str): The user's prompt to pass to the agent.
-        cwd (str): Working directory for the agent.
+        cwd (Path): Working directory for the agent.
         model (str): Optional model override (empty string to skip).
         max_turns (int): Maximum agentic turns (0 for unlimited).
         cli_path (str): Path to the agent CLI binary (empty to use bundled).

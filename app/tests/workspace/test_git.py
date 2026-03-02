@@ -1,5 +1,5 @@
 # type: ignore
-import os
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -10,7 +10,7 @@ from nominal_code.workspace.git import GitWorkspace, PushResult
 @pytest.fixture
 def workspace(tmp_path):
     return GitWorkspace(
-        base_dir=str(tmp_path),
+        base_dir=tmp_path,
         repo_full_name="owner/repo",
         pr_number=42,
         clone_url="https://token@github.com/owner/repo.git",
@@ -20,7 +20,7 @@ def workspace(tmp_path):
 
 class TestInit:
     def test_repo_path_constructed_correctly(self, workspace, tmp_path):
-        expected = os.path.join(str(tmp_path), "owner", "repo", "pr-42")
+        expected = tmp_path / "owner" / "repo" / "pr-42"
 
         assert workspace.repo_path == expected
 
@@ -35,8 +35,8 @@ class TestEnsureReady:
 
     @pytest.mark.asyncio
     async def test_ensure_ready_updates_when_git_dir_exists(self, workspace):
-        git_dir = os.path.join(workspace.repo_path, ".git")
-        os.makedirs(git_dir)
+        git_dir = Path(workspace.repo_path) / ".git"
+        git_dir.mkdir(parents=True)
 
         with patch.object(workspace, "_update", new_callable=AsyncMock) as mock_update:
             await workspace.ensure_ready()
@@ -85,20 +85,20 @@ class TestPushChanges:
 
 class TestDepsPath:
     def test_deps_path_is_sibling_of_repo_path(self, workspace, tmp_path):
-        expected = os.path.join(str(tmp_path), "owner", "repo", ".deps")
+        expected = tmp_path / "owner" / "repo" / ".deps"
 
         assert workspace.deps_path == expected
 
-    def test_ensure_deps_dir_creates_directory(self, workspace):
-        workspace.ensure_deps_dir()
+    def test_maybe_create_deps_dir_creates_directory(self, workspace):
+        workspace.maybe_create_deps_dir()
 
-        assert os.path.isdir(workspace.deps_path)
+        assert workspace.deps_path.is_dir()
 
-    def test_ensure_deps_dir_idempotent(self, workspace):
-        workspace.ensure_deps_dir()
-        workspace.ensure_deps_dir()
+    def test_maybe_create_deps_dir_idempotent(self, workspace):
+        workspace.maybe_create_deps_dir()
+        workspace.maybe_create_deps_dir()
 
-        assert os.path.isdir(workspace.deps_path)
+        assert workspace.deps_path.is_dir()
 
 
 class TestPushResult:
@@ -111,3 +111,87 @@ class TestPushResult:
         result = PushResult(success=True, commit_sha="abc123")
 
         assert result.commit_sha == "abc123"
+
+
+class TestRedactUrl:
+    def test_redact_url_replaces_token(self):
+        from nominal_code.workspace.git import _redact_url
+
+        url = "https://x-access-token:ghp_secret123@github.com/owner/repo.git"
+        result = _redact_url(url)
+
+        assert "ghp_secret123" not in result
+        assert "***" in result
+        assert "github.com/owner/repo.git" in result
+
+    def test_redact_url_no_token_unchanged(self):
+        from nominal_code.workspace.git import _redact_url
+
+        url = "https://github.com/owner/repo.git"
+        result = _redact_url(url)
+
+        assert result == url
+
+    def test_redact_url_oauth2_token(self):
+        from nominal_code.workspace.git import _redact_url
+
+        url = "https://oauth2:glpat-mysecret@gitlab.com/group/repo.git"
+        result = _redact_url(url)
+
+        assert "glpat-mysecret" not in result
+        assert "***" in result
+
+
+class TestGitWorkspaceInitFull:
+    def test_init_sets_repo_path_using_pr_number(self, tmp_path):
+        ws = GitWorkspace(
+            base_dir=tmp_path,
+            repo_full_name="acme/backend",
+            pr_number=99,
+            clone_url="https://token@github.com/acme/backend.git",
+            branch="hotfix",
+        )
+
+        assert ws.repo_path == tmp_path / "acme" / "backend" / "pr-99"
+
+    def test_init_stores_clone_url(self, tmp_path):
+        url = "https://token@github.com/acme/backend.git"
+        ws = GitWorkspace(
+            base_dir=tmp_path,
+            repo_full_name="acme/backend",
+            pr_number=1,
+            clone_url=url,
+            branch="main",
+        )
+
+        assert ws._clone_url == url
+
+    def test_init_stores_branch(self, tmp_path):
+        ws = GitWorkspace(
+            base_dir=tmp_path,
+            repo_full_name="acme/backend",
+            pr_number=1,
+            clone_url="https://token@github.com/acme/backend.git",
+            branch="develop",
+        )
+
+        assert ws._branch == "develop"
+
+
+class TestRunCommand:
+    @pytest.mark.asyncio
+    async def test_run_command_returns_stdout(self, workspace, tmp_path):
+        result = await workspace._run_command("echo", "hello")
+
+        assert result.strip() == "hello"
+
+    @pytest.mark.asyncio
+    async def test_run_command_raises_on_nonzero_exit(self, workspace):
+        with pytest.raises(RuntimeError):
+            await workspace._run_command("false")
+
+    @pytest.mark.asyncio
+    async def test_run_command_with_cwd(self, workspace, tmp_path):
+        result = await workspace._run_command("pwd", cwd=tmp_path)
+
+        assert str(tmp_path) in result

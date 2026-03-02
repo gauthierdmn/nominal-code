@@ -12,10 +12,10 @@
 
 ## Self-Hosted Support
 
-To use a self-hosted GitLab instance, set `GITLAB_BASE_URL` to your instance URL:
+To use a self-hosted GitLab instance, set `GITLAB_API_BASE` to your instance URL:
 
 ```bash
-GITLAB_BASE_URL=https://gitlab.example.com
+GITLAB_API_BASE=https://gitlab.example.com
 ```
 
 This affects both API calls and clone URLs. Defaults to `https://gitlab.com`.

@@ -22,7 +22,7 @@ The bot is configured entirely via environment variables. You can set them in a 
 | `GITHUB_REVIEWER_TOKEN` | No | — | Separate read-only GitHub token for reviewer bot clones (PAT mode only) |
 | `GITLAB_TOKEN` | No** | — | GitLab API token for authentication |
 | `GITLAB_WEBHOOK_SECRET` | No | — | Secret token for GitLab webhook verification |
-| `GITLAB_BASE_URL` | No | `https://gitlab.com` | GitLab instance URL (for self-hosted) |
+| `GITLAB_API_BASE` | No | `https://gitlab.com` | GitLab instance URL (for self-hosted) |
 | `GITLAB_REVIEWER_TOKEN` | No | — | Separate read-only GitLab token for reviewer bot clones |
 | `WORKSPACE_BASE_DIR` | No | System temp dir | Directory for cloning repos |
 | `AGENT_MAX_TURNS` | No | `0` (unlimited) | Maximum agentic turns per invocation |

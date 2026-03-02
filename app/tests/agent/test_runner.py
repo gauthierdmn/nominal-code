@@ -246,3 +246,135 @@ class TestAgentResult:
 
         with pytest.raises(AttributeError):
             result.output = "changed"
+
+
+class TestPatchedParseMessage:
+    def test_patched_parse_message_passes_through_valid_message(self):
+        from claude_agent_sdk import SystemMessage
+
+        from nominal_code.agent.runner import (
+            _patched_parse_message,
+        )
+
+        data = {"type": "system", "subtype": "init", "session_id": "s1"}
+
+        with patch("nominal_code.agent.runner._original_parse_message") as mock_orig:
+            mock_orig.return_value = SystemMessage(subtype="init", data={})
+            result = _patched_parse_message(data)
+
+        mock_orig.assert_called_once_with(data)
+        assert isinstance(result, SystemMessage)
+
+    def test_patched_parse_message_returns_system_message_on_parse_error(self):
+        from claude_agent_sdk import SystemMessage
+        from claude_agent_sdk._errors import MessageParseError
+
+        from nominal_code.agent.runner import _patched_parse_message
+
+        data = {"type": "rate_limit_event", "extra": "field"}
+
+        with patch(
+            "nominal_code.agent.runner._original_parse_message",
+            side_effect=lambda d: (_ for _ in ()).throw(MessageParseError("unknown")),
+        ):
+            result = _patched_parse_message(data)
+
+        assert isinstance(result, SystemMessage)
+        assert result.subtype == "rate_limit_event"
+
+    def test_patched_parse_message_unknown_type_when_non_dict(self):
+        from claude_agent_sdk import SystemMessage
+        from claude_agent_sdk._errors import MessageParseError
+
+        from nominal_code.agent.runner import _patched_parse_message
+
+        with patch(
+            "nominal_code.agent.runner._original_parse_message",
+            side_effect=lambda d: (_ for _ in ()).throw(MessageParseError("unknown")),
+        ):
+            result = _patched_parse_message("not-a-dict")
+
+        assert isinstance(result, SystemMessage)
+        assert result.subtype == "unknown"
+
+    def test_patched_parse_message_preserves_data_on_parse_error(self):
+        from claude_agent_sdk import SystemMessage
+        from claude_agent_sdk._errors import MessageParseError
+
+        from nominal_code.agent.runner import _patched_parse_message
+
+        data = {"type": "rate_limit_event", "retry_after": 30}
+
+        with patch(
+            "nominal_code.agent.runner._original_parse_message",
+            side_effect=lambda d: (_ for _ in ()).throw(MessageParseError("unknown")),
+        ):
+            result = _patched_parse_message(data)
+
+        assert isinstance(result, SystemMessage)
+        assert result.data == data
+
+
+class TestLogMessage:
+    def test_log_message_does_nothing_when_debug_disabled(self):
+        from unittest.mock import MagicMock
+
+        from nominal_code.agent.runner import _log_message
+
+        message = MagicMock()
+
+        with patch("nominal_code.agent.runner.logger") as mock_logger:
+            mock_logger.isEnabledFor.return_value = False
+            _log_message(message)
+
+        mock_logger.debug.assert_not_called()
+
+    def test_log_message_logs_text_block_for_assistant_message(self):
+        from claude_agent_sdk import AssistantMessage
+        from claude_agent_sdk.types import TextBlock
+
+        from nominal_code.agent.runner import _log_message
+
+        block = MagicMock(spec=TextBlock)
+        block.text = "hello"
+        message = MagicMock(spec=AssistantMessage)
+        message.content = [block]
+
+        with patch("nominal_code.agent.runner.logger") as mock_logger:
+            mock_logger.isEnabledFor.return_value = True
+            _log_message(message)
+
+        mock_logger.debug.assert_called()
+
+    def test_log_message_logs_tool_result_truncated(self):
+        from claude_agent_sdk import UserMessage
+        from claude_agent_sdk.types import ToolResultBlock
+
+        from nominal_code.agent.runner import MAX_TOOL_RESULT_LOG_LENGTH, _log_message
+
+        block = MagicMock(spec=ToolResultBlock)
+        block.content = "x" * (MAX_TOOL_RESULT_LOG_LENGTH + 100)
+        block.tool_use_id = "tu-1"
+        block.is_error = False
+        message = MagicMock(spec=UserMessage)
+        message.content = [block]
+
+        with patch("nominal_code.agent.runner.logger") as mock_logger:
+            mock_logger.isEnabledFor.return_value = True
+            _log_message(message)
+
+        debug_call = mock_logger.debug.call_args_list[-1]
+        logged_content = debug_call.args[3]
+
+        assert "truncated" in logged_content
+
+    def test_log_message_does_not_crash_for_other_message_types(self):
+        from claude_agent_sdk import ResultMessage
+
+        from nominal_code.agent.runner import _log_message
+
+        message = MagicMock(spec=ResultMessage)
+
+        with patch("nominal_code.agent.runner.logger") as mock_logger:
+            mock_logger.isEnabledFor.return_value = True
+            _log_message(message)

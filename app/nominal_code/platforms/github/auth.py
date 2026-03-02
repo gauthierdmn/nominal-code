@@ -226,9 +226,9 @@ class GitHubAppAuth(GitHubAuth):
                 f"Failed to fetch GitHub App installation token "
                 f"for installation {self.installation_id}"
             ) from exc
-        except KeyError as exc:
+        except (KeyError, ValueError) as exc:
             raise RuntimeError(
-                "GitHub App token response missing 'token' field"
+                "GitHub App token response is malformed or missing 'token' field"
             ) from exc
 
         self._token_expires_at = time.monotonic() + 3600

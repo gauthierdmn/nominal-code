@@ -24,6 +24,6 @@ review/
 - **Hunk line parsing** — `_parse_diff_lines()` extracts valid new-side line numbers from unified diff `@@` headers, counting only non-deletion lines.
 - **Diff index** — `_build_diff_index()` maps `{file_path: set[valid_lines]}` for O(1) finding validation.
 - `ReviewResult` bundles the parsed review, valid/rejected findings, effective summary, and raw agent output.
-- `filter_findings()` returns a `(valid, rejected)` tuple — rejected findings are those on files or lines not in the diff.
-- `build_effective_summary()` appends rejected findings under an "Additional notes" heading.
+- `_filter_findings()` returns a `(valid, rejected)` tuple — rejected findings are those on files or lines not in the diff.
+- `_build_effective_summary()` appends rejected findings under an "Additional notes" heading.
 - The prompt includes the full diff, changed file list, deps path, and (optionally) existing comments formatted as markdown.

@@ -5,6 +5,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from nominal_code.agent.errors import handle_agent_errors
@@ -14,6 +15,7 @@ from nominal_code.models import (
     AgentReview,
     BotType,
     ChangedFile,
+    DiffSide,
     ReviewFinding,
 )
 from nominal_code.platforms.base import (
@@ -39,7 +41,7 @@ REVIEWER_ALLOWED_TOOLS: list[str] = [
     "Bash(git clone*)",
 ]
 HUNK_HEADER_PATTERN: re.Pattern[str] = re.compile(
-    r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@",
+    r"^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@",
 )
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -115,32 +117,31 @@ async def review(
         ),
         workspace.ensure_ready(),
     )
-    workspace.ensure_deps_dir()
+    workspace.maybe_create_deps_dir()
 
-    changed_files: list[ChangedFile] = results[0]
-    all_comments: list[ExistingComment] = results[1]
+    raw_comments: list[ExistingComment] = results[1]
+    filtered_comments: list[ExistingComment] = [
+        comment for comment in raw_comments if comment.author != bot_username
+    ]
+    capped_comments: list[ExistingComment] = filtered_comments[-MAX_EXISTING_COMMENTS:]
 
-    existing_comments: list[ExistingComment] = [
-        existing for existing in all_comments if existing.author != bot_username
-    ][-MAX_EXISTING_COMMENTS:]
-
-    full_prompt: str = build_reviewer_prompt(
-        effective_event,
-        prompt,
-        changed_files,
+    full_prompt: str = _build_reviewer_prompt(
+        event=effective_event,
+        user_prompt=prompt,
+        changed_files=results[0],
         deps_path=workspace.deps_path,
-        existing_comments=existing_comments,
+        existing_comments=capped_comments,
     )
 
     if config.reviewer is None:
         raise RuntimeError("Reviewer config is required but not configured")
 
-    file_paths: list[str] = [changed.file_path for changed in changed_files]
+    file_paths: list[Path] = [Path(changed.file_path) for changed in results[0]]
     combined_system_prompt: str = resolve_system_prompt(
-        workspace,
-        config,
-        config.reviewer.system_prompt,
-        file_paths,
+        workspace=workspace,
+        config=config,
+        bot_system_prompt=config.reviewer.system_prompt,
+        file_paths=file_paths,
     )
 
     result: AgentResult = await run_and_track_session(
@@ -160,7 +161,7 @@ async def review(
 
     while review_result is None and retry_count < MAX_REVIEW_RETRIES:
         retry_count += 1
-        retry_prompt: str = build_retry_prompt(result.output)
+        retry_prompt: str = _build_retry_prompt(result.output)
 
         logger.warning(
             "Reviewer JSON parse failed for %s#%d, retry %d/%d",
@@ -201,9 +202,9 @@ async def review(
             raw_output=result.output,
         )
 
-    valid_findings, rejected_findings = filter_findings(
-        review_result.findings,
-        changed_files,
+    valid_findings, rejected_findings = _filter_findings(
+        findings=review_result.findings,
+        changed_files=results[0],
     )
 
     if rejected_findings:
@@ -214,9 +215,9 @@ async def review(
             event.pr_number,
         )
 
-    effective_summary: str = build_effective_summary(
-        review_result.summary,
-        rejected_findings,
+    effective_summary: str = _build_effective_summary(
+        summary=review_result.summary,
+        rejected_findings=rejected_findings,
     )
 
     logger.info(
@@ -255,7 +256,10 @@ async def review_and_post(
         session_store (SessionStore): Agent session store.
     """
 
-    effective_event: PullRequestEvent | None = await resolve_branch(event, platform)
+    effective_event: PullRequestEvent | None = await resolve_branch(
+        event=event,
+        platform=platform,
+    )
 
     if effective_event is None:
         return
@@ -277,8 +281,8 @@ async def review_and_post(
 
         if review_result.agent_review is None:
             await platform.post_reply(
-                event,
-                CommentReply(body=review_result.raw_output),
+                event=event,
+                reply=CommentReply(body=review_result.raw_output),
             )
 
             return
@@ -293,16 +297,16 @@ async def review_and_post(
             )
         else:
             await platform.post_reply(
-                event,
-                CommentReply(body=review_result.effective_summary),
+                event=event,
+                reply=CommentReply(body=review_result.effective_summary),
             )
 
 
-def build_reviewer_prompt(
+def _build_reviewer_prompt(
     event: PullRequestEvent,
     user_prompt: str,
     changed_files: list[ChangedFile],
-    deps_path: str = "",
+    deps_path: Path | None = None,
     existing_comments: list[ExistingComment] | None = None,
 ) -> str:
     """
@@ -312,7 +316,7 @@ def build_reviewer_prompt(
         event (PullRequestEvent): The event with PR context.
         user_prompt (str): The user's extracted prompt text.
         changed_files (list[ChangedFile]): Files changed in the PR.
-        deps_path (str): Path to the shared dependencies directory.
+        deps_path (Path | None): Path to the shared dependencies directory.
         existing_comments (list[ExistingComment] | None): Existing PR
             comments to include as context.
 
@@ -344,10 +348,13 @@ def build_reviewer_prompt(
 
     parts.append(
         "Review the above changes and output your review as JSON "
-        "following the format described in your system prompt.",
+        "following the format described in your system prompt. "
+        "For comments on deleted lines (lines starting with `-` in the diff), "
+        'set `"side": "LEFT"`. For additions (`+`) and context lines omit '
+        '`side` or use `"RIGHT"`.',
     )
 
-    if deps_path:
+    if deps_path is not None:
         parts.append(
             f"Dependencies directory: {deps_path}\n"
             "If you need to understand a private dependency that is not available on\n"
@@ -357,6 +364,69 @@ def build_reviewer_prompt(
         )
 
     return "\n\n".join(parts)
+
+
+def _strip_fences(text: str) -> str:
+    """
+    Remove markdown code fences from a string if present.
+
+    Args:
+        text (str): Text that may be wrapped in a code fence.
+
+    Returns:
+        str: The text with the opening fence line and closing fence removed.
+    """
+
+    # LLMs often wrap JSON in markdown code fences even when instructed not to.
+    if not text.startswith("```"):
+        return text
+
+    lines: list[str] = text.split("\n")[1:]
+
+    if lines and lines[-1].strip() == "```":
+        lines = lines[:-1]
+
+    return "\n".join(lines).strip()
+
+
+def _parse_finding(item: object) -> ReviewFinding:
+    """
+    Parse a single comment dict into a ReviewFinding.
+
+    Args:
+        item (object): A raw comment entry from the agent's JSON output.
+
+    Returns:
+        ReviewFinding: The parsed finding.
+
+    Raises:
+        ValueError: If the item is missing required fields or has invalid types.
+    """
+
+    if not isinstance(item, dict):
+        raise ValueError("comment is not a dict")
+
+    path: object = item.get("path")
+    line: object = item.get("line")
+    body: object = item.get("body")
+
+    if not isinstance(path, str) or not path:
+        raise ValueError("invalid path")
+
+    if not isinstance(line, int) or line <= 0:
+        raise ValueError("invalid line")
+
+    if not isinstance(body, str) or not body:
+        raise ValueError("invalid body")
+
+    side_raw: object = item.get("side", DiffSide.RIGHT.value)
+
+    if not isinstance(side_raw, str) or side_raw not in (DiffSide.LEFT, DiffSide.RIGHT):
+        raise ValueError("invalid side")
+
+    side: DiffSide = DiffSide(side_raw)
+
+    return ReviewFinding(file_path=path, line=line, body=body, side=side)
 
 
 def parse_review_output(output: str) -> AgentReview | None:
@@ -373,60 +443,31 @@ def parse_review_output(output: str) -> AgentReview | None:
         AgentReview | None: Parsed result, or None on failure.
     """
 
-    stripped: str = output.strip()
-
-    if stripped.startswith("```"):
-        lines: list[str] = stripped.split("\n")
-        lines = lines[1:]
-
-        if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]
-
-        stripped = "\n".join(lines).strip()
-
     try:
-        data: dict[str, object] = json.loads(stripped)
+        data: object = json.loads(_strip_fences(output.strip()))
+
+        if not isinstance(data, dict):
+            return None
+
+        summary: object = data.get("summary")
+
+        if not isinstance(summary, str) or not summary:
+            return None
+
+        raw_comments: object = data.get("comments", [])
+
+        if not isinstance(raw_comments, list):
+            return None
+
+        findings: list[ReviewFinding] = [_parse_finding(item) for item in raw_comments]
+
     except (json.JSONDecodeError, ValueError):
         return None
-
-    if not isinstance(data, dict):
-        return None
-
-    summary: object = data.get("summary")
-
-    if not isinstance(summary, str) or not summary:
-        return None
-
-    raw_comments: object = data.get("comments", [])
-
-    if not isinstance(raw_comments, list):
-        return None
-
-    findings: list[ReviewFinding] = []
-
-    for item in raw_comments:
-        if not isinstance(item, dict):
-            return None
-
-        path: object = item.get("path")
-        line: object = item.get("line")
-        body: object = item.get("body")
-
-        if not isinstance(path, str) or not path:
-            return None
-
-        if not isinstance(line, int) or line <= 0:
-            return None
-
-        if not isinstance(body, str) or not body:
-            return None
-
-        findings.append(ReviewFinding(file_path=path, line=line, body=body))
 
     return AgentReview(summary=summary, findings=findings)
 
 
-def filter_findings(
+def _filter_findings(
     findings: list[ReviewFinding],
     changed_files: list[ChangedFile],
 ) -> tuple[list[ReviewFinding], list[ReviewFinding]]:
@@ -442,14 +483,20 @@ def filter_findings(
             (valid, rejected) findings.
     """
 
-    diff_index: dict[str, set[int]] = _build_diff_index(changed_files)
+    diff_index: dict[str, dict[DiffSide, set[int]]] = _build_diff_index(changed_files)
     valid: list[ReviewFinding] = []
     rejected: list[ReviewFinding] = []
 
     for finding in findings:
-        valid_lines: set[int] | None = diff_index.get(finding.file_path)
+        file_sides: dict[DiffSide, set[int]] | None = diff_index.get(finding.file_path)
 
-        if valid_lines is not None and finding.line in valid_lines:
+        if file_sides is None:
+            rejected.append(finding)
+            continue
+
+        valid_lines: set[int] = file_sides.get(finding.side, set())
+
+        if finding.line in valid_lines:
             valid.append(finding)
         else:
             rejected.append(finding)
@@ -457,7 +504,7 @@ def filter_findings(
     return valid, rejected
 
 
-def build_effective_summary(
+def _build_effective_summary(
     summary: str,
     rejected_findings: list[ReviewFinding],
 ) -> str:
@@ -488,7 +535,7 @@ def build_effective_summary(
     return "\n".join(parts)
 
 
-def build_retry_prompt(previous_output: str) -> str:
+def _build_retry_prompt(previous_output: str) -> str:
     """
     Build a prompt asking the agent to fix its malformed JSON output.
 
@@ -508,56 +555,68 @@ def build_retry_prompt(previous_output: str) -> str:
     )
 
 
-def _parse_diff_lines(patch: str) -> set[int]:
+def _parse_diff_lines(patch: str) -> dict[DiffSide, set[int]]:
     """
-    Extract the set of new-side line numbers present in a unified diff.
+    Extract the sets of line numbers present in a unified diff, by side.
 
     Parses hunk headers and walks the diff lines to collect every line
-    number on the RIGHT side (additions and context lines).
+    number on the LEFT side (deletions and context lines) and the RIGHT
+    side (additions and context lines).
 
     Args:
         patch (str): Unified diff text for a single file.
 
     Returns:
-        set[int]: Line numbers that appear on the new side of the diff.
+        dict[DiffSide, set[int]]: Mapping from side to line numbers that
+            appear on that side of the diff.
     """
 
-    lines: set[int] = set()
-    current_line: int = 0
+    left_lines: set[int] = set()
+    right_lines: set[int] = set()
+    current_left: int = 0
+    current_right: int = 0
 
     for raw_line in patch.splitlines():
         header_match: re.Match[str] | None = HUNK_HEADER_PATTERN.match(raw_line)
 
         if header_match:
-            current_line = int(header_match.group(1))
+            current_left = int(header_match.group(1))
+            current_right = int(header_match.group(2))
             continue
 
-        if current_line == 0:
+        if current_left == 0 and current_right == 0:
             continue
 
         if raw_line.startswith("-"):
-            continue
+            left_lines.add(current_left)
+            current_left += 1
+        elif raw_line.startswith("+"):
+            right_lines.add(current_right)
+            current_right += 1
+        else:
+            left_lines.add(current_left)
+            right_lines.add(current_right)
+            current_left += 1
+            current_right += 1
 
-        lines.add(current_line)
-        current_line += 1
-
-    return lines
+    return {DiffSide.LEFT: left_lines, DiffSide.RIGHT: right_lines}
 
 
 def _build_diff_index(
     changed_files: list[ChangedFile],
-) -> dict[str, set[int]]:
+) -> dict[str, dict[DiffSide, set[int]]]:
     """
-    Build a mapping from file path to the set of valid diff line numbers.
+    Build a mapping from file path to the set of valid diff line numbers per side.
 
     Args:
         changed_files (list[ChangedFile]): Files changed in the PR.
 
     Returns:
-        dict[str, set[int]]: File paths mapped to their valid new-side lines.
+        dict[str, dict[DiffSide, set[int]]]: File paths mapped to their
+            valid lines keyed by diff side.
     """
 
-    index: dict[str, set[int]] = {}
+    index: dict[str, dict[DiffSide, set[int]]] = {}
 
     for changed_file in changed_files:
         if changed_file.patch:

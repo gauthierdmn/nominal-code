@@ -63,7 +63,7 @@ Two auth modes, detected automatically by the factory:
 ## Important details
 
 - **GitHub clone URLs** use `x-access-token:{token}@github.com` format.
-- **GitLab clone URLs** use `oauth2:{token}@{host}` format; supports self-hosted via `GITLAB_BASE_URL`.
+- **GitLab clone URLs** use `oauth2:{token}@{host}` format; supports self-hosted via `GITLAB_API_BASE`.
 - **Webhook verification** — GitHub uses HMAC-SHA256 (`X-Hub-Signature-256`); GitLab uses a shared secret header (`X-Gitlab-Token`). Both skip verification if no secret is configured. Verification is identical for PAT and App modes.
 - **GitHub event routing** — `X-GitHub-Event` header determines handler: `issue_comment`, `pull_request_review_comment`, `pull_request_review`, `pull_request`.
 - **GitLab event routing** — `X-Gitlab-Event` header: `Note Hook` (comments on MRs), `Merge Request Hook` (lifecycle).

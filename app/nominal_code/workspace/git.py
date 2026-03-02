@@ -2,15 +2,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 logger: logging.Logger = logging.getLogger(__name__)
 
-_TOKEN_PATTERN: re.Pattern[str] = re.compile(
+TOKEN_PATTERN: re.Pattern[str] = re.compile(
     r"(https?://[^:]+:)[^@]+(@)",
 )
+DEPS_FOLDER_NAME: str = ".deps"
+GIT_FOLDER_NAME: str = ".git"
 
 
 def _redact_url(url: str) -> str:
@@ -24,7 +26,7 @@ def _redact_url(url: str) -> str:
         str: The URL with the token replaced by ``***``.
     """
 
-    return _TOKEN_PATTERN.sub(r"\1***\2", url)
+    return TOKEN_PATTERN.sub(r"\1***\2", url)
 
 
 @dataclass(frozen=True)
@@ -51,12 +53,12 @@ class GitWorkspace:
     state. All git operations run as async subprocesses.
 
     Attributes:
-        repo_path (str): Absolute path to the cloned repository.
+        repo_path (Path): Absolute path to the cloned repository.
     """
 
     def __init__(
         self,
-        base_dir: str,
+        base_dir: Path,
         repo_full_name: str,
         pr_number: int,
         clone_url: str,
@@ -66,39 +68,36 @@ class GitWorkspace:
         Initialize the workspace configuration.
 
         Args:
-            base_dir (str): Base directory for all workspaces.
+            base_dir (Path): Base directory for all workspaces.
             repo_full_name (str): Full repository name (e.g. ``owner/repo``).
             pr_number (int): Pull/merge request number.
             clone_url (str): Authenticated clone URL.
             branch (str): Branch to check out.
         """
 
-        safe_name: str = repo_full_name.replace("/", os.sep)
-        self._repo_dir: str = os.path.join(base_dir, safe_name)
-        self.repo_path: str = os.path.join(
-            self._repo_dir,
-            f"pr-{pr_number}",
-        )
+        self._repo_dir: Path = base_dir / repo_full_name
         self._clone_url: str = clone_url
         self._branch: str = branch
 
+        self.repo_path: Path = self._repo_dir / f"pr-{pr_number}"
+
     @property
-    def deps_path(self) -> str:
+    def deps_path(self) -> Path:
         """
         Path to the shared dependencies directory for this repository.
 
         Returns:
-            str: Absolute path to the ``.deps`` directory.
+            Path: Absolute path to the ``.deps`` directory.
         """
 
-        return os.path.join(self._repo_dir, ".deps")
+        return self._repo_dir / DEPS_FOLDER_NAME
 
-    def ensure_deps_dir(self) -> None:
+    def maybe_create_deps_dir(self) -> None:
         """
         Create the shared dependencies directory if it does not exist.
         """
 
-        os.makedirs(self.deps_path, exist_ok=True)
+        self.deps_path.mkdir(parents=True, exist_ok=True)
 
     async def ensure_ready(self) -> None:
         """
@@ -112,7 +111,7 @@ class GitWorkspace:
             RuntimeError: If a git operation fails.
         """
 
-        if os.path.isdir(os.path.join(self.repo_path, ".git")):
+        if (self.repo_path / GIT_FOLDER_NAME).is_dir():
             await self._update()
         else:
             await self._clone()
@@ -157,7 +156,7 @@ class GitWorkspace:
             RuntimeError: If the clone or checkout fails.
         """
 
-        os.makedirs(self.repo_path, exist_ok=True)
+        self.repo_path.mkdir(parents=True, exist_ok=True)
 
         logger.info("Cloning %s into %s", _redact_url(self._clone_url), self.repo_path)
 
@@ -203,15 +202,15 @@ class GitWorkspace:
 
     async def _run_command(
         self,
-        *args: str,
-        cwd: str | None = None,
+        *args: str | Path,
+        cwd: Path | None = None,
     ) -> str:
         """
         Run an external command as an async subprocess.
 
         Args:
-            *args (str): The command and its arguments.
-            cwd (str | None): Working directory, or None for the default.
+            *args (str | Path): The command and its arguments.
+            cwd (Path | None): Working directory, or None for the default.
 
         Returns:
             str: The command's stdout output.
@@ -232,7 +231,7 @@ class GitWorkspace:
         stderr_text: str = stderr_bytes.decode().strip()
 
         if process.returncode != 0:
-            command_str: str = _redact_url(" ".join(args))
+            command_str: str = _redact_url(" ".join(str(arg) for arg in args))
 
             raise RuntimeError(
                 f"Command '{command_str}' failed (exit {process.returncode}): "

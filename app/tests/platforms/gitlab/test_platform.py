@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nominal_code.models import EventType, FileStatus, ReviewFinding
+from nominal_code.models import DiffSide, EventType, FileStatus, ReviewFinding
 from nominal_code.platforms.base import (
     CommentEvent,
     CommentReply,
@@ -668,6 +668,62 @@ class TestSubmitReview:
             mock_get.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_submit_review_left_side_uses_old_path_and_old_line(self, platform):
+        comment = _make_comment()
+        findings = [
+            ReviewFinding(
+                file_path="src/deleted.py",
+                line=5,
+                body="Removed code had a bug",
+                side=DiffSide.LEFT,
+            ),
+        ]
+
+        mock_post_response = MagicMock()
+        mock_post_response.raise_for_status = MagicMock()
+
+        mock_versions_response = MagicMock()
+        mock_versions_response.raise_for_status = MagicMock()
+        mock_versions_response.json.return_value = [
+            {
+                "base_commit_sha": "base123",
+                "head_commit_sha": "head456",
+                "start_commit_sha": "start789",
+            },
+        ]
+
+        with (
+            patch.object(
+                platform._client,
+                "post",
+                new_callable=AsyncMock,
+            ) as mock_post,
+            patch.object(
+                platform._client,
+                "get",
+                new_callable=AsyncMock,
+            ) as mock_get,
+        ):
+            mock_post.return_value = mock_post_response
+            mock_get.return_value = mock_versions_response
+
+            await platform.submit_review(
+                "group/repo",
+                10,
+                findings,
+                "Found deletion issue",
+                comment,
+            )
+
+            discussion_call = mock_post.call_args_list[1]
+            position = discussion_call[1]["json"]["position"]
+
+            assert position["old_path"] == "src/deleted.py"
+            assert position["old_line"] == 5
+            assert "new_path" not in position
+            assert "new_line" not in position
+
+    @pytest.mark.asyncio
     async def test_submit_review_version_fetch_failure_skips_inline_comments(
         self,
         platform,
@@ -911,7 +967,7 @@ class TestFactory:
         env = {
             "GITLAB_TOKEN": "glpat-test456",
             "GITLAB_WEBHOOK_SECRET": "secret",
-            "GITLAB_BASE_URL": "https://git.example.com",
+            "GITLAB_API_BASE": "https://git.example.com",
         }
 
         with patch.dict(os.environ, env, clear=True):
@@ -949,3 +1005,65 @@ class TestFactory:
 
         assert result is not None
         assert result.reviewer_token == "glpat-readonly"
+
+
+class TestGitLabPlatformInit:
+    def test_init_stores_token(self):
+        platform = GitLabPlatform(token="glpat-abc")
+
+        assert platform.token == "glpat-abc"
+
+    def test_init_stores_webhook_secret(self):
+        platform = GitLabPlatform(token="glpat-abc", webhook_secret="gl-secret")
+
+        assert platform.webhook_secret == "gl-secret"
+
+    def test_init_webhook_secret_defaults_to_empty(self):
+        platform = GitLabPlatform(token="glpat-abc")
+
+        assert platform.webhook_secret == ""
+
+    def test_init_stores_base_url_stripped_of_trailing_slash(self):
+        platform = GitLabPlatform(token="tok", base_url="https://gitlab.example.com/")
+
+        assert platform.base_url == "https://gitlab.example.com"
+
+    def test_init_base_url_defaults_to_gitlab_com(self):
+        platform = GitLabPlatform(token="tok")
+
+        assert "gitlab.com" in platform.base_url
+
+    def test_init_reviewer_token_defaults_to_empty(self):
+        platform = GitLabPlatform(token="tok")
+
+        assert platform.reviewer_token == ""
+
+    def test_init_stores_reviewer_token(self):
+        platform = GitLabPlatform(token="tok", reviewer_token="readonly-tok")
+
+        assert platform.reviewer_token == "readonly-tok"
+
+
+class TestGitLabHostProperty:
+    def test_host_strips_https_scheme(self):
+        platform = GitLabPlatform(token="tok", base_url="https://gitlab.example.com")
+
+        assert platform.host == "gitlab.example.com"
+
+    def test_host_strips_http_scheme(self):
+        platform = GitLabPlatform(
+            token="tok", base_url="http://self-hosted.example.com"
+        )
+
+        assert platform.host == "self-hosted.example.com"
+
+    def test_host_for_gitlab_com(self):
+        platform = GitLabPlatform(token="tok")
+
+        assert platform.host == "gitlab.com"
+
+
+class TestGitLabEnsureAuth:
+    @pytest.mark.asyncio
+    async def test_ensure_auth_is_noop(self, platform):
+        await platform.ensure_auth()
