@@ -4,9 +4,11 @@ import asyncio
 import logging
 import re
 import shutil
+from datetime import timedelta
 from pathlib import Path
 
 from nominal_code.platforms.base import Platform
+from nominal_code.workspace.git import DEPS_FOLDER_NAME
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -25,27 +27,28 @@ class WorkspaceCleaner:
     Attributes:
         base_dir (Path): Root directory containing workspace directories.
         platforms (dict[str, Platform]): Configured platform clients keyed by name.
-        interval_seconds (int): Seconds between cleanup runs.
+        cleanup_wait (timedelta): Time between cleanup runs.
     """
 
     def __init__(
         self,
-        base_dir: str,
+        base_dir: Path,
         platforms: dict[str, Platform],
-        interval_seconds: int,
+        cleanup_wait: timedelta,
     ) -> None:
         """
         Initialize the workspace cleaner.
 
         Args:
-            base_dir (str): Root directory containing workspace directories.
+            base_dir (Path): Root directory containing workspace directories.
             platforms (dict[str, Platform]): Configured platform clients.
-            interval_seconds (int): Seconds between cleanup runs.
+            cleanup_wait (timedelta): Time between cleanup runs.
         """
 
-        self.base_dir: Path = Path(base_dir)
+        self.base_dir: Path = base_dir
         self.platforms: dict[str, Platform] = platforms
-        self.interval_seconds: int = interval_seconds
+        self.cleanup_wait: timedelta = cleanup_wait
+
         self._task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
@@ -56,7 +59,7 @@ class WorkspaceCleaner:
         self._task = asyncio.create_task(self._loop())
         logger.info(
             "Workspace cleaner started (interval=%ds)",
-            self.interval_seconds,
+            self.cleanup_wait,
         )
 
     async def stop(self) -> None:
@@ -108,15 +111,12 @@ class WorkspaceCleaner:
                     if not match:
                         continue
 
-                    pr_number: int = int(match.group(1))
-                    repo_full_name: str = f"{owner_dir.name}/{repo_dir.name}"
-
                     delete_tasks.append(
                         asyncio.create_task(
                             self._maybe_delete(
-                                pr_dir,
-                                repo_full_name,
-                                pr_number,
+                                pr_dir=pr_dir,
+                                repo_full_name=f"{owner_dir.name}/{repo_dir.name}",
+                                pr_number=int(match.group(1)),
                             ),
                         ),
                     )
@@ -142,7 +142,7 @@ class WorkspaceCleaner:
             repo_dir (Path): Path to the ``{owner}/{repo}`` directory.
         """
 
-        deps_dir: Path = repo_dir / ".deps"
+        deps_dir: Path = repo_dir / DEPS_FOLDER_NAME
 
         if not deps_dir.is_dir():
             return
@@ -154,7 +154,15 @@ class WorkspaceCleaner:
         )
 
         if not has_pr_dirs:
-            shutil.rmtree(deps_dir)
+            try:
+                shutil.rmtree(deps_dir)
+            except OSError:
+                logger.warning(
+                    "Failed to delete dependency folder %s",
+                    deps_dir,
+                )
+                return
+
             logger.info("Removed orphaned deps directory: %s", deps_dir)
 
     async def _maybe_delete(
@@ -174,10 +182,7 @@ class WorkspaceCleaner:
 
         for platform in self.platforms.values():
             try:
-                is_open: bool = await platform.is_pr_open(
-                    repo_full_name,
-                    pr_number,
-                )
+                is_open: bool = await platform.is_pr_open(repo_full_name, pr_number)
 
                 if is_open:
                     return
@@ -219,7 +224,7 @@ class WorkspaceCleaner:
         """
 
         while True:
-            await asyncio.sleep(self.interval_seconds)
+            await asyncio.sleep(self.cleanup_wait.total_seconds())
 
             try:
                 await self.run_once()

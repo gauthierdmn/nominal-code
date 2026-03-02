@@ -2,6 +2,9 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 
+from nominal_code.models import BotType
+from nominal_code.platforms.base import PlatformName
+
 logger: logging.Logger = logging.getLogger(__name__)
 
 SessionKey = tuple[str, str, int, str]
@@ -12,8 +15,7 @@ class SessionStore:
     In-memory mapping of PR/MR threads to agent session IDs.
 
     Each unique (platform, repo, pr_number, bot_type) tuple maps to a single
-    agent session, allowing multi-turn conversations within a PR. No lock is
-    needed because the bot runs on a single asyncio event loop.
+    agent session, allowing multi-turn conversations within a PR.
     """
 
     def __init__(self) -> None:
@@ -25,46 +27,46 @@ class SessionStore:
 
     def get(
         self,
-        platform: str,
+        platform: PlatformName,
         repo: str,
         pr_number: int,
-        bot_type: str,
+        bot_type: BotType,
     ) -> str | None:
         """
         Look up the agent session ID for a PR/MR thread.
 
         Args:
-            platform (str): The platform identifier (``github`` or ``gitlab``).
+            platform (PlatformName): The platform name.
             repo (str): The full repository name.
             pr_number (int): The pull/merge request number.
-            bot_type (str): The bot type (``worker`` or ``reviewer``).
+            bot_type (BotType): The type of bot.
 
         Returns:
             str | None: The session ID, or None if no session exists.
         """
 
-        return self._sessions.get((platform, repo, pr_number, bot_type))
+        return self._sessions.get((platform.value, repo, pr_number, bot_type.value))
 
     def set(
         self,
-        platform: str,
+        platform: PlatformName,
         repo: str,
         pr_number: int,
-        bot_type: str,
+        bot_type: BotType,
         session_id: str,
     ) -> None:
         """
         Store an agent session ID for a PR/MR thread.
 
         Args:
-            platform (str): The platform identifier.
+            platform (PlatformName): The platform name.
             repo (str): The full repository name.
             pr_number (int): The pull/merge request number.
-            bot_type (str): The bot type (``worker`` or ``reviewer``).
+            bot_type (BotType): The type of bot.
             session_id (str): The agent session ID to store.
         """
 
-        self._sessions[(platform, repo, pr_number, bot_type)] = session_id
+        self._sessions[(platform.value, repo, pr_number, bot_type.value)] = session_id
 
 
 class SessionQueue:
@@ -84,16 +86,16 @@ class SessionQueue:
 
         self._queues: dict[
             SessionKey,
-            asyncio.Queue[Callable[[], Awaitable[None]]],
+            asyncio.Queue[Callable[[], Awaitable[None]] | None],
         ] = {}
         self._consumers: dict[SessionKey, asyncio.Task[None]] = {}
 
     async def enqueue(
         self,
-        platform: str,
+        platform: PlatformName,
         repo: str,
         pr_number: int,
-        bot_type: str,
+        bot_type: BotType,
         job: Callable[[], Awaitable[None]],
     ) -> None:
         """
@@ -103,15 +105,15 @@ class SessionQueue:
         spawned automatically.
 
         Args:
-            platform (str): The platform identifier.
+            platform (PlatformName): The platform name.
             repo (str): The full repository name.
             pr_number (int): The pull/merge request number.
-            bot_type (str): The bot type (``worker`` or ``reviewer``).
+            bot_type (str): The type of bot.
             job (Callable[[], Awaitable[None]]): A zero-argument async
                 callable to execute.
         """
 
-        key: SessionKey = (platform, repo, pr_number, bot_type)
+        key: SessionKey = (platform.value, repo, pr_number, bot_type.value)
 
         if key not in self._queues:
             self._queues[key] = asyncio.Queue()
@@ -120,37 +122,34 @@ class SessionQueue:
 
         if key not in self._consumers or self._consumers[key].done():
             self._consumers[key] = asyncio.create_task(self._consume(key))
+        else:
+            await self._queues[key].put(None)
 
     async def _consume(self, key: SessionKey) -> None:
         """
         Consume jobs from the queue for a specific session key.
 
-        Runs until the queue is empty, then cleans up.
+        Runs until a sentinel None is received, then cleans up.
 
         Args:
             key (SessionKey): The (platform, repo, pr_number, bot_type) session key.
         """
 
-        queue: asyncio.Queue[Callable[[], Awaitable[None]]] = self._queues[key]
+        queue: asyncio.Queue[Callable[[], Awaitable[None]] | None] = self._queues[key]
 
         while True:
-            try:
-                job: Callable[[], Awaitable[None]] = queue.get_nowait()
-            except asyncio.QueueEmpty:
+            job: Callable[[], Awaitable[None]] | None = await queue.get()
+
+            if job is None:
+                queue.task_done()
                 break
 
             try:
                 await job()
             except Exception:
-                logger.exception(
-                    "Job failed for session %s",
-                    key,
-                )
+                logger.exception("Job failed for session %s", key)
             finally:
                 queue.task_done()
 
-            if queue.empty():
-                await asyncio.sleep(0)
-
-        del self._queues[key]
-        del self._consumers[key]
+        self._queues.pop(key, None)
+        self._consumers.pop(key, None)

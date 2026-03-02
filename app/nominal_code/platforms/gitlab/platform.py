@@ -10,7 +10,13 @@ import httpx
 from aiohttp import web
 from environs import Env
 
-from nominal_code.models import ChangedFile, EventType, FileStatus, ReviewFinding
+from nominal_code.models import (
+    ChangedFile,
+    DiffSide,
+    EventType,
+    FileStatus,
+    ReviewFinding,
+)
 from nominal_code.platforms.base import (
     CommentEvent,
     CommentReply,
@@ -21,6 +27,7 @@ from nominal_code.platforms.base import (
 )
 from nominal_code.platforms.registry import register_platform
 
+GITLAB_API_BASE: str = "https://gitlab.com"
 DISCUSSIONS_PER_PAGE: int = 100
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -46,7 +53,7 @@ class GitLabPlatform:
         self,
         token: str,
         webhook_secret: str = "",
-        base_url: str = "https://gitlab.com",
+        base_url: str = GITLAB_API_BASE,
         reviewer_token: str = "",
     ) -> None:
         """
@@ -63,6 +70,7 @@ class GitLabPlatform:
         self.webhook_secret: str = webhook_secret
         self.base_url: str = base_url.rstrip("/")
         self.reviewer_token: str = reviewer_token
+
         self._client: httpx.AsyncClient = httpx.AsyncClient(
             base_url=f"{self.base_url}/api/v4",
             headers={"PRIVATE-TOKEN": token},
@@ -446,7 +454,10 @@ class GitLabPlatform:
             event (PullRequestEvent): The original event that triggered the review.
         """
 
-        await self.post_reply(event, CommentReply(body=summary))
+        await self.post_reply(
+            event=event,
+            reply=CommentReply(body=summary),
+        )
 
         project_path: str = quote(repo_full_name, safe="")
 
@@ -496,9 +507,14 @@ class GitLabPlatform:
                 "head_sha": head_sha,
                 "start_sha": start_sha,
                 "position_type": "text",
-                "new_path": finding.file_path,
-                "new_line": finding.line,
             }
+
+            if finding.side == DiffSide.LEFT:
+                position_payload["old_path"] = finding.file_path
+                position_payload["old_line"] = finding.line
+            else:
+                position_payload["new_path"] = finding.file_path
+                position_payload["new_line"] = finding.line
 
             try:
                 discussion_response: httpx.Response = await self._client.post(
@@ -667,15 +683,15 @@ def _create_gitlab_platform() -> GitLabPlatform | None:
         GitLabPlatform | None: A configured client, or None.
     """
 
-    _env: Env = Env()
-    token: str = _env.str("GITLAB_TOKEN", "")
+    env: Env = Env()
+    token: str = env.str("GITLAB_TOKEN", "")
 
     if not token:
         return None
 
-    webhook_secret: str = _env.str("GITLAB_WEBHOOK_SECRET", "")
-    base_url: str = _env.str("GITLAB_BASE_URL", "https://gitlab.com")
-    reviewer_token: str = _env.str("GITLAB_REVIEWER_TOKEN", "")
+    webhook_secret: str = env.str("GITLAB_WEBHOOK_SECRET", "")
+    base_url: str = env.str("GITLAB_API_BASE", GITLAB_API_BASE)
+    reviewer_token: str = env.str("GITLAB_REVIEWER_TOKEN", "")
 
     return GitLabPlatform(
         token=token,

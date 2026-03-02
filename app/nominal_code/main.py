@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
+from datetime import timedelta
 
 from aiohttp import web
 from environs import Env
@@ -93,7 +94,7 @@ async def _async_main() -> None:
         cleaner = WorkspaceCleaner(
             base_dir=config.workspace_base_dir,
             platforms=platforms,
-            interval_seconds=config.cleanup_interval_hours * 3600,
+            cleanup_wait=timedelta(hours=config.cleanup_interval_hours),
         )
 
     runner: web.AppRunner = web.AppRunner(app)

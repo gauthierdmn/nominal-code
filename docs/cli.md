@@ -34,7 +34,7 @@ CLI mode reads a subset of the environment variables used by the webhook server.
 | `GITHUB_APP_PRIVATE_KEY_PATH` | No | Path to PEM private key file |
 | `GITHUB_INSTALLATION_ID` | Yes (with App auth) | GitHub App installation ID |
 | `GITLAB_TOKEN` | Yes (for GitLab) | GitLab API token |
-| `GITLAB_BASE_URL` | No | GitLab instance URL (default: `https://gitlab.com`) |
+| `GITLAB_API_BASE` | No | GitLab instance URL (default: `https://gitlab.com`) |
 | `REVIEWER_SYSTEM_PROMPT` | No | Path to a system prompt file |
 | `CODING_GUIDELINES` | No | Path to a coding guidelines file |
 | `LANGUAGE_GUIDELINES_DIR` | No | Path to language-specific guidelines directory |
@@ -81,7 +81,7 @@ uv run nominal-code review mygroup/myproject#10 --platform gitlab
 
 ```bash
 export GITLAB_TOKEN=glpat-...
-export GITLAB_BASE_URL=https://gitlab.internal.company.com
+export GITLAB_API_BASE=https://gitlab.internal.company.com
 uv run nominal-code review mygroup/myproject#10 --platform gitlab
 ```
 

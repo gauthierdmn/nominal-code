@@ -61,7 +61,7 @@ GITHUB_WEBHOOK_SECRET=gh-secret
 # GitLab
 GITLAB_TOKEN=glpat-...
 GITLAB_WEBHOOK_SECRET=gl-secret
-GITLAB_BASE_URL=https://gitlab.example.com
+GITLAB_API_BASE=https://gitlab.example.com
 ```
 
 Both platforms share the same bot usernames and allowed users list. Each platform gets its own webhook route (`/webhooks/github` and `/webhooks/gitlab`).

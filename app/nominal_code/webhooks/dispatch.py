@@ -73,9 +73,9 @@ async def enqueue_job(
         )
 
     await session_queue.enqueue(
-        event.platform,
-        event.repo_full_name,
-        event.pr_number,
-        bot_type.value,
-        job,
+        platform=event.platform,
+        repo=event.repo_full_name,
+        pr_number=event.pr_number,
+        bot_type=bot_type,
+        job=job,
     )

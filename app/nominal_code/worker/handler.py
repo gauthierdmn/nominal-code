@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from nominal_code.agent.errors import handle_agent_errors
@@ -8,7 +9,7 @@ from nominal_code.agent.prompts import resolve_system_prompt
 from nominal_code.agent.tracking import run_and_track_session
 from nominal_code.models import BotType
 from nominal_code.platforms.base import CommentEvent, CommentReply
-from nominal_code.workspace.setup import resolve_branch, setup_workspace
+from nominal_code.workspace.setup import create_workspace, resolve_branch
 
 if TYPE_CHECKING:
     from nominal_code.agent.session import SessionStore
@@ -37,29 +38,38 @@ async def review_and_fix(
         session_store (SessionStore): Agent session store.
     """
 
-    effective_event: CommentEvent | None = await resolve_branch(event, platform)  # type: ignore[assignment]
+    effective_event: CommentEvent | None = await resolve_branch(
+        event=event,
+        platform=platform,
+    )
 
     if effective_event is None:
         return
 
     async with handle_agent_errors(event, platform, "worker"):
-        workspace: GitWorkspace = await setup_workspace(effective_event, config)
+        workspace: GitWorkspace = create_workspace(
+            event=event,
+            config=config,
+        )
+
+        await workspace.ensure_ready()
+        workspace.maybe_create_deps_dir()
 
         if config.worker is None:
             raise RuntimeError("Worker config is required but not configured")
 
-        file_paths: list[str] = (
-            [effective_event.file_path] if effective_event.file_path else []
+        file_paths: list[Path] = (
+            [Path(effective_event.file_path)] if effective_event.file_path else []
         )
         system_prompt: str = resolve_system_prompt(
-            workspace,
-            config,
-            config.worker.system_prompt,
-            file_paths,
+            workspace=workspace,
+            config=config,
+            bot_system_prompt=config.worker.system_prompt,
+            file_paths=file_paths,
         )
-        full_prompt: str = build_prompt(
-            effective_event,
-            prompt,
+        full_prompt: str = _build_prompt(
+            event=effective_event,
+            user_prompt=prompt,
             deps_path=workspace.deps_path,
         )
 
@@ -73,7 +83,10 @@ async def review_and_fix(
             config=config,
         )
 
-        await platform.post_reply(event, CommentReply(body=result.output))
+        await platform.post_reply(
+            event=event,
+            reply=CommentReply(body=result.output),
+        )
 
         logger.info(
             "Worker finished for %s#%d (turns=%d, duration=%dms)",
@@ -84,10 +97,10 @@ async def review_and_fix(
         )
 
 
-def build_prompt(
+def _build_prompt(
     event: CommentEvent,
     user_prompt: str,
-    deps_path: str = "",
+    deps_path: Path | None = None,
 ) -> str:
     """
     Build a contextual prompt for the agent from the event.
@@ -97,7 +110,7 @@ def build_prompt(
     Args:
         event (CommentEvent): The comment event with PR context.
         user_prompt (str): The user's extracted prompt text.
-        deps_path (str): Path to the shared dependencies directory.
+        deps_path (Path | None): Path to the shared dependencies directory.
 
     Returns:
         str: The full prompt to send to the agent.
@@ -117,7 +130,7 @@ def build_prompt(
 
     parts.append(f"Request: {user_prompt}")
 
-    if deps_path:
+    if deps_path is not None:
         parts.append(
             f"Dependencies directory: {deps_path}\n"
             "If you need to understand a private dependency that is not available on\n"

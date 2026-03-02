@@ -50,10 +50,10 @@ GitHub/GitLab sends webhook             GitHub/GitLab sends webhook
 nominal-code review owner/repo#42 [--dry-run] [--prompt "..."]
         │
         ▼
-parse_pr_ref()                     ← validate owner/repo#N format
+_parse_pr_ref()                     ← validate owner/repo#N format
         │
         ▼
-build_platform()                   ← construct platform from env token
+_build_platform()                   ← construct platform from env token
         │
         ├─ fetch_pr_branch()       ← resolve HEAD branch via API
         │
@@ -66,7 +66,7 @@ review()
         ├─ parse JSON + filter findings
         │
         ▼
-print_review()                     ← format results for terminal
+_print_review()                     ← format results for terminal
         │
         ├─ [unless --dry-run] submit_review() or post_reply()
         │
@@ -101,9 +101,9 @@ A factory-based registry where each platform module self-registers at import tim
 
 ### CLI Module (`cli.py`)
 
-- **`parse_pr_ref()`** — parses `owner/repo#42` into a repo name and PR number.
-- **`build_platform()`** — constructs a platform client from environment tokens (no webhook secret needed).
-- **`run_review()`** — orchestrates the CLI flow: resolve branch, call `review()`, print results, optionally post.
+- **`_parse_pr_ref()`** — parses `owner/repo#42` into a repo name and PR number.
+- **`_build_platform()`** — constructs a platform client from environment tokens (no webhook secret needed).
+- **`_run_review()`** — orchestrates the CLI flow: resolve branch, call `review()`, print results, optionally post.
 
 ### Agent Runner (`agent/runner.py`)
 

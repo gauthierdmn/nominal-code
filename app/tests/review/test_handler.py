@@ -1,6 +1,7 @@
 # type: ignore
 import asyncio
 import json
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -8,15 +9,27 @@ import pytest
 from nominal_code.agent.runner import AgentResult
 from nominal_code.agent.session import SessionStore
 from nominal_code.config import ReviewerConfig
-from nominal_code.models import ChangedFile, EventType, FileStatus, ReviewFinding
+from nominal_code.models import (
+    ChangedFile,
+    DiffSide,
+    EventType,
+    FileStatus,
+    ReviewFinding,
+)
 from nominal_code.platforms.base import CommentEvent, ExistingComment, PlatformName
 from nominal_code.review.handler import (
     MAX_EXISTING_COMMENTS,
     REVIEWER_ALLOWED_TOOLS,
     ReviewResult,
-    build_effective_summary,
-    build_reviewer_prompt,
-    filter_findings,
+    _build_diff_index,
+    _build_effective_summary,
+    _build_retry_prompt,
+    _build_reviewer_prompt,
+    _filter_findings,
+    _format_existing_comments,
+    _parse_diff_lines,
+    _parse_finding,
+    _strip_fences,
     parse_review_output,
     review,
     review_and_post,
@@ -122,7 +135,7 @@ class TestReviewerProcessComment:
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
-                mock_ws.repo_path = "/tmp/workspaces/owner/repo/pr-42"
+                mock_ws.repo_path = Path("/tmp/workspaces/owner/repo/pr-42")
                 mock_ws_class.return_value = mock_ws
 
                 await review_and_post(
@@ -166,7 +179,7 @@ class TestReviewerProcessComment:
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
-                mock_ws.repo_path = "/tmp/workspaces/owner/repo/pr-42"
+                mock_ws.repo_path = Path("/tmp/workspaces/owner/repo/pr-42")
                 mock_ws_class.return_value = mock_ws
 
                 await review_and_post(
@@ -215,11 +228,11 @@ class TestReviewerProcessComment:
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
-                mock_ws.repo_path = "/tmp/workspaces/owner/repo/pr-42"
+                mock_ws.repo_path = Path("/tmp/workspaces/owner/repo/pr-42")
                 mock_ws_class.return_value = mock_ws
 
                 with patch(
-                    "nominal_code.agent.prompts.resolve_guidelines",
+                    "nominal_code.agent.prompts._resolve_guidelines",
                     return_value="Repo guidelines override",
                 ) as mock_resolve:
                     await review_and_post(
@@ -231,10 +244,10 @@ class TestReviewerProcessComment:
                     )
 
                     mock_resolve.assert_called_once_with(
-                        "/tmp/workspaces/owner/repo/pr-42",
-                        "Use snake_case.",
-                        {"python": "Python style rules."},
-                        [],
+                        repo_path=Path("/tmp/workspaces/owner/repo/pr-42"),
+                        default_guidelines="Use snake_case.",
+                        language_guidelines={"python": "Python style rules."},
+                        file_paths=[],
                     )
 
                 call_kwargs = mock_run.call_args.kwargs
@@ -286,7 +299,7 @@ class TestReviewerProcessComment:
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
-                mock_ws.repo_path = "/tmp/workspaces/owner/repo/pr-42"
+                mock_ws.repo_path = Path("/tmp/workspaces/owner/repo/pr-42")
                 mock_ws_class.return_value = mock_ws
 
                 await review_and_post(
@@ -344,7 +357,7 @@ class TestReviewerProcessComment:
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
-                mock_ws.repo_path = "/tmp/workspaces/owner/repo/pr-42"
+                mock_ws.repo_path = Path("/tmp/workspaces/owner/repo/pr-42")
                 mock_ws_class.return_value = mock_ws
 
                 await review_and_post(
@@ -385,7 +398,7 @@ class TestReviewerProcessComment:
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
-                mock_ws.repo_path = "/tmp/workspaces/owner/repo/pr-42"
+                mock_ws.repo_path = Path("/tmp/workspaces/owner/repo/pr-42")
                 mock_ws_class.return_value = mock_ws
 
                 await review_and_post(
@@ -400,13 +413,13 @@ class TestReviewerProcessComment:
             platform.submit_review.assert_not_called()
             platform.post_reply.assert_called_once()
 
-            reply_body = platform.post_reply.call_args.args[1].body
+            reply_body = platform.post_reply.call_args.kwargs["reply"].body
 
             assert reply_body == "still not json"
 
 
 class TestBuildReviewerPrompt:
-    def test_build_reviewer_prompt_includes_changed_files(self):
+    def test__build_reviewer_prompt_includes_changed_files(self):
         comment = _make_comment()
         changed_files = [
             ChangedFile(
@@ -420,7 +433,7 @@ class TestBuildReviewerPrompt:
                 patch="@@ -0,0 +1 @@\n+line",
             ),
         ]
-        result = build_reviewer_prompt(comment, "focus on security", changed_files)
+        result = _build_reviewer_prompt(comment, "focus on security", changed_files)
 
         assert "src/main.py" in result
         assert "modified" in result
@@ -430,7 +443,7 @@ class TestBuildReviewerPrompt:
         assert "-old" in result
         assert "+new" in result
 
-    def test_build_reviewer_prompt_with_deps_path(self):
+    def test__build_reviewer_prompt_with_deps_path(self):
         comment = _make_comment()
         changed_files = [
             ChangedFile(
@@ -439,18 +452,18 @@ class TestBuildReviewerPrompt:
                 patch="+new",
             ),
         ]
-        result = build_reviewer_prompt(
+        result = _build_reviewer_prompt(
             comment,
             "",
             changed_files,
-            deps_path="/tmp/.deps",
+            deps_path=Path("/tmp/.deps"),
         )
 
         assert "Dependencies directory: /tmp/.deps" in result
         assert "git clone" in result
         assert "--depth=1" in result
 
-    def test_build_reviewer_prompt_without_deps_path(self):
+    def test__build_reviewer_prompt_without_deps_path(self):
         comment = _make_comment()
         changed_files = [
             ChangedFile(
@@ -459,16 +472,16 @@ class TestBuildReviewerPrompt:
                 patch="+new",
             ),
         ]
-        result = build_reviewer_prompt(comment, "", changed_files)
+        result = _build_reviewer_prompt(comment, "", changed_files)
 
         assert "Dependencies directory" not in result
 
-    def test_build_reviewer_prompt_no_patch(self):
+    def test__build_reviewer_prompt_no_patch(self):
         comment = _make_comment()
         changed_files = [
             ChangedFile(file_path="binary.png", status=FileStatus.ADDED, patch=""),
         ]
-        result = build_reviewer_prompt(comment, "", changed_files)
+        result = _build_reviewer_prompt(comment, "", changed_files)
 
         assert "binary.png" in result
         assert "no patch available" in result
@@ -552,9 +565,41 @@ class TestParseReviewOutput:
 
         assert result is None
 
+    def test_parse_review_output_left_side_finding(self):
+        output = json.dumps(
+            {
+                "summary": "Found deletion issue",
+                "comments": [
+                    {
+                        "path": "src/main.py",
+                        "line": 5,
+                        "body": "Removed code had a bug",
+                        "side": "LEFT",
+                    },
+                ],
+            }
+        )
+        result = parse_review_output(output)
+
+        assert result is not None
+        assert result.findings[0].side == DiffSide.LEFT
+
+    def test_parse_review_output_invalid_side_returns_none(self):
+        output = json.dumps(
+            {
+                "summary": "Review",
+                "comments": [
+                    {"path": "a.py", "line": 1, "body": "test", "side": "INVALID"},
+                ],
+            }
+        )
+        result = parse_review_output(output)
+
+        assert result is None
+
 
 class TestBuildReviewerPromptWithExistingComments:
-    def test_build_reviewer_prompt_includes_existing_comments(self):
+    def test__build_reviewer_prompt_includes_existing_comments(self):
         comment = _make_comment()
         changed_files = [
             ChangedFile(file_path="a.py", status=FileStatus.MODIFIED, patch="+new"),
@@ -568,7 +613,7 @@ class TestBuildReviewerPromptWithExistingComments:
                 created_at="2026-01-01T10:00:00Z",
             ),
         ]
-        result = build_reviewer_prompt(
+        result = _build_reviewer_prompt(
             comment,
             "",
             changed_files,
@@ -580,21 +625,21 @@ class TestBuildReviewerPromptWithExistingComments:
         assert "`a.py:10`" in result
         assert "> Bug on this line" in result
 
-    def test_build_reviewer_prompt_no_existing_comments_omits_section(self):
+    def test__build_reviewer_prompt_no_existing_comments_omits_section(self):
         comment = _make_comment()
         changed_files = [
             ChangedFile(file_path="a.py", status=FileStatus.MODIFIED, patch="+new"),
         ]
-        result = build_reviewer_prompt(comment, "", changed_files)
+        result = _build_reviewer_prompt(comment, "", changed_files)
 
         assert "Existing discussions" not in result
 
-    def test_build_reviewer_prompt_empty_existing_comments_omits_section(self):
+    def test__build_reviewer_prompt_empty_existing_comments_omits_section(self):
         comment = _make_comment()
         changed_files = [
             ChangedFile(file_path="a.py", status=FileStatus.MODIFIED, patch="+new"),
         ]
-        result = build_reviewer_prompt(
+        result = _build_reviewer_prompt(
             comment,
             "",
             changed_files,
@@ -603,7 +648,7 @@ class TestBuildReviewerPromptWithExistingComments:
 
         assert "Existing discussions" not in result
 
-    def test_build_reviewer_prompt_resolved_comment_tagged(self):
+    def test__build_reviewer_prompt_resolved_comment_tagged(self):
         comment = _make_comment()
         changed_files = [
             ChangedFile(file_path="a.py", status=FileStatus.MODIFIED, patch="+new"),
@@ -616,7 +661,7 @@ class TestBuildReviewerPromptWithExistingComments:
                 created_at="2026-01-01T10:00:00Z",
             ),
         ]
-        result = build_reviewer_prompt(
+        result = _build_reviewer_prompt(
             comment,
             "",
             changed_files,
@@ -625,7 +670,7 @@ class TestBuildReviewerPromptWithExistingComments:
 
         assert "(resolved)" in result
 
-    def test_build_reviewer_prompt_top_level_comment_no_location(self):
+    def test__build_reviewer_prompt_top_level_comment_no_location(self):
         comment = _make_comment()
         changed_files = [
             ChangedFile(file_path="a.py", status=FileStatus.MODIFIED, patch="+new"),
@@ -637,7 +682,7 @@ class TestBuildReviewerPromptWithExistingComments:
                 created_at="2026-01-01T10:00:00Z",
             ),
         ]
-        result = build_reviewer_prompt(
+        result = _build_reviewer_prompt(
             comment,
             "",
             changed_files,
@@ -694,7 +739,7 @@ class TestBotCommentFiltering:
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
-                mock_ws.repo_path = "/tmp/workspaces/owner/repo/pr-42"
+                mock_ws.repo_path = Path("/tmp/workspaces/owner/repo/pr-42")
                 mock_ws_class.return_value = mock_ws
 
                 await review_and_post(
@@ -752,7 +797,7 @@ class TestBotCommentFiltering:
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
-                mock_ws.repo_path = "/tmp/workspaces/owner/repo/pr-42"
+                mock_ws.repo_path = Path("/tmp/workspaces/owner/repo/pr-42")
                 mock_ws_class.return_value = mock_ws
 
                 await review_and_post(
@@ -816,7 +861,7 @@ class TestBotCommentFiltering:
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock(side_effect=track_ensure_ready)
-                mock_ws.repo_path = "/tmp/workspaces/owner/repo/pr-42"
+                mock_ws.repo_path = Path("/tmp/workspaces/owner/repo/pr-42")
                 mock_ws_class.return_value = mock_ws
 
                 with patch(
@@ -857,7 +902,7 @@ class TestFilterFindings:
         findings = [
             ReviewFinding(file_path="src/main.py", line=2, body="Issue here"),
         ]
-        valid, rejected = filter_findings(findings, changed_files)
+        valid, rejected = _filter_findings(findings, changed_files)
 
         assert len(valid) == 1
         assert len(rejected) == 0
@@ -873,7 +918,7 @@ class TestFilterFindings:
         findings = [
             ReviewFinding(file_path="src/main.py", line=100, body="Not in diff"),
         ]
-        valid, rejected = filter_findings(findings, changed_files)
+        valid, rejected = _filter_findings(findings, changed_files)
 
         assert len(valid) == 0
         assert len(rejected) == 1
@@ -889,7 +934,7 @@ class TestFilterFindings:
         findings = [
             ReviewFinding(file_path="src/other.py", line=5, body="Not in PR"),
         ]
-        valid, rejected = filter_findings(findings, changed_files)
+        valid, rejected = _filter_findings(findings, changed_files)
 
         assert len(valid) == 0
         assert len(rejected) == 1
@@ -907,7 +952,7 @@ class TestFilterFindings:
             ReviewFinding(file_path="src/main.py", line=999, body="Invalid line"),
             ReviewFinding(file_path="src/other.py", line=5, body="Invalid file"),
         ]
-        valid, rejected = filter_findings(findings, changed_files)
+        valid, rejected = _filter_findings(findings, changed_files)
 
         assert len(valid) == 1
         assert valid[0].body == "Valid"
@@ -921,7 +966,7 @@ class TestFilterFindings:
                 patch="@@ -1 +1 @@\n+new",
             ),
         ]
-        valid, rejected = filter_findings([], changed_files)
+        valid, rejected = _filter_findings([], changed_files)
 
         assert valid == []
         assert rejected == []
@@ -939,13 +984,13 @@ class TestFilterFindings:
             ReviewFinding(file_path="a.py", line=21, body="In second hunk"),
             ReviewFinding(file_path="a.py", line=10, body="Between hunks"),
         ]
-        valid, rejected = filter_findings(findings, changed_files)
+        valid, rejected = _filter_findings(findings, changed_files)
 
         assert len(valid) == 2
         assert len(rejected) == 1
         assert rejected[0].body == "Between hunks"
 
-    def test_filter_findings_deletion_lines_excluded(self):
+    def test_filter_findings_deletion_lines_on_left_side(self):
         changed_files = [
             ChangedFile(
                 file_path="a.py",
@@ -954,18 +999,43 @@ class TestFilterFindings:
             ),
         ]
         findings = [
-            ReviewFinding(file_path="a.py", line=1, body="Context line ok"),
-            ReviewFinding(file_path="a.py", line=2, body="After deletion ok"),
+            ReviewFinding(
+                file_path="a.py",
+                line=2,
+                body="Deleted line comment",
+                side=DiffSide.LEFT,
+            ),
         ]
-        valid, rejected = filter_findings(findings, changed_files)
+        valid, rejected = _filter_findings(findings, changed_files)
 
-        assert len(valid) == 2
+        assert len(valid) == 1
         assert len(rejected) == 0
+
+    def test_filter_findings_rejects_left_finding_on_right_only_file(self):
+        changed_files = [
+            ChangedFile(
+                file_path="a.py",
+                status=FileStatus.ADDED,
+                patch="@@ -0,0 +1,3 @@\n+line one\n+line two\n+line three",
+            ),
+        ]
+        findings = [
+            ReviewFinding(
+                file_path="a.py",
+                line=1,
+                body="No left side here",
+                side=DiffSide.LEFT,
+            ),
+        ]
+        valid, rejected = _filter_findings(findings, changed_files)
+
+        assert len(valid) == 0
+        assert len(rejected) == 1
 
 
 class TestBuildEffectiveSummary:
     def test_build_effective_summary_no_rejected(self):
-        result = build_effective_summary("All good", [])
+        result = _build_effective_summary("All good", [])
 
         assert result == "All good"
 
@@ -974,7 +1044,7 @@ class TestBuildEffectiveSummary:
             ReviewFinding(file_path="src/other.py", line=5, body="Missing update"),
             ReviewFinding(file_path="src/utils.py", line=20, body="Stale reference"),
         ]
-        result = build_effective_summary("Found issues", rejected)
+        result = _build_effective_summary("Found issues", rejected)
 
         assert result.startswith("Found issues")
         assert "Additional notes" in result
@@ -988,7 +1058,7 @@ class TestBuildEffectiveSummary:
         rejected = [
             ReviewFinding(file_path="a.py", line=1, body="Needs change"),
         ]
-        result = build_effective_summary("Summary", rejected)
+        result = _build_effective_summary("Summary", rejected)
 
         assert "**a.py:1**" in result
         assert "Needs change" in result
@@ -1036,7 +1106,7 @@ class TestReview:
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
-                mock_ws.repo_path = "/tmp/workspaces/owner/repo/pr-42"
+                mock_ws.repo_path = Path("/tmp/workspaces/owner/repo/pr-42")
                 mock_ws_class.return_value = mock_ws
 
                 result = await review(
@@ -1076,7 +1146,7 @@ class TestReview:
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
-                mock_ws.repo_path = "/tmp/workspaces/owner/repo/pr-42"
+                mock_ws.repo_path = Path("/tmp/workspaces/owner/repo/pr-42")
                 mock_ws_class.return_value = mock_ws
 
                 result = await review(
@@ -1119,7 +1189,7 @@ class TestReview:
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
-                mock_ws.repo_path = "/tmp/workspaces/owner/repo/pr-42"
+                mock_ws.repo_path = Path("/tmp/workspaces/owner/repo/pr-42")
                 mock_ws_class.return_value = mock_ws
 
                 result = await review(
@@ -1173,7 +1243,7 @@ class TestReview:
             ) as mock_ws_class:
                 mock_ws = MagicMock()
                 mock_ws.ensure_ready = AsyncMock()
-                mock_ws.repo_path = "/tmp/workspaces/owner/repo/pr-42"
+                mock_ws.repo_path = Path("/tmp/workspaces/owner/repo/pr-42")
                 mock_ws_class.return_value = mock_ws
 
                 await review_and_post(
@@ -1185,6 +1255,273 @@ class TestReview:
                 )
 
             platform.post_reply.assert_called_once()
-            reply_body = platform.post_reply.call_args.args[1].body
+            reply_body = platform.post_reply.call_args.kwargs["reply"].body
 
             assert reply_body == "Looks good"
+
+
+class TestStripFences:
+    def test_strip_fences_no_fence_unchanged(self):
+        result = _strip_fences('{"summary": "ok"}')
+
+        assert result == '{"summary": "ok"}'
+
+    def test_strip_fences_plain_code_fence(self):
+        text = '```\n{"summary": "ok"}\n```'
+
+        result = _strip_fences(text)
+
+        assert result == '{"summary": "ok"}'
+
+    def test_strip_fences_language_tagged_fence(self):
+        text = '```json\n{"summary": "ok"}\n```'
+
+        result = _strip_fences(text)
+
+        assert result == '{"summary": "ok"}'
+
+    def test_strip_fences_no_closing_fence(self):
+        text = '```json\n{"summary": "ok"}'
+
+        result = _strip_fences(text)
+
+        assert result == '{"summary": "ok"}'
+
+    def test_strip_fences_multiline_content(self):
+        text = "```\nline one\nline two\n```"
+
+        result = _strip_fences(text)
+
+        assert result == "line one\nline two"
+
+
+class TestParseFinding:
+    def test_parse_finding_valid(self):
+        item = {"path": "src/main.py", "line": 10, "body": "Fix this"}
+
+        result = _parse_finding(item)
+
+        assert result.file_path == "src/main.py"
+        assert result.line == 10
+        assert result.body == "Fix this"
+
+    def test_parse_finding_defaults_side_to_right(self):
+        item = {"path": "src/main.py", "line": 5, "body": "Note"}
+
+        result = _parse_finding(item)
+
+        assert result.side == DiffSide.RIGHT
+
+    def test_parse_finding_explicit_left_side(self):
+        item = {"path": "src/main.py", "line": 5, "body": "Note", "side": "LEFT"}
+
+        result = _parse_finding(item)
+
+        assert result.side == DiffSide.LEFT
+
+    def test_parse_finding_non_dict_raises(self):
+        with pytest.raises(ValueError, match="not a dict"):
+            _parse_finding("not a dict")
+
+    def test_parse_finding_missing_path_raises(self):
+        with pytest.raises(ValueError, match="invalid path"):
+            _parse_finding({"line": 5, "body": "text"})
+
+    def test_parse_finding_empty_path_raises(self):
+        with pytest.raises(ValueError, match="invalid path"):
+            _parse_finding({"path": "", "line": 5, "body": "text"})
+
+    def test_parse_finding_non_string_path_raises(self):
+        with pytest.raises(ValueError, match="invalid path"):
+            _parse_finding({"path": 123, "line": 5, "body": "text"})
+
+    def test_parse_finding_line_zero_raises(self):
+        with pytest.raises(ValueError, match="invalid line"):
+            _parse_finding({"path": "src/main.py", "line": 0, "body": "text"})
+
+    def test_parse_finding_negative_line_raises(self):
+        with pytest.raises(ValueError, match="invalid line"):
+            _parse_finding({"path": "src/main.py", "line": -1, "body": "text"})
+
+    def test_parse_finding_missing_body_raises(self):
+        with pytest.raises(ValueError, match="invalid body"):
+            _parse_finding({"path": "src/main.py", "line": 5})
+
+    def test_parse_finding_empty_body_raises(self):
+        with pytest.raises(ValueError, match="invalid body"):
+            _parse_finding({"path": "src/main.py", "line": 5, "body": ""})
+
+    def test_parse_finding_invalid_side_raises(self):
+        with pytest.raises(ValueError, match="invalid side"):
+            _parse_finding(
+                {"path": "src/main.py", "line": 5, "body": "text", "side": "MIDDLE"}
+            )
+
+
+class TestBuildRetryPrompt:
+    def test_build_retry_prompt_contains_previous_output(self):
+        result = _build_retry_prompt("bad json output here")
+
+        assert "bad json output here" in result
+
+    def test_build_retry_prompt_mentions_valid_json(self):
+        result = _build_retry_prompt("bad output")
+
+        assert "JSON" in result
+
+    def test_build_retry_prompt_is_string(self):
+        result = _build_retry_prompt("")
+
+        assert isinstance(result, str)
+
+
+class TestParseDiffLines:
+    def test_parse_diff_lines_addition_lines_in_right(self):
+        patch_text = "@@ -0,0 +1,3 @@\n+line one\n+line two\n+line three\n"
+
+        result = _parse_diff_lines(patch_text)
+
+        assert 1 in result[DiffSide.RIGHT]
+        assert 2 in result[DiffSide.RIGHT]
+        assert 3 in result[DiffSide.RIGHT]
+
+    def test_parse_diff_lines_deletion_lines_in_left(self):
+        patch_text = "@@ -1,2 +1,0 @@\n-removed line 1\n-removed line 2\n"
+
+        result = _parse_diff_lines(patch_text)
+
+        assert 1 in result[DiffSide.LEFT]
+        assert 2 in result[DiffSide.LEFT]
+
+    def test_parse_diff_lines_context_lines_in_both(self):
+        patch_text = "@@ -5,3 +5,3 @@\n context one\n context two\n"
+
+        result = _parse_diff_lines(patch_text)
+
+        assert 5 in result[DiffSide.LEFT]
+        assert 5 in result[DiffSide.RIGHT]
+
+    def test_parse_diff_lines_empty_patch_returns_empty_sets(self):
+        result = _parse_diff_lines("")
+
+        assert result[DiffSide.LEFT] == set()
+        assert result[DiffSide.RIGHT] == set()
+
+    def test_parse_diff_lines_returns_both_sides(self):
+        patch_text = "@@ -1,1 +1,1 @@\n-old\n+new\n"
+
+        result = _parse_diff_lines(patch_text)
+
+        assert DiffSide.LEFT in result
+        assert DiffSide.RIGHT in result
+
+
+class TestBuildDiffIndex:
+    def test_build_diff_index_includes_files_with_patches(self):
+        changed_files = [
+            ChangedFile(
+                file_path="src/main.py",
+                status=FileStatus.MODIFIED,
+                patch="@@ -1,1 +1,1 @@\n-old\n+new\n",
+            )
+        ]
+
+        result = _build_diff_index(changed_files)
+
+        assert "src/main.py" in result
+
+    def test_build_diff_index_excludes_files_without_patch(self):
+        changed_files = [
+            ChangedFile(
+                file_path="src/main.py",
+                status=FileStatus.ADDED,
+                patch="",
+            )
+        ]
+
+        result = _build_diff_index(changed_files)
+
+        assert "src/main.py" not in result
+
+    def test_build_diff_index_empty_list_returns_empty_dict(self):
+        result = _build_diff_index([])
+
+        assert result == {}
+
+    def test_build_diff_index_maps_file_to_side_sets(self):
+        changed_files = [
+            ChangedFile(
+                file_path="a.py",
+                status=FileStatus.MODIFIED,
+                patch="@@ -1,1 +1,1 @@\n+new line\n",
+            )
+        ]
+
+        result = _build_diff_index(changed_files)
+
+        assert DiffSide.LEFT in result["a.py"]
+        assert DiffSide.RIGHT in result["a.py"]
+
+
+class TestFormatExistingComments:
+    def test_format_existing_comments_empty_list(self):
+
+        result = _format_existing_comments([])
+
+        assert "## Existing discussions" in result
+
+    def test_format_existing_comments_includes_author(self):
+        from nominal_code.platforms.base import ExistingComment
+
+        comments = [ExistingComment(author="alice", body="Looks good!", created_at="")]
+
+        result = _format_existing_comments(comments)
+
+        assert "alice" in result
+        assert "Looks good!" in result
+
+    def test_format_existing_comments_includes_file_path(self):
+        from nominal_code.platforms.base import ExistingComment
+
+        comments = [
+            ExistingComment(
+                author="bob",
+                body="Fix this.",
+                file_path="src/main.py",
+                line=10,
+                created_at="",
+            )
+        ]
+
+        result = _format_existing_comments(comments)
+
+        assert "src/main.py" in result
+        assert "10" in result
+
+    def test_format_existing_comments_marks_resolved(self):
+        from nominal_code.platforms.base import ExistingComment
+
+        comments = [
+            ExistingComment(
+                author="alice",
+                body="Already fixed.",
+                is_resolved=True,
+                created_at="",
+            )
+        ]
+
+        result = _format_existing_comments(comments)
+
+        assert "resolved" in result
+
+    def test_format_existing_comments_top_level_comment_no_file_shown(self):
+        from nominal_code.platforms.base import ExistingComment
+
+        comments = [
+            ExistingComment(author="alice", body="LGTM", file_path="", created_at="")
+        ]
+
+        result = _format_existing_comments(comments)
+
+        assert "alice" in result
+        assert "LGTM" in result

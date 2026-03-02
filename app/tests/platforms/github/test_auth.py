@@ -191,3 +191,52 @@ class TestLoadPrivateKey:
             result = load_private_key()
 
         assert result == ""
+
+
+class TestGitHubPatAuthInit:
+    def test_pat_auth_init_stores_token(self):
+        auth = GitHubPatAuth(token="ghp_mytoken")
+
+        assert auth.token == "ghp_mytoken"
+
+    def test_pat_auth_init_reviewer_token_defaults_to_empty(self):
+        auth = GitHubPatAuth(token="ghp_mytoken")
+
+        assert auth.reviewer_token == ""
+
+    def test_pat_auth_init_stores_reviewer_token(self):
+        auth = GitHubPatAuth(token="ghp_main", reviewer_token="ghp_readonly")
+
+        assert auth.reviewer_token == "ghp_readonly"
+
+
+class TestGitHubAppAuthInit:
+    def test_app_auth_init_stores_app_id(self):
+        auth = GitHubAppAuth(app_id="99999", private_key="pem-key")
+
+        assert auth.app_id == "99999"
+
+    def test_app_auth_init_stores_private_key(self):
+        auth = GitHubAppAuth(app_id="12345", private_key="my-pem")
+
+        assert auth.private_key == "my-pem"
+
+    def test_app_auth_init_installation_id_defaults_to_zero(self):
+        auth = GitHubAppAuth(app_id="12345", private_key="pem")
+
+        assert auth.installation_id == 0
+
+    def test_app_auth_init_stores_installation_id(self):
+        auth = GitHubAppAuth(app_id="12345", private_key="pem", installation_id=42)
+
+        assert auth.installation_id == 42
+
+    def test_app_auth_init_cached_token_is_empty(self):
+        auth = GitHubAppAuth(app_id="12345", private_key="pem")
+
+        assert auth._cached_token == ""
+
+    def test_app_auth_init_token_expires_at_is_zero(self):
+        auth = GitHubAppAuth(app_id="12345", private_key="pem")
+
+        assert auth._token_expires_at == 0.0
