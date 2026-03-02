@@ -20,7 +20,6 @@ from nominal_code.platforms.github import (
 )
 from nominal_code.platforms.github.platform import _create_github_platform
 
-
 EXPECTED_AUTH_HEADERS = {
     "Authorization": "token ghp_test123",
     "Accept": "application/vnd.github.v3+json",

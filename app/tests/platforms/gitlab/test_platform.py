@@ -12,10 +12,8 @@ from nominal_code.platforms.base import (
     LifecycleEvent,
     PlatformName,
 )
-from nominal_code.platforms.gitlab import (
-    GitLabPlatform,
-    _create_gitlab_platform,
-)
+from nominal_code.platforms.gitlab import GitLabPlatform
+from nominal_code.platforms.gitlab.platform import _create_gitlab_platform
 
 
 @pytest.fixture
