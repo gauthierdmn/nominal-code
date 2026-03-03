@@ -276,3 +276,177 @@ class TestSessionQueueConsume:
         key = ("github", "owner/repo", 99, "worker")
 
         assert key not in queue._queues
+
+
+class TestSessionQueueEdgeCases:
+    @pytest.mark.asyncio
+    async def test_single_job_consumer_exits_and_cleans_up(self):
+        queue = SessionQueue()
+        executed = []
+
+        async def job():
+            executed.append(True)
+
+        await queue.enqueue(PlatformName.GITHUB, "owner/repo", 1, BotType.WORKER, job)
+        await asyncio.sleep(0.1)
+
+        key = ("github", "owner/repo", 1, "worker")
+
+        assert executed == [True]
+        assert key not in queue._queues
+        assert key not in queue._consumers
+
+    @pytest.mark.asyncio
+    async def test_re_enqueue_after_consumer_exits_spawns_new_consumer(self):
+        queue = SessionQueue()
+        executed = []
+
+        async def first_job():
+            executed.append("first")
+
+        await queue.enqueue(
+            PlatformName.GITHUB,
+            "owner/repo",
+            1,
+            BotType.WORKER,
+            first_job,
+        )
+        await asyncio.sleep(0.1)
+
+        assert executed == ["first"]
+
+        async def second_job():
+            executed.append("second")
+
+        await queue.enqueue(
+            PlatformName.GITHUB,
+            "owner/repo",
+            1,
+            BotType.WORKER,
+            second_job,
+        )
+        await asyncio.sleep(0.1)
+
+        assert executed == ["first", "second"]
+
+        key = ("github", "owner/repo", 1, "worker")
+
+        assert key not in queue._queues
+        assert key not in queue._consumers
+
+    @pytest.mark.asyncio
+    async def test_single_failing_job_cleans_up(self):
+        queue = SessionQueue()
+
+        async def bad_job():
+            raise RuntimeError("boom")
+
+        await queue.enqueue(
+            PlatformName.GITHUB,
+            "owner/repo",
+            1,
+            BotType.WORKER,
+            bad_job,
+        )
+        await asyncio.sleep(0.1)
+
+        key = ("github", "owner/repo", 1, "worker")
+
+        assert key not in queue._queues
+        assert key not in queue._consumers
+
+    @pytest.mark.asyncio
+    async def test_all_jobs_fail_still_cleans_up(self):
+        queue = SessionQueue()
+        attempted = []
+
+        async def bad_first():
+            attempted.append("first")
+
+            raise ValueError("first error")
+
+        async def bad_second():
+            attempted.append("second")
+
+            raise ValueError("second error")
+
+        await queue.enqueue(
+            PlatformName.GITHUB,
+            "owner/repo",
+            1,
+            BotType.WORKER,
+            bad_first,
+        )
+        await queue.enqueue(
+            PlatformName.GITHUB,
+            "owner/repo",
+            1,
+            BotType.WORKER,
+            bad_second,
+        )
+        await asyncio.sleep(0.1)
+
+        key = ("github", "owner/repo", 1, "worker")
+
+        assert attempted == ["first", "second"]
+        assert key not in queue._queues
+        assert key not in queue._consumers
+
+    @pytest.mark.asyncio
+    async def test_multiple_keys_single_job_each_all_clean_up(self):
+        queue = SessionQueue()
+        executed = []
+
+        async def job_pr1():
+            executed.append("pr1")
+
+        async def job_pr2():
+            executed.append("pr2")
+
+        await queue.enqueue(
+            PlatformName.GITHUB,
+            "owner/repo",
+            1,
+            BotType.WORKER,
+            job_pr1,
+        )
+        await queue.enqueue(
+            PlatformName.GITHUB,
+            "owner/repo",
+            2,
+            BotType.WORKER,
+            job_pr2,
+        )
+        await asyncio.sleep(0.1)
+
+        assert "pr1" in executed
+        assert "pr2" in executed
+        assert queue._queues == {}
+        assert queue._consumers == {}
+
+    @pytest.mark.asyncio
+    async def test_rapid_sequential_enqueue_to_same_key(self):
+        queue = SessionQueue()
+        executed = []
+
+        for index in range(5):
+
+            async def job(number=index):
+                executed.append(number)
+
+            await queue.enqueue(
+                PlatformName.GITHUB,
+                "owner/repo",
+                1,
+                BotType.WORKER,
+                job,
+            )
+
+        await asyncio.sleep(0.2)
+
+        assert executed == [0, 1, 2, 3, 4]
+
+        key = ("github", "owner/repo", 1, "worker")
+
+        assert key not in queue._queues
+        assert key not in queue._consumers

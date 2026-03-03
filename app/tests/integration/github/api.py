@@ -1,0 +1,398 @@
+import asyncio
+import logging
+
+import httpx
+
+GITHUB_API_BASE = "https://api.github.com"
+TIMEOUT = 30.0
+WORKFLOW_POLL_INTERVAL = 10.0
+CREATE_PR_RETRY_DELAY = 3.0
+CREATE_PR_MAX_RETRIES = 5
+
+logger = logging.getLogger(__name__)
+
+
+def _headers(token: str) -> dict[str, str]:
+    return {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github.v3+json",
+    }
+
+
+async def create_pr(
+    token: str,
+    repo: str,
+    head: str,
+    base: str = "main",
+    title: str = "test: PR",
+) -> int:
+    """
+    Create a pull request on a unique branch.
+
+    Retries on transient 422 errors with a short delay.
+
+    Args:
+        token (str): GitHub API token.
+        repo (str): Repository full name (owner/repo).
+        head (str): Head branch name.
+        base (str): Base branch name.
+        title (str): PR title.
+
+    Returns:
+        int: The PR number.
+    """
+
+    async with httpx.AsyncClient(
+        base_url=GITHUB_API_BASE,
+        timeout=TIMEOUT,
+    ) as client:
+        for attempt in range(1, CREATE_PR_MAX_RETRIES + 1):
+            response = await client.post(
+                f"/repos/{repo}/pulls",
+                json={"title": title, "head": head, "base": base},
+                headers=_headers(token),
+            )
+
+            if response.status_code != 422:
+                response.raise_for_status()
+
+                return response.json()["number"]
+
+            logger.warning(
+                "PR creation returned 422 for %s (attempt %d/%d): %s",
+                head,
+                attempt,
+                CREATE_PR_MAX_RETRIES,
+                response.text,
+            )
+
+            if attempt < CREATE_PR_MAX_RETRIES:
+                await asyncio.sleep(CREATE_PR_RETRY_DELAY)
+
+        response.raise_for_status()
+
+        return response.json()["number"]
+
+
+async def close_pr(token: str, repo: str, pr_number: int) -> None:
+    """
+    Close a pull request. Silently succeeds if already closed.
+
+    Args:
+        token (str): GitHub API token.
+        repo (str): Repository full name (owner/repo).
+        pr_number (int): PR number to close.
+    """
+
+    async with httpx.AsyncClient(
+        base_url=GITHUB_API_BASE,
+        timeout=TIMEOUT,
+    ) as client:
+        response = await client.patch(
+            f"/repos/{repo}/pulls/{pr_number}",
+            json={"state": "closed"},
+            headers=_headers(token),
+        )
+
+        if response.status_code == 422:
+            return
+
+        response.raise_for_status()
+
+
+async def fetch_pr_reviews(
+    token: str,
+    repo: str,
+    pr_number: int,
+) -> list[dict]:
+    async with httpx.AsyncClient(
+        base_url=GITHUB_API_BASE,
+        timeout=TIMEOUT,
+    ) as client:
+        response = await client.get(
+            f"/repos/{repo}/pulls/{pr_number}/reviews",
+            headers=_headers(token),
+        )
+        response.raise_for_status()
+
+    return response.json()
+
+
+async def fetch_pr_review_comments(
+    token: str,
+    repo: str,
+    pr_number: int,
+) -> list[dict]:
+    async with httpx.AsyncClient(
+        base_url=GITHUB_API_BASE,
+        timeout=TIMEOUT,
+    ) as client:
+        response = await client.get(
+            f"/repos/{repo}/pulls/{pr_number}/comments",
+            headers=_headers(token),
+        )
+        response.raise_for_status()
+
+    return response.json()
+
+
+async def fetch_pr_comments(
+    token: str,
+    repo: str,
+    pr_number: int,
+) -> list[dict]:
+    async with httpx.AsyncClient(
+        base_url=GITHUB_API_BASE,
+        timeout=TIMEOUT,
+    ) as client:
+        response = await client.get(
+            f"/repos/{repo}/issues/{pr_number}/comments",
+            headers=_headers(token),
+        )
+        response.raise_for_status()
+
+    return response.json()
+
+
+async def get_branch_sha(token: str, repo: str, branch: str) -> str:
+    """
+    Get the HEAD SHA of a branch.
+
+    Args:
+        token (str): GitHub personal access token.
+        repo (str): Repository full name (e.g. ``owner/repo``).
+        branch (str): Branch name.
+
+    Returns:
+        str: The SHA of the branch HEAD commit.
+    """
+
+    async with httpx.AsyncClient(
+        base_url=GITHUB_API_BASE,
+        timeout=TIMEOUT,
+    ) as client:
+        response = await client.get(
+            f"/repos/{repo}/branches/{branch}",
+            headers=_headers(token),
+        )
+        response.raise_for_status()
+        data: dict = response.json()
+
+    return data["commit"]["sha"]
+
+
+async def create_branch(
+    token: str,
+    repo: str,
+    branch: str,
+    from_sha: str,
+) -> None:
+    """
+    Create a branch from a given SHA.
+
+    Uses the higher-level Branches API via the create-ref endpoint
+    under ``/repos/{repo}/git/refs``. Requires Contents write permission
+    on fine-grained tokens.
+
+    Args:
+        token (str): GitHub personal access token.
+        repo (str): Repository full name.
+        branch (str): New branch name.
+        from_sha (str): SHA to branch from.
+    """
+
+    async with httpx.AsyncClient(
+        base_url=GITHUB_API_BASE,
+        timeout=TIMEOUT,
+    ) as client:
+        response = await client.post(
+            f"/repos/{repo}/git/refs",
+            json={"ref": f"refs/heads/{branch}", "sha": from_sha},
+            headers=_headers(token),
+        )
+        response.raise_for_status()
+
+
+async def delete_branch(token: str, repo: str, branch: str) -> None:
+    """
+    Delete a branch.
+
+    Args:
+        token (str): GitHub personal access token.
+        repo (str): Repository full name.
+        branch (str): Branch name to delete.
+    """
+
+    async with httpx.AsyncClient(
+        base_url=GITHUB_API_BASE,
+        timeout=TIMEOUT,
+    ) as client:
+        response = await client.delete(
+            f"/repos/{repo}/git/refs/heads/{branch}",
+            headers=_headers(token),
+        )
+        response.raise_for_status()
+
+
+async def create_or_update_file(
+    token: str,
+    repo: str,
+    path: str,
+    content_b64: str,
+    message: str,
+    branch: str,
+) -> None:
+    """
+    Create or update a file in a repository via the Contents API.
+
+    Args:
+        token (str): GitHub personal access token.
+        repo (str): Repository full name.
+        path (str): File path within the repository.
+        content_b64 (str): Base64-encoded file content.
+        message (str): Commit message.
+        branch (str): Branch to commit to.
+    """
+
+    async with httpx.AsyncClient(
+        base_url=GITHUB_API_BASE,
+        timeout=TIMEOUT,
+    ) as client:
+        get_response = await client.get(
+            f"/repos/{repo}/contents/{path}",
+            params={"ref": branch},
+            headers=_headers(token),
+        )
+
+        payload: dict = {
+            "message": message,
+            "content": content_b64,
+            "branch": branch,
+        }
+
+        if get_response.status_code == 200:
+            existing: dict = get_response.json()
+            payload["sha"] = existing["sha"]
+
+        response = await client.put(
+            f"/repos/{repo}/contents/{path}",
+            json=payload,
+            headers=_headers(token),
+        )
+        response.raise_for_status()
+
+
+async def create_webhook(
+    token: str,
+    repo: str,
+    url: str,
+    secret: str,
+    events: list[str],
+) -> int:
+    """
+    Register a webhook on a repository.
+
+    Args:
+        token (str): GitHub personal access token.
+        repo (str): Repository full name.
+        url (str): Webhook payload delivery URL.
+        secret (str): Webhook secret for HMAC signing.
+        events (list[str]): List of event types to subscribe to.
+
+    Returns:
+        int: The webhook ID.
+    """
+
+    async with httpx.AsyncClient(
+        base_url=GITHUB_API_BASE,
+        timeout=TIMEOUT,
+    ) as client:
+        response = await client.post(
+            f"/repos/{repo}/hooks",
+            json={
+                "name": "web",
+                "active": True,
+                "events": events,
+                "config": {
+                    "url": url,
+                    "content_type": "json",
+                    "secret": secret,
+                    "insecure_ssl": "0",
+                },
+            },
+            headers=_headers(token),
+        )
+        response.raise_for_status()
+        data: dict = response.json()
+
+    return data["id"]
+
+
+async def delete_webhook(token: str, repo: str, hook_id: int) -> None:
+    """
+    Delete a webhook from a repository.
+
+    Args:
+        token (str): GitHub personal access token.
+        repo (str): Repository full name.
+        hook_id (int): Webhook ID to delete.
+    """
+
+    async with httpx.AsyncClient(
+        base_url=GITHUB_API_BASE,
+        timeout=TIMEOUT,
+    ) as client:
+        response = await client.delete(
+            f"/repos/{repo}/hooks/{hook_id}",
+            headers=_headers(token),
+        )
+        response.raise_for_status()
+
+
+async def wait_for_workflow_run(
+    token: str,
+    repo: str,
+    branch: str,
+    timeout: float = 600.0,
+) -> dict:
+    """
+    Poll until a workflow run on the given branch completes.
+
+    Args:
+        token (str): GitHub personal access token.
+        repo (str): Repository full name.
+        branch (str): Branch name to filter runs by.
+        timeout (float): Maximum seconds to wait.
+
+    Returns:
+        dict: The completed workflow run object.
+
+    Raises:
+        TimeoutError: If no completed run is found within the timeout.
+    """
+
+    elapsed = 0.0
+
+    while elapsed < timeout:
+        async with httpx.AsyncClient(
+            base_url=GITHUB_API_BASE,
+            timeout=TIMEOUT,
+        ) as client:
+            response = await client.get(
+                f"/repos/{repo}/actions/runs",
+                params={"branch": branch, "per_page": 5},
+                headers=_headers(token),
+            )
+            response.raise_for_status()
+            data: dict = response.json()
+
+        runs: list[dict] = data.get("workflow_runs", [])
+
+        for run in runs:
+            if run["status"] == "completed":
+                return run
+
+        await asyncio.sleep(WORKFLOW_POLL_INTERVAL)
+        elapsed += WORKFLOW_POLL_INTERVAL
+
+    raise TimeoutError(f"No completed workflow run on {repo}@{branch} after {timeout}s")

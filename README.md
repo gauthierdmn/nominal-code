@@ -53,7 +53,7 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-You can also pass `model`, `max_turns`, `prompt`, and `coding_guidelines` as inputs.
+Pin to a specific release tag (e.g. `@0.1.0`) for stability, or use `@main` to track the latest changes. You can also pass `model`, `max_turns`, `prompt`, and `coding_guidelines` as inputs.
 
 > CI mode calls the Anthropic API directly and does not require the Claude Code CLI.
 

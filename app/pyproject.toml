@@ -54,5 +54,9 @@ warn_unused_configs = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["integration: end-to-end tests that call the real agent CLI"]
-addopts = "-m 'not integration'"
+markers = [
+    "integration: local integration tests (mocked agent, in-process server)",
+    "integration_pipeline: integration tests that trigger real CI pipelines",
+    "integration_webhook_server: integration tests that use a real tunnel and webhook delivery",
+]
+addopts = "-m 'not integration and not integration_pipeline and not integration_webhook_server'"

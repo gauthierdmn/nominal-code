@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ["[0-9]+.[0-9]+.[0-9]+"]
   pull_request:
     branches: [main]
 
@@ -35,7 +36,7 @@ jobs:
         working-directory: .
         run: python3 scripts/check_docstrings.py --ci
 
-  test:
+  unit-test:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -53,20 +54,136 @@ jobs:
       - name: Pytest
         run: uv run pytest
 
-  build:
+  integration-test-local:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build Docker image
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+
+      - run: uv sync
+
+      - name: Integration tests (local)
+        env:
+          TEST_PIPELINE_ID: ${{ github.sha }}
+          TEST_GITHUB_TOKEN: ${{ secrets.TEST_GITHUB_TOKEN }}
+          NOMINALBOT_GITHUB_APP_ID: ${{ secrets.NOMINALBOT_GITHUB_APP_ID }}
+          NOMINALBOT_GITHUB_APP_PRIVATE_KEY: ${{ secrets.NOMINALBOT_GITHUB_APP_PRIVATE_KEY }}
+          NOMINALBOT_GITHUB_INSTALLATION_ID: ${{ secrets.NOMINALBOT_GITHUB_INSTALLATION_ID }}
+          TEST_GITLAB_TOKEN: ${{ secrets.TEST_GITLAB_TOKEN }}
+        run: uv run pytest tests/integration/ -m integration -v
+
+  build-image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ci/Dockerfile
-          push: false
+          push: true
+          tags: ghcr.io/${{ github.repository }}:${{ github.sha }}
+
+  integration-test-pipeline:
+    needs: [build-image]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+
+      - run: uv sync
+
+      - name: Pipeline tests
+        env:
+          TEST_PIPELINE_ID: ${{ github.sha }}
+          TEST_DOCKER_IMAGE: ghcr.io/${{ github.repository }}:${{ github.sha }}
+          TEST_GITHUB_TOKEN: ${{ secrets.TEST_GITHUB_TOKEN }}
+          TEST_GITLAB_TOKEN: ${{ secrets.TEST_GITLAB_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: uv run pytest tests/integration/ -m integration_pipeline -v
+
+  integration-test-webhook-server:
+    needs: [build-image]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+
+      - run: uv sync
+
+      - name: Install cloudflared
+        run: ../scripts/ci/install-cloudflared.sh
+
+      - name: Webhook server tests
+        env:
+          TEST_PIPELINE_ID: ${{ github.sha }}
+          TEST_GITHUB_TOKEN: ${{ secrets.TEST_GITHUB_TOKEN }}
+          TEST_GITLAB_TOKEN: ${{ secrets.TEST_GITLAB_TOKEN }}
+        run: uv run pytest tests/integration/ -m integration_webhook_server -v
+
+  cleanup:
+    needs: [integration-test-local, integration-test-pipeline, integration-test-webhook-server]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clean stale test resources
+        env:
+          GH_TOKEN: ${{ secrets.TEST_GITHUB_TOKEN }}
+          TEST_GITLAB_TOKEN: ${{ secrets.TEST_GITLAB_TOKEN }}
+        run: scripts/ci/cleanup-stale-test-resources.sh
+
+      - name: Delete SHA-tagged image
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: scripts/ci/cleanup-test-image.sh
 
   ci:
-    needs: [check, test, build]
+    needs:
+      - check
+      - unit-test
+      - integration-test-local
+      - build-image
+      - integration-test-pipeline
+      - integration-test-webhook-server
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -74,7 +191,7 @@ jobs:
         if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
 
   promote:
-    needs: [check, test, build]
+    needs: [ci]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
@@ -98,3 +215,29 @@ jobs:
           file: ci/Dockerfile
           push: true
           tags: ghcr.io/${{ github.repository }}:latest
+
+  release:
+    needs: [ci]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push release image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ci/Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository }}:${{ github.ref_name }}

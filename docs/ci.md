@@ -28,7 +28,21 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-The action runs inside a Docker container (`ghcr.io/gauthierdmn/nominal-code:latest`), reads the pull request event payload from `$GITHUB_EVENT_PATH`, reviews the diff using the Anthropic API, and posts structured inline comments back to the PR.
+The action runs inside a Docker container (`ghcr.io/gauthierdmn/nominal-code`), reads the pull request event payload from `$GITHUB_EVENT_PATH`, reviews the diff using the Anthropic API, and posts structured inline comments back to the PR.
+
+### Versioning
+
+Pin to a specific release tag for stability:
+
+```yaml
+- uses: gauthierdmn/nominal-code@0.1.0
+```
+
+Or track the latest changes on `main` (may include breaking changes):
+
+```yaml
+- uses: gauthierdmn/nominal-code@main
+```
 
 ### Inputs
 
@@ -75,7 +89,21 @@ The action runs inside a Docker container (`ghcr.io/gauthierdmn/nominal-code:lat
 
 ## GitLab CI
 
-Include the CI template in your `.gitlab-ci.yml`:
+Add a job to your `.gitlab-ci.yml`:
+
+```yaml
+nominal-code-review:
+  image: ghcr.io/gauthierdmn/nominal-code:0.1.0
+  variables:
+    ANTHROPIC_API_KEY: $ANTHROPIC_API_KEY
+    GITLAB_TOKEN: $GITLAB_TOKEN
+  script:
+    - cd "$CI_PROJECT_DIR" && uv run nominal-code ci gitlab
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+```
+
+Or use the CI component template for a more concise setup:
 
 ```yaml
 include:
@@ -88,6 +116,22 @@ nominal-code-review:
 ```
 
 The job runs on merge request pipelines. It reads `$CI_PROJECT_PATH`, `$CI_MERGE_REQUEST_IID`, and `$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME` from the GitLab CI environment. For self-hosted instances, `$CI_SERVER_URL` is used automatically as the API base.
+
+### Versioning
+
+Pin to a specific release tag for stability:
+
+```yaml
+image: ghcr.io/gauthierdmn/nominal-code:0.1.0
+```
+
+Or use `latest` to track the `main` branch:
+
+```yaml
+image: ghcr.io/gauthierdmn/nominal-code:latest
+```
+
+The CI component template always uses `:latest`.
 
 ### Template Inputs
 
