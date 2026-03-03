@@ -188,7 +188,8 @@ async def execute_tool(
         name (str): The tool name (Read, Glob, Grep, Bash).
         tool_input (dict[str, Any]): The tool input parameters from the API response.
         cwd (str): Working directory for the tool execution.
-        allowed_tools (list[str] | None): Allowed tools list (for Bash pattern validation).
+        allowed_tools (list[str] | None): Allowed tools list
+            (for Bash pattern validation).
 
     Returns:
         str: The tool output as a string, or an error message.
