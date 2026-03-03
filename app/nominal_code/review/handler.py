@@ -27,7 +27,7 @@ from nominal_code.workspace.setup import create_workspace, resolve_branch
 
 if TYPE_CHECKING:
     from nominal_code.agent.cli.session import SessionStore
-    from nominal_code.agent.runner import AgentResult
+    from nominal_code.agent.result import AgentResult
     from nominal_code.config import Config
     from nominal_code.platforms.base import ReviewerPlatform
     from nominal_code.workspace.git import GitWorkspace

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
+from pathlib import Path
 from typing import Any
 
 import anthropic
@@ -16,7 +17,7 @@ logger: logging.Logger = logging.getLogger(__name__)
 
 async def run_agent_api(
     prompt: str,
-    cwd: str,
+    cwd: Path,
     model: str,
     max_turns: int = 0,
     system_prompt: str = "",
@@ -31,7 +32,7 @@ async def run_agent_api(
 
     Args:
         prompt (str): The user's prompt to pass to the agent.
-        cwd (str): Working directory for tool execution.
+        cwd (Path): Working directory for tool execution.
         model (str): The Claude model to use.
         max_turns (int): Maximum agentic turns (0 for unlimited).
         system_prompt (str): Optional system prompt for the agent.

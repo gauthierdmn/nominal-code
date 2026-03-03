@@ -62,7 +62,7 @@ async def run_ci_review(platform_name_str: str) -> int:
         guidelines_path=Path(guidelines_raw) if guidelines_raw else Path(),
     )
 
-    platform: ReviewerPlatform = _build_platform(platform_name, config)
+    platform: ReviewerPlatform = _build_platform(platform_name)
     workspace_path: str = _resolve_workspace_path(platform_name)
 
     logger.info(
@@ -138,13 +138,14 @@ def _build_github_event() -> PullRequestEvent:
         SystemExit: If required environment variables are missing.
     """
 
-    event_path: str = os.environ.get("GITHUB_EVENT_PATH", "")
+    event_path_raw: str = os.environ.get("GITHUB_EVENT_PATH", "")
+    event_path: Path = Path(event_path_raw)
 
-    if not event_path or not os.path.isfile(event_path):
+    if not event_path_raw or not event_path.is_file():
         logger.error("GITHUB_EVENT_PATH is not set or file does not exist")
         sys.exit(1)
 
-    with open(event_path, encoding="utf-8") as f:
+    with event_path.open(encoding="utf-8") as f:
         payload: dict[str, Any] = json.load(f)
 
     pull_request: dict[str, Any] = payload.get("pull_request", {})
@@ -226,14 +227,14 @@ def _build_gitlab_event() -> PullRequestEvent:
 
 def _build_platform(
     platform_name: PlatformName,
-    config: Config,
 ) -> ReviewerPlatform:
     """
     Construct a platform client for CI mode.
 
+    Reads authentication tokens directly from environment variables.
+
     Args:
         platform_name (PlatformName): The target platform.
-        config (Config): Application configuration.
 
     Returns:
         ReviewerPlatform: The constructed platform client.
@@ -243,30 +244,34 @@ def _build_platform(
     """
 
     if platform_name == PlatformName.GITHUB:
-        if config.github is None:
+        github_token: str = os.environ.get("GITHUB_TOKEN", "")
+
+        if not github_token:
             logger.error("GITHUB_TOKEN is required for GitHub CI reviews")
             sys.exit(1)
 
-        from nominal_code.platforms.github import GitHubPlatform
+        from nominal_code.platforms.github import GitHubPatAuth, GitHubPlatform
 
-        return GitHubPlatform(token=config.github.token)
+        return GitHubPlatform(auth=GitHubPatAuth(token=github_token))
 
     if platform_name == PlatformName.GITLAB:
-        if config.gitlab is None:
+        gitlab_token: str = os.environ.get("GITLAB_TOKEN", "")
+
+        if not gitlab_token:
             logger.error("GITLAB_TOKEN is required for GitLab CI reviews")
             sys.exit(1)
 
         from nominal_code.platforms.gitlab import GitLabPlatform
 
-        gitlab_base_url: str = os.environ.get(
-            "CI_SERVER_URL",
-            config.gitlab.base_url,
-        )
+        gitlab_base_url: str = os.environ.get("CI_SERVER_URL", "")
 
-        return GitLabPlatform(
-            token=config.gitlab.token,
-            base_url=gitlab_base_url,
-        )
+        if gitlab_base_url:
+            return GitLabPlatform(
+                token=gitlab_token,
+                base_url=gitlab_base_url,
+            )
+
+        return GitLabPlatform(token=gitlab_token)
 
     logger.error("Unsupported platform: %s", platform_name)
     sys.exit(1)

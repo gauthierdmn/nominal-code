@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any, Literal
 
 from claude_agent_sdk import (
@@ -70,7 +71,7 @@ _sdk_client.parse_message = _patched_parse_message  # type: ignore[attr-defined]
 
 async def run_agent_cli(
     prompt: str,
-    cwd: str,
+    cwd: Path,
     model: str = "",
     max_turns: int = 0,
     cli_path: str = "",
@@ -89,7 +90,7 @@ async def run_agent_cli(
 
     Args:
         prompt (str): The user's prompt to pass to the agent.
-        cwd (str): Working directory for the agent.
+        cwd (Path): Working directory for the agent.
         model (str): Optional model override (empty string to skip).
         max_turns (int): Maximum agentic turns (0 for unlimited).
         cli_path (str): Path to the agent CLI binary (empty to use bundled).

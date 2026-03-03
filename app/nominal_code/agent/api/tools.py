@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import fnmatch
 import logging
-import os
 from pathlib import Path
 from typing import Any
 
@@ -178,7 +177,7 @@ def _parse_bash_patterns(allowed_tools: list[str] | None) -> list[str]:
 async def execute_tool(
     name: str,
     tool_input: dict[str, Any],
-    cwd: str,
+    cwd: Path,
     allowed_tools: list[str] | None = None,
 ) -> str:
     """
@@ -187,7 +186,7 @@ async def execute_tool(
     Args:
         name (str): The tool name (Read, Glob, Grep, Bash).
         tool_input (dict[str, Any]): The tool input parameters from the API response.
-        cwd (str): Working directory for the tool execution.
+        cwd (Path): Working directory for the tool execution.
         allowed_tools (list[str] | None): Allowed tools list
             (for Bash pattern validation).
 
@@ -215,47 +214,49 @@ async def execute_tool(
         return f"Error executing {name}: {exc}"
 
 
-def _resolve_path(file_path: str, cwd: str) -> str:
+def _resolve_path(file_path: str, cwd: Path) -> Path:
     """
     Resolve a file path relative to the working directory.
 
     Args:
         file_path (str): The path to resolve (absolute or relative).
-        cwd (str): The working directory.
+        cwd (Path): The working directory.
 
     Returns:
-        str: The resolved absolute path.
+        Path: The resolved absolute path.
     """
 
-    if os.path.isabs(file_path):
-        return file_path
+    resolved: Path = Path(file_path)
 
-    return os.path.join(cwd, file_path)
+    if resolved.is_absolute():
+        return resolved
+
+    return cwd / resolved
 
 
-def _execute_read(tool_input: dict[str, Any], cwd: str) -> str:
+def _execute_read(tool_input: dict[str, Any], cwd: Path) -> str:
     """
     Read a file and return numbered lines.
 
     Args:
         tool_input (dict[str, Any]): Must contain ``file_path``, optionally
             ``offset`` and ``limit``.
-        cwd (str): Working directory for resolving relative paths.
+        cwd (Path): Working directory for resolving relative paths.
 
     Returns:
         str: File contents with line numbers, or an error message.
     """
 
-    file_path: str = _resolve_path(tool_input["file_path"], cwd)
+    file_path: Path = _resolve_path(tool_input["file_path"], cwd)
 
-    if not os.path.isfile(file_path):
+    if not file_path.is_file():
         return f"Error: File not found: {tool_input['file_path']}"
 
     offset: int = max(1, tool_input.get("offset", 1))
     limit: int = tool_input.get("limit", MAX_READ_LINES)
 
     try:
-        with open(file_path, encoding="utf-8", errors="replace") as f:
+        with file_path.open(encoding="utf-8", errors="replace") as f:
             lines: list[str] = f.readlines()
     except OSError as exc:
         return f"Error reading file: {exc}"
@@ -277,29 +278,28 @@ def _execute_read(tool_input: dict[str, Any], cwd: str) -> str:
     return "\n".join(result_lines)
 
 
-def _execute_glob(tool_input: dict[str, Any], cwd: str) -> str:
+def _execute_glob(tool_input: dict[str, Any], cwd: Path) -> str:
     """
     Find files matching a glob pattern.
 
     Args:
         tool_input (dict[str, Any]): Must contain ``pattern``, optionally
             ``path``.
-        cwd (str): Working directory for resolving relative paths.
+        cwd (Path): Working directory for resolving relative paths.
 
     Returns:
         str: Newline-separated matching file paths, or a message if none found.
     """
 
     pattern: str = tool_input["pattern"]
-    search_dir: str = tool_input.get("path", "") or cwd
+    raw_path: str = tool_input.get("path", "")
+    search_path: Path = Path(raw_path) if raw_path else cwd
 
-    if not os.path.isabs(search_dir):
-        search_dir = os.path.join(cwd, search_dir)
-
-    search_path: Path = Path(search_dir)
+    if not search_path.is_absolute():
+        search_path = cwd / search_path
 
     if not search_path.is_dir():
-        return f"Error: Directory not found: {search_dir}"
+        return f"Error: Directory not found: {search_path}"
 
     matches: list[str] = []
 
@@ -323,24 +323,25 @@ def _execute_glob(tool_input: dict[str, Any], cwd: str) -> str:
     return "\n".join(matches)
 
 
-async def _execute_grep(tool_input: dict[str, Any], cwd: str) -> str:
+async def _execute_grep(tool_input: dict[str, Any], cwd: Path) -> str:
     """
     Search file contents using grep.
 
     Args:
         tool_input (dict[str, Any]): Must contain ``pattern``, optionally
             ``path`` and ``include``.
-        cwd (str): Working directory for resolving relative paths.
+        cwd (Path): Working directory for resolving relative paths.
 
     Returns:
         str: Matching lines with file paths and line numbers.
     """
 
     pattern: str = tool_input["pattern"]
-    search_path: str = tool_input.get("path", "") or "."
+    raw_path: str = tool_input.get("path", "")
+    search_path: Path = Path(raw_path) if raw_path else cwd
 
-    if not os.path.isabs(search_path):
-        search_path = os.path.join(cwd, search_path)
+    if not search_path.is_absolute():
+        search_path = cwd / search_path
 
     cmd: list[str] = ["grep", "-rn", "--binary-files=without-match"]
 
@@ -349,7 +350,7 @@ async def _execute_grep(tool_input: dict[str, Any], cwd: str) -> str:
     if include:
         cmd.extend(["--include", include])
 
-    cmd.extend([pattern, search_path])
+    cmd.extend([pattern, str(search_path)])
 
     try:
         process: asyncio.subprocess.Process = await asyncio.create_subprocess_exec(
@@ -386,7 +387,7 @@ async def _execute_grep(tool_input: dict[str, Any], cwd: str) -> str:
 
 async def _execute_bash(
     tool_input: dict[str, Any],
-    cwd: str,
+    cwd: Path,
     allowed_tools: list[str] | None = None,
 ) -> str:
     """
@@ -394,7 +395,7 @@ async def _execute_bash(
 
     Args:
         tool_input (dict[str, Any]): Must contain ``command``.
-        cwd (str): Working directory for the command.
+        cwd (Path): Working directory for the command.
         allowed_tools (list[str] | None): Allowed tools list for pattern
             validation.
 
