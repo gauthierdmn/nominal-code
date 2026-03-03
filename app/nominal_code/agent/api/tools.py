@@ -6,14 +6,17 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from anthropic.types import ToolParam
+
 logger: logging.Logger = logging.getLogger(__name__)
+
 
 MAX_GLOB_RESULTS: int = 200
 MAX_GREP_OUTPUT_LENGTH: int = 30000
 MAX_READ_LINES: int = 2000
 MAX_LINE_LENGTH: int = 2000
 
-TOOL_DEFINITIONS: list[dict[str, Any]] = [
+TOOL_DEFINITIONS: list[ToolParam] = [
     {
         "name": "Read",
         "description": (
@@ -122,9 +125,17 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
 ]
 
 
+class ToolError(Exception):
+    """
+    Raised when a tool execution fails.
+
+    The message is sent back to the model as the tool result content.
+    """
+
+
 def get_tool_definitions(
     allowed_tools: list[str] | None,
-) -> list[dict[str, Any]]:
+) -> list[ToolParam]:
     """
     Return tool definitions filtered by the allowed tools list.
 
@@ -136,7 +147,7 @@ def get_tool_definitions(
         allowed_tools (list[str] | None): List of allowed tool names/patterns.
 
     Returns:
-        list[dict[str, Any]]: Filtered list of Anthropic API tool definitions.
+        list[ToolParam]: Filtered list of Anthropic API tool definitions.
     """
 
     if not allowed_tools:
@@ -150,6 +161,49 @@ def get_tool_definitions(
 
     return [tool for tool in TOOL_DEFINITIONS if tool["name"] in allowed_names]
 
+
+async def execute_tool(
+    name: str,
+    tool_input: dict[str, Any],
+    cwd: Path,
+    allowed_tools: list[str] | None = None,
+) -> tuple[str, bool]:
+    """
+    Execute a tool and return the result with an error flag.
+
+    Args:
+        name (str): The tool name (Read, Glob, Grep, Bash).
+        tool_input (dict[str, Any]): The tool input parameters from the API response.
+        cwd (Path): Working directory for the tool execution.
+        allowed_tools (list[str] | None): Allowed tools list
+            (for Bash pattern validation).
+
+    Returns:
+        tuple[str, bool]: The tool output and whether the execution failed.
+    """
+
+    try:
+        if name == "Read":
+            return _execute_read(tool_input, cwd), False
+
+        if name == "Glob":
+            return _execute_glob(tool_input, cwd), False
+
+        if name == "Grep":
+            return await _execute_grep(tool_input, cwd), False
+
+        if name == "Bash":
+            return await _execute_bash(tool_input, cwd, allowed_tools), False
+
+        raise ToolError(f"Unknown tool '{name}'")
+    except ToolError as exc:
+        logger.debug("Tool %s failed: %s", name, exc)
+
+        return str(exc), True
+    except Exception as exc:
+        logger.debug("Tool %s failed unexpectedly: %s", name, exc)
+
+        return f"Unexpected error executing {name}: {exc}", True
 
 def _parse_bash_patterns(allowed_tools: list[str] | None) -> list[str]:
     """
@@ -172,47 +226,6 @@ def _parse_bash_patterns(allowed_tools: list[str] | None) -> list[str]:
             patterns.append(entry[5:-1])
 
     return patterns
-
-
-async def execute_tool(
-    name: str,
-    tool_input: dict[str, Any],
-    cwd: Path,
-    allowed_tools: list[str] | None = None,
-) -> str:
-    """
-    Execute a tool and return the result as a string.
-
-    Args:
-        name (str): The tool name (Read, Glob, Grep, Bash).
-        tool_input (dict[str, Any]): The tool input parameters from the API response.
-        cwd (Path): Working directory for the tool execution.
-        allowed_tools (list[str] | None): Allowed tools list
-            (for Bash pattern validation).
-
-    Returns:
-        str: The tool output as a string, or an error message.
-    """
-
-    try:
-        if name == "Read":
-            return _execute_read(tool_input, cwd)
-
-        if name == "Glob":
-            return _execute_glob(tool_input, cwd)
-
-        if name == "Grep":
-            return await _execute_grep(tool_input, cwd)
-
-        if name == "Bash":
-            return await _execute_bash(tool_input, cwd, allowed_tools)
-
-        return f"Error: Unknown tool '{name}'."
-    except Exception as exc:
-        logger.debug("Tool %s failed: %s", name, exc)
-
-        return f"Error executing {name}: {exc}"
-
 
 def _resolve_path(file_path: str, cwd: Path) -> Path:
     """
@@ -244,13 +257,16 @@ def _execute_read(tool_input: dict[str, Any], cwd: Path) -> str:
         cwd (Path): Working directory for resolving relative paths.
 
     Returns:
-        str: File contents with line numbers, or an error message.
+        str: File contents with line numbers.
+
+    Raises:
+        ToolError: If the file does not exist or cannot be read.
     """
 
     file_path: Path = _resolve_path(tool_input["file_path"], cwd)
 
     if not file_path.is_file():
-        return f"Error: File not found: {tool_input['file_path']}"
+        raise ToolError(f"File not found: {tool_input['file_path']}")
 
     offset: int = max(1, tool_input.get("offset", 1))
     limit: int = tool_input.get("limit", MAX_READ_LINES)
@@ -259,7 +275,7 @@ def _execute_read(tool_input: dict[str, Any], cwd: Path) -> str:
         with file_path.open(encoding="utf-8", errors="replace") as f:
             lines: list[str] = f.readlines()
     except OSError as exc:
-        return f"Error reading file: {exc}"
+        raise ToolError(f"Error reading file: {exc}") from exc
 
     start: int = offset - 1
     end: int = start + limit
@@ -289,6 +305,9 @@ def _execute_glob(tool_input: dict[str, Any], cwd: Path) -> str:
 
     Returns:
         str: Newline-separated matching file paths, or a message if none found.
+
+    Raises:
+        ToolError: If the search directory does not exist.
     """
 
     pattern: str = tool_input["pattern"]
@@ -299,7 +318,7 @@ def _execute_glob(tool_input: dict[str, Any], cwd: Path) -> str:
         search_path = cwd / search_path
 
     if not search_path.is_dir():
-        return f"Error: Directory not found: {search_path}"
+        raise ToolError(f"Directory not found: {search_path}")
 
     matches: list[str] = []
 
@@ -334,6 +353,9 @@ async def _execute_grep(tool_input: dict[str, Any], cwd: Path) -> str:
 
     Returns:
         str: Matching lines with file paths and line numbers.
+
+    Raises:
+        ToolError: If grep times out, fails to start, or exits with an error.
     """
 
     pattern: str = tool_input["pattern"]
@@ -364,10 +386,10 @@ async def _execute_grep(tool_input: dict[str, Any], cwd: Path) -> str:
             process.communicate(),
             timeout=30.0,
         )
-    except TimeoutError:
-        return "Error: grep timed out after 30 seconds."
+    except TimeoutError as exc:
+        raise ToolError("grep timed out after 30 seconds") from exc
     except OSError as exc:
-        return f"Error running grep: {exc}"
+        raise ToolError(f"Error running grep: {exc}") from exc
 
     output: str = stdout_bytes.decode(errors="replace").strip()
 
@@ -377,7 +399,7 @@ async def _execute_grep(tool_input: dict[str, Any], cwd: Path) -> str:
 
         stderr: str = stderr_bytes.decode(errors="replace").strip()
 
-        return f"grep error: {stderr}" if stderr else "No matches found."
+        raise ToolError(f"grep error: {stderr}" if stderr else "grep failed")
 
     if len(output) > MAX_GREP_OUTPUT_LENGTH:
         output = output[:MAX_GREP_OUTPUT_LENGTH] + "\n...(truncated)"
@@ -400,7 +422,11 @@ async def _execute_bash(
             validation.
 
     Returns:
-        str: Command output, or an error message if not allowed.
+        str: Command output.
+
+    Raises:
+        ToolError: If the command is not allowed, times out, fails to start,
+            or exits with a non-zero code.
     """
 
     command: str = tool_input["command"]
@@ -412,7 +438,9 @@ async def _execute_bash(
         )
 
         if not allowed:
-            return f"Error: Command not allowed. Permitted patterns: {bash_patterns}"
+            raise ToolError(
+                f"Command not allowed. Permitted patterns: {bash_patterns}",
+            )
 
     try:
         process: asyncio.subprocess.Process = await asyncio.create_subprocess_exec(
@@ -428,10 +456,10 @@ async def _execute_bash(
             process.communicate(),
             timeout=120.0,
         )
-    except TimeoutError:
-        return "Error: Command timed out after 120 seconds."
+    except TimeoutError as exc:
+        raise ToolError("Command timed out after 120 seconds") from exc
     except OSError as exc:
-        return f"Error running command: {exc}"
+        raise ToolError(f"Error running command: {exc}") from exc
 
     stdout: str = stdout_bytes.decode(errors="replace").strip()
     stderr: str = stderr_bytes.decode(errors="replace").strip()
@@ -445,7 +473,7 @@ async def _execute_bash(
         if stderr:
             parts.append(f"stderr:\n{stderr}")
 
-        return "\n".join(parts)
+        raise ToolError("\n".join(parts))
 
     result: str = stdout
 

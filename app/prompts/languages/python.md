@@ -34,7 +34,7 @@
 - Return early. Check error conditions and edge cases at the top, then proceed with the happy path.
 - Keep nesting shallow — guard clauses over nested `if/else` chains.
 - Use `*` to enforce keyword-only arguments when a function has more than two or three parameters with similar types.
-- Be explicit with parameter names — avoid `**kwargs` in signatures.
+- Be explicit with parameter names — avoid `**kwargs` in both signatures and call sites. Pass named arguments directly instead of building a dict and unpacking with `**`.
 
 ## Async
 

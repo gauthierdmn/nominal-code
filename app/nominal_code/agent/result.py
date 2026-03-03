@@ -20,4 +20,4 @@ class AgentResult:
     is_error: bool
     num_turns: int
     duration_ms: int
-    session_id: str
+    session_id: str = ""

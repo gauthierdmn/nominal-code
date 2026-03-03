@@ -1,14 +1,11 @@
 from __future__ import annotations
 
-import json
 import logging
 import os
-import sys
 from pathlib import Path
-from typing import Any
+from types import ModuleType
 
 from nominal_code.config import Config
-from nominal_code.models import EventType
 from nominal_code.platforms.base import (
     CommentReply,
     PlatformName,
@@ -41,10 +38,10 @@ async def run_ci_review(platform_name_str: str) -> int:
 
         return 1
 
-    if platform_name == PlatformName.GITHUB:
-        event: PullRequestEvent = _build_github_event()
-    else:
-        event = _build_gitlab_event()
+    platform_ci: ModuleType = _load_platform_ci(platform_name)
+    event: PullRequestEvent = platform_ci.build_event()
+    platform: ReviewerPlatform = platform_ci.build_platform()
+    workspace_path: str = platform_ci.resolve_workspace()
 
     custom_prompt: str = os.environ.get("INPUT_PROMPT", "")
     model: str = os.environ.get("INPUT_MODEL", "")
@@ -61,9 +58,6 @@ async def run_ci_review(platform_name_str: str) -> int:
         max_turns=max_turns,
         guidelines_path=Path(guidelines_raw) if guidelines_raw else Path(),
     )
-
-    platform: ReviewerPlatform = _build_platform(platform_name)
-    workspace_path: str = _resolve_workspace_path(platform_name)
 
     logger.info(
         "Running CI review for %s#%d on %s (workspace=%s)",
@@ -83,11 +77,10 @@ async def run_ci_review(platform_name_str: str) -> int:
         )
     except RuntimeError:
         logger.exception("Failed to run review")
-
         return 1
+
     except Exception:
         logger.exception("Unexpected error running review")
-
         return 1
 
     if result.agent_review is None:
@@ -124,176 +117,21 @@ async def run_ci_review(platform_name_str: str) -> int:
     return 0
 
 
-def _build_github_event() -> PullRequestEvent:
+def _load_platform_ci(platform_name: PlatformName) -> ModuleType:
     """
-    Build a PullRequestEvent from GitHub Actions environment variables.
-
-    Reads ``$GITHUB_EVENT_PATH`` for the full event payload and extracts
-    repository, PR number, and branch information.
-
-    Returns:
-        PullRequestEvent: The event for the current GitHub Actions run.
-
-    Raises:
-        SystemExit: If required environment variables are missing.
-    """
-
-    event_path_raw: str = os.environ.get("GITHUB_EVENT_PATH", "")
-    event_path: Path = Path(event_path_raw)
-
-    if not event_path_raw or not event_path.is_file():
-        logger.error("GITHUB_EVENT_PATH is not set or file does not exist")
-        sys.exit(1)
-
-    with event_path.open(encoding="utf-8") as f:
-        payload: dict[str, Any] = json.load(f)
-
-    pull_request: dict[str, Any] = payload.get("pull_request", {})
-
-    if not pull_request:
-        logger.error("Event payload does not contain a pull_request object")
-        sys.exit(1)
-
-    repo_full_name: str = payload.get("repository", {}).get("full_name", "")
-    pr_number: int = pull_request.get("number", 0)
-    pr_branch: str = pull_request.get("head", {}).get("ref", "")
-
-    if not repo_full_name or not pr_number or not pr_branch:
-        logger.error(
-            "Could not extract repo=%s, pr=%d, branch=%s from event payload",
-            repo_full_name,
-            pr_number,
-            pr_branch,
-        )
-        sys.exit(1)
-
-    return PullRequestEvent(
-        platform=PlatformName.GITHUB,
-        repo_full_name=repo_full_name,
-        pr_number=pr_number,
-        pr_branch=pr_branch,
-        clone_url="",
-        event_type=EventType.PR_OPENED,
-    )
-
-
-def _build_gitlab_event() -> PullRequestEvent:
-    """
-    Build a PullRequestEvent from GitLab CI predefined variables.
-
-    Reads ``$CI_PROJECT_PATH``, ``$CI_MERGE_REQUEST_IID``, and
-    ``$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME``.
-
-    Returns:
-        PullRequestEvent: The event for the current GitLab CI run.
-
-    Raises:
-        SystemExit: If required environment variables are missing.
-    """
-
-    repo_full_name: str = os.environ.get("CI_PROJECT_PATH", "")
-    mr_iid_raw: str = os.environ.get("CI_MERGE_REQUEST_IID", "")
-    pr_branch: str = os.environ.get(
-        "CI_MERGE_REQUEST_SOURCE_BRANCH_NAME",
-        "",
-    )
-
-    if not repo_full_name or not mr_iid_raw or not pr_branch:
-        logger.error(
-            "Missing GitLab CI variables: CI_PROJECT_PATH=%s, "
-            "CI_MERGE_REQUEST_IID=%s, "
-            "CI_MERGE_REQUEST_SOURCE_BRANCH_NAME=%s",
-            repo_full_name,
-            mr_iid_raw,
-            pr_branch,
-        )
-        sys.exit(1)
-
-    try:
-        pr_number: int = int(mr_iid_raw)
-    except ValueError:
-        logger.error("CI_MERGE_REQUEST_IID is not an integer: %s", mr_iid_raw)
-        sys.exit(1)
-
-    return PullRequestEvent(
-        platform=PlatformName.GITLAB,
-        repo_full_name=repo_full_name,
-        pr_number=pr_number,
-        pr_branch=pr_branch,
-        clone_url="",
-        event_type=EventType.PR_OPENED,
-    )
-
-
-def _build_platform(
-    platform_name: PlatformName,
-) -> ReviewerPlatform:
-    """
-    Construct a platform client for CI mode.
-
-    Reads authentication tokens directly from environment variables.
+    Import and return the platform-specific CI module.
 
     Args:
         platform_name (PlatformName): The target platform.
 
     Returns:
-        ReviewerPlatform: The constructed platform client.
-
-    Raises:
-        SystemExit: If the required platform is not configured.
+        ModuleType: The platform CI module exposing ``build_event``,
+            ``build_platform``, and ``resolve_workspace``.
     """
 
     if platform_name == PlatformName.GITHUB:
-        github_token: str = os.environ.get("GITHUB_TOKEN", "")
+        from nominal_code.platforms.github import ci as platform_ci
+    else:
+        from nominal_code.platforms.gitlab import ci as platform_ci  # type: ignore[no-redef]
 
-        if not github_token:
-            logger.error("GITHUB_TOKEN is required for GitHub CI reviews")
-            sys.exit(1)
-
-        from nominal_code.platforms.github import GitHubPatAuth, GitHubPlatform
-
-        return GitHubPlatform(auth=GitHubPatAuth(token=github_token))
-
-    if platform_name == PlatformName.GITLAB:
-        gitlab_token: str = os.environ.get("GITLAB_TOKEN", "")
-
-        if not gitlab_token:
-            logger.error("GITLAB_TOKEN is required for GitLab CI reviews")
-            sys.exit(1)
-
-        from nominal_code.platforms.gitlab import GitLabPlatform
-
-        gitlab_base_url: str = os.environ.get("CI_SERVER_URL", "")
-
-        if gitlab_base_url:
-            return GitLabPlatform(
-                token=gitlab_token,
-                base_url=gitlab_base_url,
-            )
-
-        return GitLabPlatform(token=gitlab_token)
-
-    logger.error("Unsupported platform: %s", platform_name)
-    sys.exit(1)
-
-
-def _resolve_workspace_path(platform_name: PlatformName) -> str:
-    """
-    Determine the workspace path from CI environment variables.
-
-    In CI, the repository is already checked out by the runner.
-
-    Args:
-        platform_name (PlatformName): The target platform.
-
-    Returns:
-        str: The absolute path to the repository checkout.
-    """
-
-    if platform_name == PlatformName.GITHUB:
-        return os.environ.get("GITHUB_WORKSPACE", os.getcwd())
-
-    if platform_name == PlatformName.GITLAB:
-        return os.environ.get("CI_PROJECT_DIR", os.getcwd())
-
-    return os.getcwd()
+    return platform_ci

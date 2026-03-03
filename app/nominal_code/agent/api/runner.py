@@ -6,6 +6,14 @@ from pathlib import Path
 from typing import Any
 
 import anthropic
+from anthropic.types import (
+    CacheControlEphemeralParam,
+    MessageParam,
+    TextBlockParam,
+    ToolParam,
+    ToolResultBlockParam,
+    ToolUseBlockParam,
+)
 
 from nominal_code.agent.api.tools import execute_tool, get_tool_definitions
 from nominal_code.agent.result import AgentResult
@@ -43,9 +51,10 @@ async def run_agent_api(
     """
 
     client: anthropic.AsyncAnthropic = anthropic.AsyncAnthropic()
-    tool_definitions: list[dict[str, Any]] = get_tool_definitions(allowed_tools)
+    tool_definitions: list[ToolParam] = get_tool_definitions(allowed_tools)
+    cache: CacheControlEphemeralParam = {"type": "ephemeral"}
 
-    messages: list[dict[str, Any]] = [
+    messages: list[MessageParam] = [
         {"role": "user", "content": prompt},
     ]
 
@@ -54,21 +63,13 @@ async def run_agent_api(
 
     try:
         while True:
-            kwargs: dict[str, Any] = {
-                "model": model,
-                "max_tokens": MAX_RESPONSE_TOKENS,
-                "messages": messages,
-                "cache_control": {"type": "ephemeral"},
-            }
-
-            if system_prompt:
-                kwargs["system"] = system_prompt
-
-            if tool_definitions:
-                kwargs["tools"] = tool_definitions
-
             response: anthropic.types.Message = await client.messages.create(
-                **kwargs,
+                model=model,
+                max_tokens=MAX_RESPONSE_TOKENS,
+                messages=messages,
+                cache_control=cache,
+                system=system_prompt,
+                tools=tool_definitions,
             )
 
             messages.append(
@@ -88,10 +89,9 @@ async def run_agent_api(
                     is_error=False,
                     num_turns=turns,
                     duration_ms=duration_ms,
-                    session_id="",
                 )
 
-            tool_results: list[dict[str, Any]] = []
+            tool_results: list[ToolResultBlockParam] = []
 
             for block in tool_use_blocks:
                 logger.debug(
@@ -100,29 +100,27 @@ async def run_agent_api(
                     block.input,
                 )
 
-                result: str = await execute_tool(
+                output, is_error = await execute_tool(
                     name=block.name,
                     tool_input=block.input,
                     cwd=cwd,
                     allowed_tools=allowed_tools,
                 )
 
-                is_error: bool = result.startswith("Error")
-
                 logger.debug(
                     "[tool_result] %s error=%s %.500s",
                     block.id,
                     is_error,
-                    result,
+                    output,
                 )
 
                 tool_results.append(
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": result,
-                        "is_error": is_error,
-                    },
+                    ToolResultBlockParam(
+                        type="tool_result",
+                        tool_use_id=block.id,
+                        content=output,
+                        is_error=is_error,
+                    ),
                 )
 
             messages.append({"role": "user", "content": tool_results})
@@ -143,7 +141,6 @@ async def run_agent_api(
                     is_error=False,
                     num_turns=turns,
                     duration_ms=duration_ms,
-                    session_id="",
                 )
 
     except anthropic.APIError as exc:
@@ -156,7 +153,6 @@ async def run_agent_api(
             is_error=True,
             num_turns=turns,
             duration_ms=duration_ms,
-            session_id="",
         )
     except Exception as exc:
         duration_ms = _now_ms() - start_time
@@ -168,13 +164,12 @@ async def run_agent_api(
             is_error=True,
             num_turns=turns,
             duration_ms=duration_ms,
-            session_id="",
         )
 
 
 def _serialize_content(
     response: anthropic.types.Message,
-) -> list[dict[str, Any]]:
+) -> list[TextBlockParam | ToolUseBlockParam]:
     """
     Serialize response content blocks to dicts for message history.
 
@@ -182,22 +177,22 @@ def _serialize_content(
         response (anthropic.types.Message): The Anthropic API response.
 
     Returns:
-        list[dict[str, Any]]: List of serialized content blocks.
+        list[TextBlockParam | ToolUseBlockParam]: Serialized content blocks.
     """
 
-    blocks: list[dict[str, Any]] = []
+    blocks: list[TextBlockParam | ToolUseBlockParam] = []
 
     for block in response.content:
         if block.type == "text":
-            blocks.append({"type": "text", "text": block.text})
+            blocks.append(TextBlockParam(type="text", text=block.text))
         elif block.type == "tool_use":
             blocks.append(
-                {
-                    "type": "tool_use",
-                    "id": block.id,
-                    "name": block.name,
-                    "input": block.input,
-                },
+                ToolUseBlockParam(
+                    type="tool_use",
+                    id=block.id,
+                    name=block.name,
+                    input=block.input,
+                ),
             )
 
     return blocks
@@ -221,12 +216,12 @@ def _extract_text(response: anthropic.types.Message) -> str:
     return "\n".join(parts)
 
 
-def _extract_last_text(messages: list[dict[str, Any]]) -> str:
+def _extract_last_text(messages: list[MessageParam]) -> str:
     """
     Extract text from the last assistant message in the history.
 
     Args:
-        messages (list[dict[str, Any]]): The full message history.
+        messages (list[MessageParam]): The full message history.
 
     Returns:
         str: Text from the last assistant message, or empty string.
