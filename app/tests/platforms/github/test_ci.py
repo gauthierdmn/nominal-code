@@ -7,8 +7,11 @@ import pytest
 
 from nominal_code.models import EventType
 from nominal_code.platforms.base import PlatformName
-from nominal_code.platforms.github.ci import build_event, build_platform, resolve_workspace
-
+from nominal_code.platforms.github.ci import (
+    build_event,
+    build_platform,
+    resolve_workspace,
+)
 
 VALID_PAYLOAD = {
     "repository": {"full_name": "owner/repo"},

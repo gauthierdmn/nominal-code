@@ -6,8 +6,11 @@ import pytest
 
 from nominal_code.models import EventType
 from nominal_code.platforms.base import PlatformName
-from nominal_code.platforms.gitlab.ci import build_event, build_platform, resolve_workspace
-
+from nominal_code.platforms.gitlab.ci import (
+    build_event,
+    build_platform,
+    resolve_workspace,
+)
 
 GITLAB_ENV = {
     "CI_PROJECT_PATH": "group/project",
@@ -65,7 +68,10 @@ class TestBuildPlatform:
         assert platform.__class__.__name__ == "GitLabPlatform"
 
     def test_build_platform_with_custom_base_url(self):
-        env = {"GITLAB_TOKEN": "glpat-test", "CI_SERVER_URL": "https://gitlab.example.com"}
+        env = {
+            "GITLAB_TOKEN": "glpat-test",
+            "CI_SERVER_URL": "https://gitlab.example.com",
+        }
 
         with patch.dict(os.environ, env):
             platform = build_platform()

@@ -130,8 +130,8 @@ def _load_platform_ci(platform_name: PlatformName) -> ModuleType:
     """
 
     if platform_name == PlatformName.GITHUB:
-        from nominal_code.platforms.github import ci as platform_ci
+        from nominal_code.platforms.github import ci as _ci
     else:
-        from nominal_code.platforms.gitlab import ci as platform_ci  # type: ignore[no-redef]
+        from nominal_code.platforms.gitlab import ci as _ci  # type: ignore[no-redef]
 
-    return platform_ci
+    return _ci

@@ -82,15 +82,16 @@ exit 0
 nominal-code ci {platform}
         │
         ▼
-_build_{platform}_event()           ← read event from CI env vars
-        │                              GitHub: $GITHUB_EVENT_PATH
-        │                              GitLab: $CI_PROJECT_PATH, $CI_MERGE_REQUEST_IID, etc.
+_load_platform_ci()                 ← import platform-specific CI module
+        │                              GitHub: platforms/github/ci.py
+        │                              GitLab: platforms/gitlab/ci.py
+        │
+        ├─ build_event()            ← read event from CI env vars
+        ├─ build_platform()         ← construct platform from CI env vars
+        ├─ resolve_workspace()      ← use CI runner checkout
         │
         ▼
 Config.for_ci()                     ← build config with use_api=True
-        │
-        ├─ _build_platform()        ← construct platform from CI env vars
-        ├─ _resolve_workspace_path() ← use CI runner checkout ($GITHUB_WORKSPACE or $CI_PROJECT_DIR)
         │
         ▼
 review()
@@ -172,10 +173,16 @@ A factory-based registry where each platform module self-registers at import tim
 
 ### CI Module (`ci.py`)
 
-- **`run_ci_review()`** — main entry point for CI-triggered reviews. Reads CI environment variables, builds the event and platform, runs the review, and posts results.
-- **`_build_github_event()`** — reads `$GITHUB_EVENT_PATH` for the PR payload.
-- **`_build_gitlab_event()`** — reads GitLab CI predefined variables (`$CI_PROJECT_PATH`, `$CI_MERGE_REQUEST_IID`, etc.).
-- **`_resolve_workspace_path()`** — uses the CI runner's checkout directory instead of cloning.
+- **`run_ci_review()`** — main entry point for CI-triggered reviews. Dispatches to the platform-specific CI module, runs the review, and posts results.
+- **`_load_platform_ci()`** — imports the correct platform CI module (`platforms/github/ci.py` or `platforms/gitlab/ci.py`).
+
+### Platform CI Modules (`platforms/{github,gitlab}/ci.py`)
+
+Each platform provides a `ci.py` module with three functions:
+
+- **`build_event()`** — reads CI environment variables and returns a `PullRequestEvent`. GitHub reads `$GITHUB_EVENT_PATH`; GitLab reads `$CI_PROJECT_PATH`, `$CI_MERGE_REQUEST_IID`, etc.
+- **`build_platform()`** — constructs a `ReviewerPlatform` from CI tokens (`$GITHUB_TOKEN` or `$GITLAB_TOKEN`).
+- **`resolve_workspace()`** — returns the CI runner's checkout directory (`$GITHUB_WORKSPACE` or `$CI_PROJECT_DIR`).
 
 ### Agent Runner (`agent/runner.py`)
 
@@ -265,7 +272,7 @@ Set `CLEANUP_INTERVAL_HOURS=0` to disable the periodic loop entirely.
 nominal_code/
 ├── main.py              # Entry point: dispatches to webhook server, CLI, or CI
 ├── cli.py               # One-shot review CLI (argparse, platform construction)
-├── ci.py                # CI mode (GitHub Actions / GitLab CI)
+├── ci.py                # CI mode dispatcher (delegates to platform-specific CI modules)
 ├── config.py            # Frozen dataclass config loaded from env vars / files
 ├── models.py            # Shared enums (EventType, BotType, FileStatus) and dataclasses
 ├── agent/
@@ -285,8 +292,10 @@ nominal_code/
 │   ├── registry.py      # Self-registering platform factory pattern
 │   ├── github/
 │   │   ├── auth.py      # GitHubAuth ABC, PAT and App auth implementations
+│   │   ├── ci.py        # CI mode: build event, platform, and workspace from GitHub Actions env vars
 │   │   └── platform.py  # GitHub webhook handler and REST API client
 │   └── gitlab/
+│       ├── ci.py        # CI mode: build event, platform, and workspace from GitLab CI env vars
 │       └── platform.py  # GitLab webhook handler and REST API client
 ├── review/
 │   └── handler.py       # Reviewer bot: structured code review with inline comments

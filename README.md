@@ -9,7 +9,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License: Apache 2.0"></a>
 </p>
 
-Nominal Code is an AI-powered code review and fix agent for GitHub and GitLab pull requests. It uses Claude to read your diffs, post structured inline reviews, and optionally push fixes — all without leaving your PR.
+Nominal Code is an AI-powered code review and code fix agent for GitHub and GitLab pull requests. It uses Claude to read your diffs, post structured inline reviews, and optionally push fixes — all without leaving your PR.
 
 It runs anywhere: as a **CI job** (GitHub Actions or GitLab CI), from the **command line**, or as a **self-hosted webhook server** for real-time interaction.
 

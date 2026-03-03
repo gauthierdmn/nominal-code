@@ -205,6 +205,7 @@ async def execute_tool(
 
         return f"Unexpected error executing {name}: {exc}", True
 
+
 def _parse_bash_patterns(allowed_tools: list[str] | None) -> list[str]:
     """
     Extract Bash command patterns from the allowed tools list.
@@ -226,6 +227,7 @@ def _parse_bash_patterns(allowed_tools: list[str] | None) -> list[str]:
             patterns.append(entry[5:-1])
 
     return patterns
+
 
 def _resolve_path(file_path: str, cwd: Path) -> Path:
     """

@@ -120,9 +120,10 @@ include:
 ## How It Works
 
 1. The CI runner checks out the repository (the workspace is reused as-is).
-2. `nominal-code ci {platform}` reads the event payload from CI environment variables.
-3. The review runs using the **Anthropic API** directly (tool use loop with Read, Glob, Grep, and Bash).
-4. Structured findings are posted as native inline comments on the PR/MR.
+2. `nominal-code ci {platform}` loads the platform-specific CI module (`platforms/github/ci.py` or `platforms/gitlab/ci.py`).
+3. The platform module builds the event, platform client, and workspace path from CI environment variables.
+4. The review runs using the **Anthropic API** directly (tool use loop with Read, Glob, Grep, and Bash).
+5. Structured findings are posted as native inline comments on the PR/MR.
 
 CI mode uses the same review logic as CLI and webhook modes — the same diff fetching, prompt composition, JSON parsing, and finding filtering. The only difference is the agent runner: CI uses the Anthropic API directly, while CLI and webhook modes use the Claude Code CLI.
 

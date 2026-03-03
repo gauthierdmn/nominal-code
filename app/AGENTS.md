@@ -75,7 +75,7 @@ The dispatcher in `agent/runner.py` routes based on `AgentConfig.use_api`. The A
 nominal_code/
 ├── main.py              # Entry point: dispatches to webhook server, CLI, or CI
 ├── cli.py               # One-shot review CLI (argparse, platform construction)
-├── ci.py                # CI mode (reads CI env vars, uses API runner, posts results)
+├── ci.py                # CI mode dispatcher (delegates to platform-specific CI modules, posts results)
 ├── config.py            # Frozen dataclass config loaded from env vars / files
 ├── models.py            # Shared enums (EventType, BotType, FileStatus) and dataclasses (ReviewFinding, AgentReview, ChangedFile)
 ├── agent/               # Dual agent runners, session management, prompt composition
