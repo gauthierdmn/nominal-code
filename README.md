@@ -9,49 +9,76 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License: Apache 2.0"></a>
 </p>
 
-AI agents that review, comment, and fix code. Right from your pull requests.
+Nominal Code is an AI-powered code review and code fix agent for GitHub and GitLab pull requests. It uses Claude to read your diffs, post structured inline reviews, and optionally push fixes — all without leaving your PR.
 
-## Features
+It runs anywhere: as a **CI job** (GitHub Actions or GitLab CI), from the **command line**, or as a **self-hosted webhook server** for real-time interaction.
 
-- **Reviewer bot** — fetches the PR diff, runs an agent with read-only tools, posts structured inline code reviews
-- **Worker bot** — receives a prompt, clones the repo, runs an agent with full tool access, commits and pushes changes
-- **Auto-trigger** — optionally run the reviewer automatically on PR open, push, or reopen via `REVIEWER_TRIGGERS`
-- **CLI mode** — run a one-off review on any PR without deploying a webhook server
-- **GitHub and GitLab** — supports both platforms simultaneously
-- **Session continuity** — multi-turn conversations within the same PR
-- **Automatic cleanup** — stale workspaces for closed/merged PRs are removed periodically
-- **Private dependencies** — agents can clone internal libraries for context
+## What it does
 
-## Quick Start
+Nominal Code ships two bots, each with a distinct role:
 
-### CLI Mode (no server required)
+| | Reviewer | Worker |
+|---|---|---|
+| **Purpose** | Posts structured inline code reviews | Applies code changes and pushes commits |
+| **Tool access** | Read-only (safe to run on any PR) | Full (clones, edits, commits, pushes) |
+| **Output** | Review comments anchored to specific diff lines | Commits pushed to the PR branch |
+
+Both bots accept a **custom prompt** to steer the review (e.g. *"focus on security"* or *"check for SQL injection"*), and respect **per-repo coding guidelines** placed in `.nominal/` at the root of your repository.
+
+## How to run it
+
+### CI job
+
+The fastest way to get started. The example below uses GitHub Actions — GitLab CI is also supported (see [Configuration](docs/configuration.md)).
+
+```yaml
+# .github/workflows/review.yml
+name: Code Review
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: gauthierdmn/nominal-code@main
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+```
+
+You can also pass `model`, `max_turns`, `prompt`, and `coding_guidelines` as inputs.
+
+> CI mode calls the Anthropic API directly and does not require the Claude Code CLI.
+
+### CLI
+
+Run a one-off review on any PR without deploying anything:
 
 ```bash
-git clone https://github.com/gauthierdmn/nominal-code.git
-cd nominal-code/app
-uv sync
+cd nominal-code/app && uv sync
 
 export GITHUB_TOKEN=ghp_...
 
-# Review any PR
 uv run nominal-code review owner/repo#42
-
-# Dry run (print results without posting)
 uv run nominal-code review owner/repo#42 --dry-run
-
-# Custom instructions
 uv run nominal-code review owner/repo#42 --prompt "focus on security"
 ```
 
-### Webhook Server Mode
+Supports `--platform`, `--model`, and `--max-turns`. Works with GitLab too (`--platform gitlab`).
 
-Nominal Code supports two authentication methods for GitHub: a Personal Access Token (PAT) or a GitHub App.
+### Webhook server
 
-**Using a PAT:**
+For teams that want real-time interaction — mention the bot in a PR comment and it responds:
 
 ```bash
-cd nominal-code/app
-uv sync
+cd nominal-code/app && uv sync
 
 export REVIEWER_BOT_USERNAME=my-reviewer
 export ALLOWED_USERS=alice,bob
@@ -61,54 +88,46 @@ export GITHUB_WEBHOOK_SECRET=your-secret
 uv run nominal-code
 ```
 
-**Using a GitHub App:**
+The server supports **GitHub App authentication** as an alternative to PATs, **auto-triggering** reviews on PR lifecycle events, and **multi-turn conversations** that carry context across comments. See [Getting Started](docs/getting-started.md) for the full setup.
 
-```bash
-export GITHUB_APP_ID=12345
-export GITHUB_APP_PRIVATE_KEY_PATH=/path/to/private-key.pem
-export GITHUB_WEBHOOK_SECRET=your-secret
+## Configuration highlights
 
-uv run nominal-code
-```
+| What | How |
+|---|---|
+| Claude model | `AGENT_MODEL` env var, `--model` flag, or `model` Action input |
+| Review prompt | `--prompt` flag, `INPUT_PROMPT` env var, or `prompt` Action input |
+| Coding guidelines | Global via `CODING_GUIDELINES`, per-repo via `.nominal/guidelines.md` |
+| Language-specific rules | `prompts/languages/` or `.nominal/languages/{lang}.md` per repo |
+| Auto-trigger | `REVIEWER_TRIGGERS=pr_opened,pr_push,pr_reopened,pr_ready_for_review` |
+| Allowed users | `ALLOWED_USERS=alice,bob` (webhook mode) |
 
-See [Configuration](docs/configuration.md) for all options.
+Full reference: [Configuration](docs/configuration.md)
 
 ## Documentation
 
 - [Getting Started](docs/getting-started.md) — from zero to a working bot
-- [CLI Mode](docs/cli.md) — run one-off reviews without a server
-- [Configuration](docs/configuration.md) — full environment variable reference
-- **Platforms**
-  - [GitHub](docs/platforms/github.md) — webhook setup, tokens, supported events
-  - [GitLab](docs/platforms/gitlab.md) — webhook setup, self-hosted support, differences from GitHub
-- **Bots**
-  - [Worker](docs/bots/worker.md) — full-access agent that pushes code changes
-  - [Reviewer](docs/bots/reviewer.md) — read-only agent that posts structured reviews
-- [Architecture](docs/architecture.md) — request flow, components, workspace layout
-- [Deployment](docs/deployment.md) — production setup, health checks, reverse proxy
+- [CLI Mode](docs/cli.md) — one-off reviews without a server
+- [Configuration](docs/configuration.md) — environment variables and options
+- [Architecture](docs/architecture.md) — request flow, agent runners, workspace layout
+- [Deployment](docs/deployment.md) — production setup, Docker, health checks
+- **Platforms:** [GitHub](docs/platforms/github.md) | [GitLab](docs/platforms/gitlab.md)
+- **Bots:** [Reviewer](docs/bots/reviewer.md) | [Worker](docs/bots/worker.md)
 
 ## Development
 
 ```bash
 cd app
-
-# Install with dev dependencies
 uv sync
 
-# Lint and format
 uv run ruff check nominal_code/ tests/
 uv run ruff format nominal_code/ tests/
-
-# Type check
 uv run mypy nominal_code/
-
-# Run tests
 uv run pytest
 ```
 
 ## Security
 
-- Only users listed in `ALLOWED_USERS` can trigger the agent — comments from other users are silently ignored
+- Only users in `ALLOWED_USERS` can trigger the bots — other comments are silently ignored
 - Webhook signatures are verified when secrets are configured
-- The worker bot runs with full tool access (`bypassPermissions`)
-- The reviewer bot is restricted to read-only tools (`Read`, `Glob`, `Grep`, `Bash(git clone*)`)
+- GitHub App auth provides auto-rotating installation tokens
+- The reviewer bot is restricted to read-only tools; the worker bot has full access

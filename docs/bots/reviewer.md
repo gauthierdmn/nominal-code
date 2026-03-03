@@ -109,3 +109,16 @@ uv run nominal-code review owner/repo#42
 ```
 
 This uses the same review logic (diff fetch, agent execution, finding filtering) but skips session continuity and does not require bot usernames or `ALLOWED_USERS`. See [CLI Mode](../cli.md) for details.
+
+## CI Mode
+
+The reviewer runs automatically in CI pipelines (GitHub Actions or GitLab CI). CI mode uses the Anthropic API directly instead of the Claude Code CLI, so no CLI installation is needed:
+
+```yaml
+- uses: gauthierdmn/nominal-code@main
+  with:
+    anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+    github_token: ${{ secrets.GITHUB_TOKEN }}
+```
+
+The same review logic, JSON parsing, and finding filtering apply. See [CI Mode](../ci.md) for setup and options.

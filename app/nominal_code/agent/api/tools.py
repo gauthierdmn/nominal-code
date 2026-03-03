@@ -1,0 +1,485 @@
+from __future__ import annotations
+
+import asyncio
+import fnmatch
+import logging
+from pathlib import Path
+from typing import Any
+
+from anthropic.types import ToolParam
+
+logger: logging.Logger = logging.getLogger(__name__)
+
+
+MAX_GLOB_RESULTS: int = 200
+MAX_GREP_OUTPUT_LENGTH: int = 30000
+MAX_READ_LINES: int = 2000
+MAX_LINE_LENGTH: int = 2000
+
+TOOL_DEFINITIONS: list[ToolParam] = [
+    {
+        "name": "Read",
+        "description": (
+            "Read the contents of a file. Returns the file content with line "
+            "numbers. Use this to inspect source files in the repository."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "file_path": {
+                    "type": "string",
+                    "description": (
+                        "Path to the file to read (absolute or relative to "
+                        "working directory)."
+                    ),
+                },
+                "offset": {
+                    "type": "integer",
+                    "description": (
+                        "Line number to start reading from (1-indexed). "
+                        "Optional, defaults to 1."
+                    ),
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": (
+                        "Maximum number of lines to read. Optional, defaults "
+                        f"to {MAX_READ_LINES}."
+                    ),
+                },
+            },
+            "required": ["file_path"],
+        },
+    },
+    {
+        "name": "Glob",
+        "description": (
+            "Find files matching a glob pattern. Returns matching file paths "
+            "sorted by name, one per line."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "pattern": {
+                    "type": "string",
+                    "description": (
+                        "Glob pattern to match (e.g. '**/*.py', 'src/**/*.ts')."
+                    ),
+                },
+                "path": {
+                    "type": "string",
+                    "description": (
+                        "Directory to search in. Defaults to working directory."
+                    ),
+                },
+            },
+            "required": ["pattern"],
+        },
+    },
+    {
+        "name": "Grep",
+        "description": (
+            "Search file contents using a regex pattern. Returns matching "
+            "lines with file paths and line numbers."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "pattern": {
+                    "type": "string",
+                    "description": "Regex pattern to search for.",
+                },
+                "path": {
+                    "type": "string",
+                    "description": (
+                        "File or directory to search in. Defaults to working directory."
+                    ),
+                },
+                "include": {
+                    "type": "string",
+                    "description": (
+                        "Glob pattern to filter files (e.g. '*.py'). Optional."
+                    ),
+                },
+            },
+            "required": ["pattern"],
+        },
+    },
+    {
+        "name": "Bash",
+        "description": (
+            "Execute a bash command. Only specific commands are allowed "
+            "(e.g. git clone)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "description": "The bash command to execute.",
+                },
+            },
+            "required": ["command"],
+        },
+    },
+]
+
+
+class ToolError(Exception):
+    """
+    Raised when a tool execution fails.
+
+    The message is sent back to the model as the tool result content.
+    """
+
+
+def get_tool_definitions(
+    allowed_tools: list[str] | None,
+) -> list[ToolParam]:
+    """
+    Return tool definitions filtered by the allowed tools list.
+
+    If ``allowed_tools`` is None or empty, all tools are returned.
+    Entries like ``"Bash(git clone*)"`` enable the Bash tool; the pattern
+    is enforced at execution time by ``execute_tool``.
+
+    Args:
+        allowed_tools (list[str] | None): List of allowed tool names/patterns.
+
+    Returns:
+        list[ToolParam]: Filtered list of Anthropic API tool definitions.
+    """
+
+    if not allowed_tools:
+        return list(TOOL_DEFINITIONS)
+
+    allowed_names: set[str] = set()
+
+    for entry in allowed_tools:
+        name: str = entry.split("(")[0]
+        allowed_names.add(name)
+
+    return [tool for tool in TOOL_DEFINITIONS if tool["name"] in allowed_names]
+
+
+async def execute_tool(
+    name: str,
+    tool_input: dict[str, Any],
+    cwd: Path,
+    allowed_tools: list[str] | None = None,
+) -> tuple[str, bool]:
+    """
+    Execute a tool and return the result with an error flag.
+
+    Args:
+        name (str): The tool name (Read, Glob, Grep, Bash).
+        tool_input (dict[str, Any]): The tool input parameters from the API response.
+        cwd (Path): Working directory for the tool execution.
+        allowed_tools (list[str] | None): Allowed tools list
+            (for Bash pattern validation).
+
+    Returns:
+        tuple[str, bool]: The tool output and whether the execution failed.
+    """
+
+    try:
+        if name == "Read":
+            return _execute_read(tool_input, cwd), False
+
+        if name == "Glob":
+            return _execute_glob(tool_input, cwd), False
+
+        if name == "Grep":
+            return await _execute_grep(tool_input, cwd), False
+
+        if name == "Bash":
+            return await _execute_bash(tool_input, cwd, allowed_tools), False
+
+        raise ToolError(f"Unknown tool '{name}'")
+    except ToolError as exc:
+        logger.debug("Tool %s failed: %s", name, exc)
+
+        return str(exc), True
+    except Exception as exc:
+        logger.debug("Tool %s failed unexpectedly: %s", name, exc)
+
+        return f"Unexpected error executing {name}: {exc}", True
+
+
+def _parse_bash_patterns(allowed_tools: list[str] | None) -> list[str]:
+    """
+    Extract Bash command patterns from the allowed tools list.
+
+    Args:
+        allowed_tools (list[str] | None): List of allowed tool names/patterns.
+
+    Returns:
+        list[str]: List of glob patterns for allowed Bash commands.
+    """
+
+    if not allowed_tools:
+        return []
+
+    patterns: list[str] = []
+
+    for entry in allowed_tools:
+        if entry.startswith("Bash(") and entry.endswith(")"):
+            patterns.append(entry[5:-1])
+
+    return patterns
+
+
+def _resolve_path(file_path: str, cwd: Path) -> Path:
+    """
+    Resolve a file path relative to the working directory.
+
+    Args:
+        file_path (str): The path to resolve (absolute or relative).
+        cwd (Path): The working directory.
+
+    Returns:
+        Path: The resolved absolute path.
+    """
+
+    resolved: Path = Path(file_path)
+
+    if resolved.is_absolute():
+        return resolved
+
+    return cwd / resolved
+
+
+def _execute_read(tool_input: dict[str, Any], cwd: Path) -> str:
+    """
+    Read a file and return numbered lines.
+
+    Args:
+        tool_input (dict[str, Any]): Must contain ``file_path``, optionally
+            ``offset`` and ``limit``.
+        cwd (Path): Working directory for resolving relative paths.
+
+    Returns:
+        str: File contents with line numbers.
+
+    Raises:
+        ToolError: If the file does not exist or cannot be read.
+    """
+
+    file_path: Path = _resolve_path(tool_input["file_path"], cwd)
+
+    if not file_path.is_file():
+        raise ToolError(f"File not found: {tool_input['file_path']}")
+
+    offset: int = max(1, tool_input.get("offset", 1))
+    limit: int = tool_input.get("limit", MAX_READ_LINES)
+
+    try:
+        with file_path.open(encoding="utf-8", errors="replace") as f:
+            lines: list[str] = f.readlines()
+    except OSError as exc:
+        raise ToolError(f"Error reading file: {exc}") from exc
+
+    start: int = offset - 1
+    end: int = start + limit
+    selected: list[str] = lines[start:end]
+
+    result_lines: list[str] = []
+
+    for i, line in enumerate(selected, start=offset):
+        content: str = line.rstrip("\n\r")
+
+        if len(content) > MAX_LINE_LENGTH:
+            content = content[:MAX_LINE_LENGTH] + "..."
+
+        result_lines.append(f"{i:>6}\t{content}")
+
+    return "\n".join(result_lines)
+
+
+def _execute_glob(tool_input: dict[str, Any], cwd: Path) -> str:
+    """
+    Find files matching a glob pattern.
+
+    Args:
+        tool_input (dict[str, Any]): Must contain ``pattern``, optionally
+            ``path``.
+        cwd (Path): Working directory for resolving relative paths.
+
+    Returns:
+        str: Newline-separated matching file paths, or a message if none found.
+
+    Raises:
+        ToolError: If the search directory does not exist.
+    """
+
+    pattern: str = tool_input["pattern"]
+    raw_path: str = tool_input.get("path", "")
+    search_path: Path = Path(raw_path) if raw_path else cwd
+
+    if not search_path.is_absolute():
+        search_path = cwd / search_path
+
+    if not search_path.is_dir():
+        raise ToolError(f"Directory not found: {search_path}")
+
+    matches: list[str] = []
+
+    for match in sorted(search_path.glob(pattern)):
+        if match.is_file():
+            try:
+                rel: str = str(match.relative_to(cwd))
+            except ValueError:
+                rel = str(match)
+
+            matches.append(rel)
+
+            if len(matches) >= MAX_GLOB_RESULTS:
+                matches.append(f"... (truncated, {MAX_GLOB_RESULTS} results shown)")
+
+                break
+
+    if not matches:
+        return f"No files matched pattern: {pattern}"
+
+    return "\n".join(matches)
+
+
+async def _execute_grep(tool_input: dict[str, Any], cwd: Path) -> str:
+    """
+    Search file contents using grep.
+
+    Args:
+        tool_input (dict[str, Any]): Must contain ``pattern``, optionally
+            ``path`` and ``include``.
+        cwd (Path): Working directory for resolving relative paths.
+
+    Returns:
+        str: Matching lines with file paths and line numbers.
+
+    Raises:
+        ToolError: If grep times out, fails to start, or exits with an error.
+    """
+
+    pattern: str = tool_input["pattern"]
+    raw_path: str = tool_input.get("path", "")
+    search_path: Path = Path(raw_path) if raw_path else cwd
+
+    if not search_path.is_absolute():
+        search_path = cwd / search_path
+
+    cmd: list[str] = ["grep", "-rn", "--binary-files=without-match"]
+
+    include: str = tool_input.get("include", "")
+
+    if include:
+        cmd.extend(["--include", include])
+
+    cmd.extend([pattern, str(search_path)])
+
+    try:
+        process: asyncio.subprocess.Process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=cwd,
+        )
+
+        stdout_bytes, stderr_bytes = await asyncio.wait_for(
+            process.communicate(),
+            timeout=30.0,
+        )
+    except TimeoutError as exc:
+        raise ToolError("grep timed out after 30 seconds") from exc
+    except OSError as exc:
+        raise ToolError(f"Error running grep: {exc}") from exc
+
+    output: str = stdout_bytes.decode(errors="replace").strip()
+
+    if not output:
+        if process.returncode == 1:
+            return f"No matches found for pattern: {pattern}"
+
+        stderr: str = stderr_bytes.decode(errors="replace").strip()
+
+        raise ToolError(f"grep error: {stderr}" if stderr else "grep failed")
+
+    if len(output) > MAX_GREP_OUTPUT_LENGTH:
+        output = output[:MAX_GREP_OUTPUT_LENGTH] + "\n...(truncated)"
+
+    return output
+
+
+async def _execute_bash(
+    tool_input: dict[str, Any],
+    cwd: Path,
+    allowed_tools: list[str] | None = None,
+) -> str:
+    """
+    Execute a bash command with allowlist validation.
+
+    Args:
+        tool_input (dict[str, Any]): Must contain ``command``.
+        cwd (Path): Working directory for the command.
+        allowed_tools (list[str] | None): Allowed tools list for pattern
+            validation.
+
+    Returns:
+        str: Command output.
+
+    Raises:
+        ToolError: If the command is not allowed, times out, fails to start,
+            or exits with a non-zero code.
+    """
+
+    command: str = tool_input["command"]
+    bash_patterns: list[str] = _parse_bash_patterns(allowed_tools)
+
+    if bash_patterns:
+        allowed: bool = any(
+            fnmatch.fnmatch(command, pattern) for pattern in bash_patterns
+        )
+
+        if not allowed:
+            raise ToolError(
+                f"Command not allowed. Permitted patterns: {bash_patterns}",
+            )
+
+    try:
+        process: asyncio.subprocess.Process = await asyncio.create_subprocess_exec(
+            "bash",
+            "-c",
+            command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=cwd,
+        )
+
+        stdout_bytes, stderr_bytes = await asyncio.wait_for(
+            process.communicate(),
+            timeout=120.0,
+        )
+    except TimeoutError as exc:
+        raise ToolError("Command timed out after 120 seconds") from exc
+    except OSError as exc:
+        raise ToolError(f"Error running command: {exc}") from exc
+
+    stdout: str = stdout_bytes.decode(errors="replace").strip()
+    stderr: str = stderr_bytes.decode(errors="replace").strip()
+
+    if process.returncode != 0:
+        parts: list[str] = [f"Command exited with code {process.returncode}."]
+
+        if stdout:
+            parts.append(f"stdout:\n{stdout}")
+
+        if stderr:
+            parts.append(f"stderr:\n{stderr}")
+
+        raise ToolError("\n".join(parts))
+
+    result: str = stdout
+
+    if stderr:
+        result += f"\nstderr:\n{stderr}"
+
+    return result if result else "(no output)"

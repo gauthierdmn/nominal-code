@@ -6,7 +6,7 @@ from nominal_code.agent.prompts import (
     _detect_languages,
     _load_repo_guidelines,
     _load_repo_language_guidelines,
-    _resolve_guidelines,
+    resolve_guidelines,
 )
 
 
@@ -76,8 +76,8 @@ class TestLoadRepoLanguageGuidelines:
 
 
 class TestResolveGuidelines:
-    def test__resolve_guidelines_general_only_no_language_files(self, tmp_path):
-        result = _resolve_guidelines(
+    def test_resolve_guidelines_general_only_no_language_files(self, tmp_path):
+        result = resolve_guidelines(
             tmp_path,
             "Default rules",
             {},
@@ -86,12 +86,12 @@ class TestResolveGuidelines:
 
         assert result == "Default rules"
 
-    def test__resolve_guidelines_repo_general_overrides_default(self, tmp_path):
+    def test_resolve_guidelines_repo_general_overrides_default(self, tmp_path):
         nominal_dir = tmp_path / ".nominal"
         nominal_dir.mkdir()
         (nominal_dir / "guidelines.md").write_text("Repo rules")
 
-        result = _resolve_guidelines(
+        result = resolve_guidelines(
             tmp_path,
             "Default rules",
             {},
@@ -100,8 +100,8 @@ class TestResolveGuidelines:
 
         assert result == "Repo rules"
 
-    def test__resolve_guidelines_appends_builtin_language(self, tmp_path):
-        result = _resolve_guidelines(
+    def test_resolve_guidelines_appends_builtin_language(self, tmp_path):
+        result = resolve_guidelines(
             tmp_path,
             "General rules",
             {"python": "Python rules"},
@@ -110,12 +110,12 @@ class TestResolveGuidelines:
 
         assert result == "General rules\n\nPython rules"
 
-    def test__resolve_guidelines_repo_language_overrides_builtin(self, tmp_path):
+    def test_resolve_guidelines_repo_language_overrides_builtin(self, tmp_path):
         lang_dir = tmp_path / ".nominal" / "languages"
         lang_dir.mkdir(parents=True)
         (lang_dir / "python.md").write_text("Repo Python rules")
 
-        result = _resolve_guidelines(
+        result = resolve_guidelines(
             tmp_path,
             "General rules",
             {"python": "Built-in Python rules"},
@@ -124,8 +124,8 @@ class TestResolveGuidelines:
 
         assert result == "General rules\n\nRepo Python rules"
 
-    def test__resolve_guidelines_no_language_match_skips_language(self, tmp_path):
-        result = _resolve_guidelines(
+    def test_resolve_guidelines_no_language_match_skips_language(self, tmp_path):
+        result = resolve_guidelines(
             tmp_path,
             "General rules",
             {"python": "Python rules"},
@@ -134,8 +134,8 @@ class TestResolveGuidelines:
 
         assert result == "General rules"
 
-    def test__resolve_guidelines_empty_when_nothing_found(self, tmp_path):
-        result = _resolve_guidelines(tmp_path, "", {}, [])
+    def test_resolve_guidelines_empty_when_nothing_found(self, tmp_path):
+        result = resolve_guidelines(tmp_path, "", {}, [])
 
         assert result == ""
 

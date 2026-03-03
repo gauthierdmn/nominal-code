@@ -4,9 +4,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from nominal_code.agent.cli.session import SessionStore
 from nominal_code.agent.runner import AgentResult
-from nominal_code.agent.session import SessionStore
-from nominal_code.config import WorkerConfig
+from nominal_code.config import AgentConfig, WorkerConfig
 from nominal_code.models import EventType
 from nominal_code.platforms.base import CommentEvent, PlatformName
 from nominal_code.worker.handler import _build_prompt, review_and_fix
@@ -16,9 +16,7 @@ def _make_config(allowed_users=None):
     config = MagicMock()
     config.allowed_users = frozenset(allowed_users or ["alice"])
     config.workspace_base_dir = "/tmp/workspaces"
-    config.agent_model = ""
-    config.agent_max_turns = 0
-    config.agent_cli_path = ""
+    config.agent = AgentConfig()
     config.coding_guidelines = "Use snake_case."
     config.language_guidelines = {"python": "Python style rules."}
     config.worker = WorkerConfig(
@@ -73,7 +71,7 @@ class TestWorkerProcessComment:
         session_store = SessionStore()
 
         with patch(
-            "nominal_code.agent.tracking.run_agent",
+            "nominal_code.agent.cli.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -105,7 +103,6 @@ class TestWorkerProcessComment:
 
             assert "Be concise." in call_kwargs["system_prompt"]
             assert "Use snake_case." in call_kwargs["system_prompt"]
-            assert call_kwargs["permission_mode"] == "bypassPermissions"
 
     @pytest.mark.asyncio
     async def test_worker_uses_resolve_coding_guidelines(self):
@@ -115,7 +112,7 @@ class TestWorkerProcessComment:
         session_store = SessionStore()
 
         with patch(
-            "nominal_code.agent.tracking.run_agent",
+            "nominal_code.agent.cli.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -135,7 +132,7 @@ class TestWorkerProcessComment:
                 mock_ws_class.return_value = mock_ws
 
                 with patch(
-                    "nominal_code.agent.prompts._resolve_guidelines",
+                    "nominal_code.agent.prompts.resolve_guidelines",
                     return_value="Repo guidelines override",
                 ) as mock_resolve:
                     await review_and_fix(

@@ -2,6 +2,8 @@
 
 ## Request Flow
 
+### Webhook Mode
+
 ```
 PR comment "@bot do something"  ──or──  PR opened/pushed/reopened
         │                                        │
@@ -44,7 +46,7 @@ GitHub/GitLab sends webhook             GitHub/GitLab sends webhook
                     └─ [REVIEWER] clone/update → fetch diff + comments → run agent (read-only) → submit review
 ```
 
-## CLI Flow
+### CLI Flow
 
 ```
 nominal-code review owner/repo#42 [--dry-run] [--prompt "..."]
@@ -62,7 +64,7 @@ review()
         │
         ├─ clone/update workspace
         ├─ fetch diff + comments (parallel)
-        ├─ build prompt + run agent
+        ├─ build prompt + run agent (Claude Code CLI)
         ├─ parse JSON + filter findings
         │
         ▼
@@ -73,6 +75,70 @@ _print_review()                     ← format results for terminal
         ▼
 exit 0
 ```
+
+### CI Flow
+
+```
+nominal-code ci {platform}
+        │
+        ▼
+_load_platform_ci()                 ← import platform-specific CI module
+        │                              GitHub: platforms/github/ci.py
+        │                              GitLab: platforms/gitlab/ci.py
+        │
+        ├─ build_event()            ← read event from CI env vars
+        ├─ build_platform()         ← construct platform from CI env vars
+        ├─ resolve_workspace()      ← use CI runner checkout
+        │
+        ▼
+Config.for_ci()                     ← build config with use_api=True
+        │
+        ▼
+review()
+        │
+        ├─ diff + comments (parallel fetch)
+        ├─ build prompt + run agent (Anthropic API)
+        ├─ parse JSON + filter findings
+        │
+        ▼
+submit_review() or post_reply()
+        │
+        ▼
+exit 0
+```
+
+## Agent Runners
+
+Nominal Code supports two agent execution backends. The mode is selected automatically based on the execution context.
+
+### Claude Code CLI Runner
+
+Used by **CLI mode** and **webhook server mode**. Wraps the [Claude Code SDK](https://github.com/anthropics/claude-code-sdk-python) to spawn the Claude Code CLI as a subprocess.
+
+- Streams messages from the CLI process and captures the session ID for multi-turn continuity.
+- Monkey-patches the SDK message parser to gracefully handle unknown message types (e.g. `rate_limit_event`), preventing the stream from crashing.
+- Supports session resumption via stored session IDs.
+- Requires the Claude Code CLI to be installed and on `PATH` (or set via `AGENT_CLI_PATH`).
+- Uses the CLI's configured login method — supports Claude Pro and Claude Max subscriptions as an alternative to per-token API billing.
+
+### Anthropic API Runner
+
+Used by **CI mode**. Calls the Anthropic Messages API directly with tool use.
+
+- Implements an agentic loop: sends a prompt, processes `tool_use` blocks by executing tools locally, sends results back, and repeats until the model produces a final text answer or `max_turns` is reached.
+- Provides four tools: `Read` (file contents), `Glob` (file search), `Grep` (content search), and `Bash` (shell commands with allowlist validation).
+- Does not require the Claude Code CLI — only an `ANTHROPIC_API_KEY` (per-token billing).
+- Does not support session continuity (each run is stateless).
+
+### Runner Selection
+
+| Execution Mode | Agent Runner | Selected By |
+|---|---|---|
+| CI (`nominal-code ci`) | Anthropic API | `AgentConfig(use_api=True)` |
+| CLI (`nominal-code review`) | Claude Code CLI | `AgentConfig(use_api=False)` |
+| Webhook server | Claude Code CLI | `AgentConfig(use_api=False)` |
+
+The dispatcher in `agent/runner.py` routes to the appropriate backend based on the `use_api` flag in `AgentConfig`.
 
 ## Components
 
@@ -96,7 +162,7 @@ A factory-based registry where each platform module self-registers at import tim
 ### Handlers
 
 - **`worker.handler.review_and_fix()`** — clones the repo, runs the agent with full tools, posts the reply.
-- **`review.handler.review()`** — core review logic (clone, fetch diff + comments, run agent, parse JSON, filter findings). Returns a `ReviewResult` without posting. Used by both webhook and CLI modes.
+- **`review.handler.review()`** — core review logic (clone, fetch diff + comments, run agent, parse JSON, filter findings). Returns a `ReviewResult` without posting. Used by webhook, CLI, and CI modes.
 - **`review.handler.review_and_post()`** — webhook entry point. Calls `review()` then posts results to the platform.
 
 ### CLI Module (`cli.py`)
@@ -105,17 +171,47 @@ A factory-based registry where each platform module self-registers at import tim
 - **`_build_platform()`** — constructs a platform client from environment tokens (no webhook secret needed).
 - **`_run_review()`** — orchestrates the CLI flow: resolve branch, call `review()`, print results, optionally post.
 
+### CI Module (`ci.py`)
+
+- **`run_ci_review()`** — main entry point for CI-triggered reviews. Dispatches to the platform-specific CI module, runs the review, and posts results.
+- **`_load_platform_ci()`** — imports the correct platform CI module (`platforms/github/ci.py` or `platforms/gitlab/ci.py`).
+
+### Platform CI Modules (`platforms/{github,gitlab}/ci.py`)
+
+Each platform provides a `ci.py` module with three functions:
+
+- **`build_event()`** — reads CI environment variables and returns a `PullRequestEvent`. GitHub reads `$GITHUB_EVENT_PATH`; GitLab reads `$CI_PROJECT_PATH`, `$CI_MERGE_REQUEST_IID`, etc.
+- **`build_platform()`** — constructs a `ReviewerPlatform` from CI tokens (`$GITHUB_TOKEN` or `$GITLAB_TOKEN`).
+- **`resolve_workspace()`** — returns the CI runner's checkout directory (`$GITHUB_WORKSPACE` or `$CI_PROJECT_DIR`).
+
 ### Agent Runner (`agent/runner.py`)
 
-Wraps the [claude-agent-sdk](https://github.com/anthropics/claude-code-sdk-python) library. Streams messages from the agent process, captures the session ID for multi-turn continuity, and returns the final output. Monkey-patches the SDK message parser to gracefully handle unknown message types.
+Dispatcher that routes to the API or CLI runner based on `AgentConfig.use_api`. See [Agent Runners](#agent-runners) above.
+
+### API Runner (`agent/api/runner.py`)
+
+Implements the Anthropic API agentic loop with local tool execution. See [Anthropic API Runner](#anthropic-api-runner) above.
+
+### API Tools (`agent/api/tools.py`)
+
+Defines and executes tools for the API runner: `Read`, `Glob`, `Grep`, and `Bash`. Bash commands are validated against an allowlist when `allowed_tools` restricts the agent (e.g. the reviewer is limited to `Bash(git clone*)`).
+
+### CLI Runner (`agent/cli/runner.py`)
+
+Wraps the Claude Code SDK to stream messages from the CLI subprocess. See [Claude Code CLI Runner](#claude-code-cli-runner) above.
 
 ### Prompt Composition (`agent/prompts.py`)
 
 Loads and composes the system prompt from multiple sources: the bot's base prompt, global coding guidelines, and per-repo/per-language overrides from the `.nominal/` directory. Language detection is based on file extensions in the PR diff.
 
-### Session Tracking (`agent/tracking.py`)
+### Session Tracking (`agent/cli/tracking.py`)
 
-Bridges the session store and the agent runner. Looks up the existing session ID for a PR/bot pair, passes it to the agent for multi-turn continuity, and stores the new session ID after execution.
+Bridges the session store and the CLI runner. Looks up the existing session ID for a PR/bot pair, passes it to the agent for multi-turn continuity, and stores the new session ID after execution. Only used in webhook mode (CLI and CI are stateless).
+
+### Session Store and Queue (`agent/cli/session.py`)
+
+- **SessionStore** — an in-memory dict mapping `(platform, repo, pr_number, bot_type)` to a session ID. Used to resume agent sessions across multiple interactions on the same PR.
+- **SessionQueue** — per-PR async job queue. Each PR key gets its own `asyncio.Queue` with a single consumer task, ensuring that agent invocations on the same PR run serially (no race conditions). The consumer and queue are cleaned up when drained.
 
 ### Git Workspace (`workspace/git.py`)
 
@@ -124,11 +220,6 @@ Manages per-PR cloned repositories. Handles initial cloning, updating (fetch + r
 ### Workspace Setup (`workspace/setup.py`)
 
 Helper functions for branch resolution and workspace construction. `resolve_branch()` fetches the PR branch from the platform API when the webhook payload doesn't include it. `create_workspace()` and `setup_workspace()` construct and initialise `GitWorkspace` instances.
-
-### Session Store and Queue (`agent/session.py`)
-
-- **SessionStore** — an in-memory dict mapping `(platform, repo, pr_number, bot_type)` to a session ID. Used to resume agent sessions across multiple interactions on the same PR.
-- **SessionQueue** — per-PR async job queue. Each PR key gets its own `asyncio.Queue` with a single consumer task, ensuring that agent invocations on the same PR run serially (no race conditions). The consumer and queue are cleaned up when drained.
 
 ### Workspace Cleaner (`workspace/cleanup.py`)
 
@@ -151,6 +242,8 @@ An async context manager (`handle_agent_errors()`) that wraps handler execution.
 ```
 
 Each `pr-{N}` directory is a shallow clone of the repository checked out to the PR's head branch.
+
+In CI mode, the workspace is the CI runner's checkout directory (e.g. `$GITHUB_WORKSPACE` or `$CI_PROJECT_DIR`) — no cloning is needed.
 
 ## Session Queue
 
@@ -177,21 +270,33 @@ Set `CLEANUP_INTERVAL_HOURS=0` to disable the periodic loop entirely.
 
 ```
 nominal_code/
-├── main.py              # Entry point: dispatches to webhook server or CLI
+├── main.py              # Entry point: dispatches to webhook server, CLI, or CI
 ├── cli.py               # One-shot review CLI (argparse, platform construction)
+├── ci.py                # CI mode dispatcher (delegates to platform-specific CI modules)
 ├── config.py            # Frozen dataclass config loaded from env vars / files
 ├── models.py            # Shared enums (EventType, BotType, FileStatus) and dataclasses
 ├── agent/
-│   ├── runner.py        # Wraps claude-agent-sdk; streams messages, captures session ID
-│   ├── session.py       # SessionStore (in-memory dict) and SessionQueue (per-PR async queue)
-│   ├── tracking.py      # Bridges session store and agent runner for multi-turn continuity
+│   ├── runner.py        # Dispatcher: routes to API or CLI runner based on config
+│   ├── result.py        # AgentResult dataclass (output, turns, session ID)
 │   ├── prompts.py       # Guideline loading, language detection, system prompt composition
-│   └── errors.py        # Async context manager for handler error handling
+│   ├── errors.py        # Async context manager for handler error handling
+│   ├── api/
+│   │   ├── runner.py    # Anthropic API agentic loop (tool use)
+│   │   └── tools.py     # Tool definitions and execution (Read, Glob, Grep, Bash)
+│   └── cli/
+│       ├── runner.py    # Claude Code CLI subprocess wrapper (SDK integration)
+│       ├── session.py   # SessionStore (in-memory dict) and SessionQueue (per-PR async queue)
+│       └── tracking.py  # Bridges session store and agent runner for multi-turn continuity
 ├── platforms/
 │   ├── base.py          # Protocol definitions and shared dataclasses
 │   ├── registry.py      # Self-registering platform factory pattern
-│   ├── github.py        # GitHub webhook handler and REST API client
-│   └── gitlab.py        # GitLab webhook handler and REST API client
+│   ├── github/
+│   │   ├── auth.py      # GitHubAuth ABC, PAT and App auth implementations
+│   │   ├── ci.py        # CI mode: build event, platform, and workspace from GitHub Actions env vars
+│   │   └── platform.py  # GitHub webhook handler and REST API client
+│   └── gitlab/
+│       ├── ci.py        # CI mode: build event, platform, and workspace from GitLab CI env vars
+│       └── platform.py  # GitLab webhook handler and REST API client
 ├── review/
 │   └── handler.py       # Reviewer bot: structured code review with inline comments
 ├── webhooks/

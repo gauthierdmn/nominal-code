@@ -1,0 +1,32 @@
+spec:
+  inputs:
+    model:
+      description: "Claude model to use (e.g. claude-sonnet-4-20250514)"
+      default: ""
+    max_turns:
+      description: "Maximum agentic turns for the reviewer (0 = unlimited)"
+      default: "0"
+    prompt:
+      description: "Custom review instructions appended to the default prompt"
+      default: ""
+    coding_guidelines:
+      description: "Path to a coding guidelines file (relative to repo root)"
+      default: ""
+    stage:
+      description: "Pipeline stage to run in"
+      default: "test"
+
+---
+
+nominal-code-review:
+  stage: $[[ inputs.stage ]]
+  image: ghcr.io/gauthierdmn/nominal-code:latest
+  variables:
+    INPUT_MODEL: $[[ inputs.model ]]
+    INPUT_MAX_TURNS: $[[ inputs.max_turns ]]
+    INPUT_PROMPT: $[[ inputs.prompt ]]
+    INPUT_CODING_GUIDELINES: $[[ inputs.coding_guidelines ]]
+  script:
+    - /entrypoint.sh
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"

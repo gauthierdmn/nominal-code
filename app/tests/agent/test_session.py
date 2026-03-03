@@ -3,7 +3,7 @@ import asyncio
 
 import pytest
 
-from nominal_code.agent.session import SessionQueue, SessionStore
+from nominal_code.agent.cli.session import SessionQueue, SessionStore
 from nominal_code.models import BotType
 from nominal_code.platforms.base import PlatformName
 

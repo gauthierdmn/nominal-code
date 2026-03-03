@@ -4,15 +4,15 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from nominal_code.agent.cli.tracking import run_and_track_session
 from nominal_code.agent.errors import handle_agent_errors
 from nominal_code.agent.prompts import resolve_system_prompt
-from nominal_code.agent.tracking import run_and_track_session
 from nominal_code.models import BotType
 from nominal_code.platforms.base import CommentEvent, CommentReply
 from nominal_code.workspace.setup import create_workspace, resolve_branch
 
 if TYPE_CHECKING:
-    from nominal_code.agent.session import SessionStore
+    from nominal_code.agent.cli.session import SessionStore
     from nominal_code.config import Config
     from nominal_code.platforms.base import Platform
     from nominal_code.workspace.git import GitWorkspace

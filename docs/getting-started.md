@@ -2,14 +2,53 @@
 
 Minimal steps to go from zero to a working review.
 
-## Prerequisites
+## Option A: CI Job (fastest)
+
+No server, no CLI installation — just add a workflow file to your repository.
+
+### GitHub Actions
+
+1. Add an `ANTHROPIC_API_KEY` secret to your repository (Settings > Secrets and variables > Actions).
+2. Create a workflow file:
+
+```yaml
+# .github/workflows/review.yml
+name: Code Review
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: gauthierdmn/nominal-code@main
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+```
+
+3. Open a pull request — the review runs automatically.
+
+CI mode calls the Anthropic API directly and does not require the Claude Code CLI. See [CI Mode](ci.md) for GitLab CI setup, inputs, and examples.
+
+## Option B: CLI Mode (quickest local setup)
+
+No server, no webhooks — just a token and a PR reference.
+
+### Prerequisites
 
 - **Python 3.13+**
 - **[uv](https://github.com/astral-sh/uv)** for dependency management
 - **[Claude Code CLI](https://claude.ai/code)** installed and on `PATH`
 - A **GitHub** or **GitLab** account with API tokens
 
-## Install
+### Install
 
 ```bash
 git clone https://github.com/gauthierdmn/nominal-code.git
@@ -17,9 +56,7 @@ cd nominal-code/app
 uv sync
 ```
 
-## Option A: CLI Mode (quickest)
-
-No server, no webhooks — just a token and a PR reference.
+### Run
 
 ```bash
 export GITHUB_TOKEN=ghp_...
@@ -33,9 +70,24 @@ uv run nominal-code review owner/repo#42 --dry-run
 
 See [CLI Mode](cli.md) for all options and examples.
 
-## Option B: Webhook Server
+## Option C: Webhook Server
 
 For automated reviews triggered by PR comments, deploy the webhook server.
+
+### Prerequisites
+
+- **Python 3.13+**
+- **[uv](https://github.com/astral-sh/uv)** for dependency management
+- **[Claude Code CLI](https://claude.ai/code)** installed and on `PATH`
+- A **GitHub** or **GitLab** account with API tokens
+
+### Install
+
+```bash
+git clone https://github.com/gauthierdmn/nominal-code.git
+cd nominal-code/app
+uv sync
+```
 
 ### Configure
 
@@ -91,3 +143,4 @@ The bot should react with an eyes emoji and then post a structured code review.
 - Add a worker bot for code changes — see [Worker bot](bots/worker.md)
 - See [Configuration](configuration.md) for the full environment variable reference
 - Set up GitLab — see [GitLab platform setup](platforms/gitlab.md)
+- Try CI mode for zero-infrastructure reviews — see [CI Mode](ci.md)

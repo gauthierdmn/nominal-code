@@ -4,6 +4,8 @@ The bot is configured entirely via environment variables. You can set them in a 
 
 > **CLI mode** uses a subset of these variables. Bot usernames, `ALLOWED_USERS`, webhook host/port, and webhook secrets are not required. See [CLI Mode](cli.md) for details.
 
+> **CI mode** uses a different set of variables — inputs are passed through the GitHub Action or GitLab CI template, and CI-provided variables are read automatically. See [CI Mode](ci.md) for details.
+
 ## Environment Variables
 
 | Variable | Required | Default | Description |
@@ -26,8 +28,8 @@ The bot is configured entirely via environment variables. You can set them in a 
 | `GITLAB_REVIEWER_TOKEN` | No | — | Separate read-only GitLab token for reviewer bot clones |
 | `WORKSPACE_BASE_DIR` | No | System temp dir | Directory for cloning repos |
 | `AGENT_MAX_TURNS` | No | `0` (unlimited) | Maximum agentic turns per invocation |
-| `AGENT_MODEL` | No | SDK default | Model override (e.g. `claude-sonnet-4-6`) |
-| `AGENT_CLI_PATH` | No | Bundled | Path to the `claude` CLI binary |
+| `AGENT_MODEL` | No | SDK default | Model override (e.g. `claude-sonnet-4-20250514`) |
+| `AGENT_CLI_PATH` | No | Bundled | Path to the `claude` CLI binary (webhook and CLI modes only) |
 | `WORKER_SYSTEM_PROMPT` | No | `system_prompt.md` | Path to a system prompt file for the worker bot |
 | `REVIEWER_SYSTEM_PROMPT` | No | `reviewer_prompt.md` | Path to a system prompt file for the reviewer bot |
 | `CODING_GUIDELINES` | No | `coding_guidelines.md` | Path to a coding guidelines file appended to the system prompt |
@@ -111,6 +113,41 @@ Both bots can `git clone` private repositories into a shared `.deps/` directory 
 - Dependencies are cloned with `--depth=1` to minimize download time.
 - The `.deps/` directory is shared across PRs for the same repository, so a dependency only needs to be cloned once.
 - The reviewer bot is restricted to read-only tools plus `git clone` — it cannot modify files in cloned dependencies.
+
+## Agent Runner
+
+Nominal Code uses two agent execution backends depending on the execution mode:
+
+| Mode | Agent Runner | Key |
+|---|---|---|
+| **CI** (`nominal-code ci`) | Anthropic API (direct) | `ANTHROPIC_API_KEY` required |
+| **CLI** (`nominal-code review`) | Claude Code CLI | Claude Code CLI required on `PATH` |
+| **Webhook server** | Claude Code CLI | Claude Code CLI required on `PATH` |
+
+In CI mode, the bot calls the Anthropic Messages API directly with tool use. It provides four tools locally (Read, Glob, Grep, Bash) and does not need the Claude Code CLI installed. This is controlled internally by the `use_api` flag in `AgentConfig`.
+
+In CLI and webhook modes, the bot spawns the Claude Code CLI as a subprocess via the [Claude Code SDK](https://github.com/anthropics/claude-code-sdk-python). The CLI uses its configured login method — including **Claude Pro** and **Claude Max** subscriptions — so reviews can run against your subscription instead of per-token API billing. The CLI runner also supports session continuity for multi-turn conversations.
+
+## CI Mode Variables
+
+CI mode reads its configuration from action inputs (mapped to `INPUT_*` environment variables) and CI-provided variables. These are separate from the webhook/CLI variables above.
+
+| Variable | Source | Description |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | Secret | Anthropic API key (required in CI mode) |
+| `INPUT_MODEL` | Action/template input | Claude model override |
+| `INPUT_MAX_TURNS` | Action/template input | Maximum agentic turns |
+| `INPUT_PROMPT` | Action/template input | Custom review instructions |
+| `INPUT_CODING_GUIDELINES` | Action/template input | Path to coding guidelines file |
+| `GITHUB_EVENT_PATH` | GitHub Actions | Path to event payload JSON |
+| `GITHUB_WORKSPACE` | GitHub Actions | Repository checkout path |
+| `CI_PROJECT_PATH` | GitLab CI | Repository path |
+| `CI_MERGE_REQUEST_IID` | GitLab CI | Merge request IID |
+| `CI_MERGE_REQUEST_SOURCE_BRANCH_NAME` | GitLab CI | Source branch name |
+| `CI_PROJECT_DIR` | GitLab CI | Repository checkout path |
+| `CI_SERVER_URL` | GitLab CI | GitLab instance URL (self-hosted) |
+
+See [CI Mode](ci.md) for full setup instructions.
 
 ## Workspace Cleanup
 

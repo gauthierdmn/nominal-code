@@ -13,7 +13,7 @@ from nominal_code.webhooks.dispatch import enqueue_job
 from nominal_code.webhooks.mention import extract_mention
 
 if TYPE_CHECKING:
-    from nominal_code.agent.session import SessionQueue, SessionStore
+    from nominal_code.agent.cli.session import SessionQueue, SessionStore
     from nominal_code.config import Config
     from nominal_code.platforms.base import Platform, ReviewerPlatform
 

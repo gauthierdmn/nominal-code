@@ -19,9 +19,11 @@ platforms/
 ├── github/
 │   ├── __init__.py    # Re-exports: GitHubPlatform, auth classes, factory, load_private_key
 │   ├── auth.py        # GitHubAuth ABC, GitHubPatAuth, GitHubAppAuth, load_private_key()
+│   ├── ci.py          # CI mode: build_event(), build_platform(), resolve_workspace() from GitHub Actions env vars
 │   └── platform.py    # GitHubPlatform, _create_github_platform factory
 └── gitlab/
     ├── __init__.py    # Re-exports: GitLabPlatform, factory
+    ├── ci.py          # CI mode: build_event(), build_platform(), resolve_workspace() from GitLab CI env vars
     └── platform.py    # GitLabPlatform, _create_gitlab_platform factory
 ```
 

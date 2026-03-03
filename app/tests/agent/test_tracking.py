@@ -4,9 +4,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from nominal_code.agent.cli.session import SessionStore
+from nominal_code.agent.cli.tracking import run_and_track_session
 from nominal_code.agent.runner import AgentResult
-from nominal_code.agent.session import SessionStore
-from nominal_code.agent.tracking import run_and_track_session
+from nominal_code.config import AgentConfig
 from nominal_code.models import BotType, EventType
 from nominal_code.platforms.base import CommentEvent, PlatformName
 
@@ -26,9 +27,7 @@ def _make_event():
 
 def _make_config():
     config = MagicMock()
-    config.agent_model = ""
-    config.agent_max_turns = 0
-    config.agent_cli_path = ""
+    config.agent = AgentConfig()
 
     return config
 
@@ -51,7 +50,7 @@ class TestRunAndTrackSession:
         expected = _make_agent_result()
 
         with patch(
-            "nominal_code.agent.tracking.run_agent",
+            "nominal_code.agent.cli.tracking.run_agent",
             new=AsyncMock(return_value=expected),
         ):
             result = await run_and_track_session(
@@ -74,7 +73,7 @@ class TestRunAndTrackSession:
         agent_result = _make_agent_result(session_id="stored-sess")
 
         with patch(
-            "nominal_code.agent.tracking.run_agent",
+            "nominal_code.agent.cli.tracking.run_agent",
             new=AsyncMock(return_value=agent_result),
         ):
             await run_and_track_session(
@@ -104,7 +103,9 @@ class TestRunAndTrackSession:
 
             return _make_agent_result()
 
-        with patch("nominal_code.agent.tracking.run_agent", side_effect=mock_run_agent):
+        with patch(
+            "nominal_code.agent.cli.tracking.run_agent", side_effect=mock_run_agent
+        ):
             await run_and_track_session(
                 event=event,
                 bot_type=BotType.WORKER,
@@ -130,7 +131,9 @@ class TestRunAndTrackSession:
 
             return _make_agent_result()
 
-        with patch("nominal_code.agent.tracking.run_agent", side_effect=mock_run_agent):
+        with patch(
+            "nominal_code.agent.cli.tracking.run_agent", side_effect=mock_run_agent
+        ):
             await run_and_track_session(
                 event=event,
                 bot_type=BotType.WORKER,
@@ -151,7 +154,7 @@ class TestRunAndTrackSession:
         agent_result = _make_agent_result(session_id="some-sess")
 
         with patch(
-            "nominal_code.agent.tracking.run_agent",
+            "nominal_code.agent.cli.tracking.run_agent",
             new=AsyncMock(return_value=agent_result),
         ):
             result = await run_and_track_session(
@@ -174,7 +177,7 @@ class TestRunAndTrackSession:
         agent_result = _make_agent_result(session_id="")
 
         with patch(
-            "nominal_code.agent.tracking.run_agent",
+            "nominal_code.agent.cli.tracking.run_agent",
             new=AsyncMock(return_value=agent_result),
         ):
             await run_and_track_session(
@@ -202,7 +205,9 @@ class TestRunAndTrackSession:
 
             return _make_agent_result()
 
-        with patch("nominal_code.agent.tracking.run_agent", side_effect=mock_run_agent):
+        with patch(
+            "nominal_code.agent.cli.tracking.run_agent", side_effect=mock_run_agent
+        ):
             await run_and_track_session(
                 event=event,
                 bot_type=BotType.WORKER,
@@ -226,7 +231,9 @@ class TestRunAndTrackSession:
 
             return _make_agent_result()
 
-        with patch("nominal_code.agent.tracking.run_agent", side_effect=mock_run_agent):
+        with patch(
+            "nominal_code.agent.cli.tracking.run_agent", side_effect=mock_run_agent
+        ):
             await run_and_track_session(
                 event=event,
                 bot_type=BotType.WORKER,
