@@ -1,0 +1,42 @@
+name: "Nominal Code Review"
+description: "AI-powered code review for pull requests using Claude"
+author: "gauthierdmn"
+
+branding:
+  icon: "code"
+  color: "purple"
+
+inputs:
+  anthropic_api_key:
+    description: "Anthropic API key for Claude"
+    required: true
+  github_token:
+    description: "GitHub token for posting review comments (defaults to github.token)"
+    required: true
+  model:
+    description: "Claude model to use (e.g. claude-sonnet-4-20250514)"
+    required: false
+    default: ""
+  max_turns:
+    description: "Maximum agentic turns for the reviewer (0 = unlimited)"
+    required: false
+    default: "0"
+  prompt:
+    description: "Custom review instructions appended to the default prompt"
+    required: false
+    default: ""
+  coding_guidelines:
+    description: "Path to a coding guidelines file (relative to repo root)"
+    required: false
+    default: ""
+
+runs:
+  using: "docker"
+  image: "docker://ghcr.io/gauthierdmn/nominal-code:latest"
+  env:
+    ANTHROPIC_API_KEY: ${{ inputs.anthropic_api_key }}
+    GITHUB_TOKEN: ${{ inputs.github_token }}
+    INPUT_MODEL: ${{ inputs.model }}
+    INPUT_MAX_TURNS: ${{ inputs.max_turns }}
+    INPUT_PROMPT: ${{ inputs.prompt }}
+    INPUT_CODING_GUIDELINES: ${{ inputs.coding_guidelines }}

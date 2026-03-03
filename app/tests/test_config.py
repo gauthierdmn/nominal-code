@@ -121,9 +121,9 @@ class TestFromEnv:
         assert config.webhook_host == "0.0.0.0"
         assert config.webhook_port == 8080
         assert config.allowed_users == frozenset({"alice", "bob"})
-        assert config.agent_max_turns == 0
-        assert config.agent_model == ""
-        assert config.agent_cli_path == ""
+        assert config.agent.max_turns == 0
+        assert config.agent.model == ""
+        assert config.agent.cli_path == ""
         assert config.cleanup_interval_hours == 6
 
     def test_from_env_full_config(self, _full_env):
@@ -139,9 +139,9 @@ class TestFromEnv:
         assert config.webhook_port == 9090
         assert config.allowed_users == frozenset({"alice", "bob", "charlie"})
         assert config.workspace_base_dir == Path("/tmp/workspaces")
-        assert config.agent_max_turns == 10
-        assert config.agent_model == "claude-sonnet-4-20250514"
-        assert config.agent_cli_path == "/usr/local/bin/claude"
+        assert config.agent.max_turns == 10
+        assert config.agent.model == "claude-sonnet-4-20250514"
+        assert config.agent.cli_path == "/usr/local/bin/claude"
         assert config.coding_guidelines == "Use snake_case."
         assert config.language_guidelines == {}
         assert config.cleanup_interval_hours == 12
@@ -413,13 +413,13 @@ class TestConfigForCli:
         with patch.dict(os.environ, {"WORKSPACE_BASE_DIR": str(tmp_path)}, clear=True):
             config = Config.for_cli(model="claude-opus-4-6")
 
-        assert config.agent_model == "claude-opus-4-6"
+        assert config.agent.model == "claude-opus-4-6"
 
     def test_config_for_cli_applies_max_turns_override(self, tmp_path):
         with patch.dict(os.environ, {"WORKSPACE_BASE_DIR": str(tmp_path)}, clear=True):
             config = Config.for_cli(max_turns=5)
 
-        assert config.agent_max_turns == 5
+        assert config.agent.max_turns == 5
 
     def test_config_for_cli_no_webhook_settings_required(self, tmp_path):
         with patch.dict(os.environ, {"WORKSPACE_BASE_DIR": str(tmp_path)}, clear=True):

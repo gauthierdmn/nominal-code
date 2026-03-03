@@ -7,15 +7,25 @@ AI-powered code review bot that monitors GitHub PRs and GitLab MRs. When a user 
 - **Async-first** — built on aiohttp + asyncio; all I/O (HTTP, git, agent) is non-blocking.
 - **Protocol-based platforms** — GitHub and GitLab implement the same `Platform` / `ReviewerPlatform` protocols, making it easy to add new providers.
 - **Per-PR job serialisation** — `SessionQueue` guarantees only one agent job runs per PR at a time, preventing race conditions on the same workspace.
-- **Multi-turn sessions** — `SessionStore` maps (platform, repo, PR, bot) to a Claude session ID so conversations resume across comments.
+- **Multi-turn sessions** — `SessionStore` maps (platform, repo, PR, bot) to a Claude session ID so conversations resume across comments. Only applies to webhook mode (CLI runner).
 - **Workspace isolation** — each PR gets its own shallow clone; a shared `.deps/` directory is available for cross-PR dependencies.
+- **Dual agent runners** — CLI and webhook modes use the Claude Code CLI (supports subscriptions); CI mode calls the Anthropic API directly (requires `ANTHROPIC_API_KEY`).
 
-## Supported platforms
+## Entry points
 
-| Platform | Webhook events | Auth modes | Self-hosted |
-|----------|---------------|------------|-------------|
-| GitHub | `issue_comment`, `pull_request_review_comment`, `pull_request_review`, `pull_request` | PAT or GitHub App (JWT + installation token) | No |
-| GitLab | Note Hook, Merge Request Hook | Token + header secret | Yes (`GITLAB_API_BASE`) |
+- `nominal-code` (no args) — starts the webhook server.
+- `nominal-code review owner/repo#42` — one-shot CLI review (supports `--dry-run`, `--platform`, `--prompt`).
+- `nominal-code ci {platform}` — CI mode review (GitHub Actions / GitLab CI). Uses the Anthropic API runner.
+
+## Agent runner selection
+
+| Mode | Runner | Config flag |
+|------|--------|-------------|
+| Webhook server | Claude Code CLI (`agent/cli/runner.py`) | `AgentConfig(use_api=False)` |
+| CLI review | Claude Code CLI (`agent/cli/runner.py`) | `AgentConfig(use_api=False)` |
+| CI (`ci.py`) | Anthropic API (`agent/api/runner.py`) | `AgentConfig(use_api=True)` |
+
+The dispatcher in `agent/runner.py` routes based on `AgentConfig.use_api`. The API runner implements its own tool execution (Read, Glob, Grep, Bash with allowlist) so it does not depend on the Claude Code CLI.
 
 ## Bot types
 
@@ -31,11 +41,6 @@ AI-powered code review bot that monitors GitHub PRs and GitLab MRs. When a user 
 3. Load per-language `.nominal/languages/{lang}.md` (overrides built-in `prompts/languages/{lang}.md`).
 4. Concatenate general + language-specific guidelines into the system prompt.
 
-## Entry points
-
-- `nominal-code` (no args) — starts the webhook server.
-- `nominal-code review owner/repo#42` — one-shot CLI review (supports `--dry-run`, `--platform`, `--prompt`).
-
 ## Environment variables
 
 ### Required (webhook mode)
@@ -46,6 +51,12 @@ AI-powered code review bot that monitors GitHub PRs and GitLab MRs. When a user 
   - **PAT mode**: `GITHUB_TOKEN`.
   - **App mode**: `GITHUB_APP_ID` + one of `GITHUB_APP_PRIVATE_KEY` (inline PEM) / `GITHUB_APP_PRIVATE_KEY_PATH` (file path).
 - And/or `GITLAB_TOKEN`.
+
+### Required (CI mode)
+
+- `ANTHROPIC_API_KEY` — used by the API runner directly.
+- `GITHUB_TOKEN` or `GITLAB_TOKEN` — for posting review comments.
+- CI-provided variables (`GITHUB_EVENT_PATH`, `CI_PROJECT_PATH`, etc.) are read automatically.
 
 ### Optional
 
@@ -62,11 +73,12 @@ AI-powered code review bot that monitors GitHub PRs and GitLab MRs. When a user 
 
 ```
 nominal_code/
-├── main.py              # Entry point: dispatches to webhook server or CLI
+├── main.py              # Entry point: dispatches to webhook server, CLI, or CI
 ├── cli.py               # One-shot review CLI (argparse, platform construction)
+├── ci.py                # CI mode (reads CI env vars, uses API runner, posts results)
 ├── config.py            # Frozen dataclass config loaded from env vars / files
 ├── models.py            # Shared enums (EventType, BotType, FileStatus) and dataclasses (ReviewFinding, AgentReview, ChangedFile)
-├── agent/               # Agent invocation, session management, prompt composition
+├── agent/               # Dual agent runners, session management, prompt composition
 ├── platforms/           # Platform protocol + GitHub/GitLab implementations (subpackages)
 ├── review/              # Reviewer bot handler (structured code review)
 ├── webhooks/            # aiohttp webhook server, @mention extraction, job dispatch

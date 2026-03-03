@@ -29,6 +29,7 @@ theme:
 nav:
   - Home: index.md
   - Getting Started: getting-started.md
+  - CI Mode: ci.md
   - CLI Mode: cli.md
   - Configuration: configuration.md
   - Platforms:

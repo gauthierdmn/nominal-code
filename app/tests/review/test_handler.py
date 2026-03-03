@@ -6,9 +6,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from nominal_code.agent.cli.session import SessionStore
 from nominal_code.agent.runner import AgentResult
-from nominal_code.agent.session import SessionStore
-from nominal_code.config import ReviewerConfig
+from nominal_code.config import AgentConfig, ReviewerConfig
 from nominal_code.models import (
     ChangedFile,
     DiffSide,
@@ -40,9 +40,7 @@ def _make_config(allowed_users=None):
     config = MagicMock()
     config.allowed_users = frozenset(allowed_users or ["alice"])
     config.workspace_base_dir = "/tmp/workspaces"
-    config.agent_model = ""
-    config.agent_max_turns = 0
-    config.agent_cli_path = ""
+    config.agent = AgentConfig()
     config.coding_guidelines = "Use snake_case."
     config.language_guidelines = {"python": "Python style rules."}
     config.worker = None
@@ -119,7 +117,7 @@ class TestReviewerProcessComment:
         )
 
         with patch(
-            "nominal_code.agent.tracking.run_agent",
+            "nominal_code.agent.cli.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -163,7 +161,7 @@ class TestReviewerProcessComment:
         )
 
         with patch(
-            "nominal_code.agent.tracking.run_agent",
+            "nominal_code.agent.cli.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -194,7 +192,6 @@ class TestReviewerProcessComment:
             call_kwargs = mock_run.call_args.kwargs
 
             assert "Review code." in call_kwargs["system_prompt"]
-            assert call_kwargs["permission_mode"] == "bypassPermissions"
             assert call_kwargs["allowed_tools"] == REVIEWER_ALLOWED_TOOLS
 
     @pytest.mark.asyncio
@@ -212,7 +209,7 @@ class TestReviewerProcessComment:
         )
 
         with patch(
-            "nominal_code.agent.tracking.run_agent",
+            "nominal_code.agent.cli.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -283,7 +280,7 @@ class TestReviewerProcessComment:
         )
 
         with patch(
-            "nominal_code.agent.tracking.run_agent",
+            "nominal_code.agent.cli.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -332,7 +329,7 @@ class TestReviewerProcessComment:
         )
 
         with patch(
-            "nominal_code.agent.tracking.run_agent",
+            "nominal_code.agent.cli.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.side_effect = [
@@ -388,7 +385,7 @@ class TestReviewerProcessComment:
         )
 
         with patch(
-            "nominal_code.agent.tracking.run_agent",
+            "nominal_code.agent.cli.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = bad_result
@@ -723,7 +720,7 @@ class TestBotCommentFiltering:
         )
 
         with patch(
-            "nominal_code.agent.tracking.run_agent",
+            "nominal_code.agent.cli.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -781,7 +778,7 @@ class TestBotCommentFiltering:
         )
 
         with patch(
-            "nominal_code.agent.tracking.run_agent",
+            "nominal_code.agent.cli.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -845,7 +842,7 @@ class TestBotCommentFiltering:
         platform.fetch_pr_comments = AsyncMock(side_effect=track_fetch_comments)
 
         with patch(
-            "nominal_code.agent.tracking.run_agent",
+            "nominal_code.agent.cli.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -1090,7 +1087,7 @@ class TestReview:
         )
 
         with patch(
-            "nominal_code.agent.tracking.run_agent",
+            "nominal_code.agent.cli.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -1130,7 +1127,7 @@ class TestReview:
         comment = _make_comment()
 
         with patch(
-            "nominal_code.agent.tracking.run_agent",
+            "nominal_code.agent.cli.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -1173,7 +1170,7 @@ class TestReview:
         )
 
         with patch(
-            "nominal_code.agent.tracking.run_agent",
+            "nominal_code.agent.cli.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -1227,7 +1224,7 @@ class TestReview:
         )
 
         with patch(
-            "nominal_code.agent.tracking.run_agent",
+            "nominal_code.agent.cli.tracking.run_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(

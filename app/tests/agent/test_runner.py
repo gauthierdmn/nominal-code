@@ -51,7 +51,7 @@ class TestRunClaude:
             yield init_msg
             yield result_msg
 
-        with patch("nominal_code.agent.runner.query", mock_query):
+        with patch("nominal_code.agent.cli.runner.query", mock_query):
             result = await run_agent(
                 prompt="fix the bug",
                 cwd="/tmp/workspace",
@@ -68,7 +68,7 @@ class TestRunClaude:
             return
             yield
 
-        with patch("nominal_code.agent.runner.query", mock_query):
+        with patch("nominal_code.agent.cli.runner.query", mock_query):
             result = await run_agent(prompt="test", cwd="/tmp")
 
         assert result.is_error is True
@@ -86,7 +86,7 @@ class TestRunClaude:
         async def mock_query(*args, **kwargs):
             yield result_msg
 
-        with patch("nominal_code.agent.runner.query", mock_query):
+        with patch("nominal_code.agent.cli.runner.query", mock_query):
             result = await run_agent(prompt="test", cwd="/tmp")
 
         assert result.output == "Done, no output."
@@ -107,7 +107,7 @@ class TestRunClaude:
 
             yield result_msg
 
-        with patch("nominal_code.agent.runner.query", mock_query):
+        with patch("nominal_code.agent.cli.runner.query", mock_query):
             await run_agent(
                 prompt="fix it",
                 cwd="/tmp",
@@ -132,35 +132,10 @@ class TestRunClaude:
 
             yield result_msg
 
-        with patch("nominal_code.agent.runner.query", mock_query):
+        with patch("nominal_code.agent.cli.runner.query", mock_query):
             await run_agent(prompt="fix it", cwd="/tmp")
 
         assert captured_options["options"].system_prompt is None
-
-    @pytest.mark.asyncio
-    async def test_run_agent_forwards_permission_mode(self):
-        result_msg = MagicMock(spec=ResultMessage)
-        result_msg.result = "Done"
-        result_msg.is_error = False
-        result_msg.num_turns = 1
-        result_msg.duration_ms = 500
-        result_msg.session_id = "sess-pm"
-
-        captured_options = {}
-
-        async def mock_query(*args, **kwargs):
-            captured_options.update(kwargs)
-
-            yield result_msg
-
-        with patch("nominal_code.agent.runner.query", mock_query):
-            await run_agent(
-                prompt="review it",
-                cwd="/tmp",
-                permission_mode="plan",
-            )
-
-        assert captured_options["options"].permission_mode == "plan"
 
     @pytest.mark.asyncio
     async def test_run_agent_forwards_allowed_tools(self):
@@ -178,7 +153,7 @@ class TestRunClaude:
 
             yield result_msg
 
-        with patch("nominal_code.agent.runner.query", mock_query):
+        with patch("nominal_code.agent.cli.runner.query", mock_query):
             await run_agent(
                 prompt="review it",
                 cwd="/tmp",
@@ -207,7 +182,7 @@ class TestRunClaude:
 
             yield result_msg
 
-        with patch("nominal_code.agent.runner.query", mock_query):
+        with patch("nominal_code.agent.cli.runner.query", mock_query):
             await run_agent(prompt="fix it", cwd="/tmp")
 
         assert captured_options["options"].allowed_tools == []
@@ -228,7 +203,7 @@ class TestRunClaude:
 
             yield result_msg
 
-        with patch("nominal_code.agent.runner.query", mock_query):
+        with patch("nominal_code.agent.cli.runner.query", mock_query):
             await run_agent(prompt="fix it", cwd="/tmp")
 
         assert captured_options["options"].permission_mode == "bypassPermissions"
@@ -252,13 +227,15 @@ class TestPatchedParseMessage:
     def test_patched_parse_message_passes_through_valid_message(self):
         from claude_agent_sdk import SystemMessage
 
-        from nominal_code.agent.runner import (
+        from nominal_code.agent.cli.runner import (
             _patched_parse_message,
         )
 
         data = {"type": "system", "subtype": "init", "session_id": "s1"}
 
-        with patch("nominal_code.agent.runner._original_parse_message") as mock_orig:
+        with patch(
+            "nominal_code.agent.cli.runner._original_parse_message"
+        ) as mock_orig:
             mock_orig.return_value = SystemMessage(subtype="init", data={})
             result = _patched_parse_message(data)
 
@@ -269,12 +246,12 @@ class TestPatchedParseMessage:
         from claude_agent_sdk import SystemMessage
         from claude_agent_sdk._errors import MessageParseError
 
-        from nominal_code.agent.runner import _patched_parse_message
+        from nominal_code.agent.cli.runner import _patched_parse_message
 
         data = {"type": "rate_limit_event", "extra": "field"}
 
         with patch(
-            "nominal_code.agent.runner._original_parse_message",
+            "nominal_code.agent.cli.runner._original_parse_message",
             side_effect=lambda d: (_ for _ in ()).throw(MessageParseError("unknown")),
         ):
             result = _patched_parse_message(data)
@@ -286,10 +263,10 @@ class TestPatchedParseMessage:
         from claude_agent_sdk import SystemMessage
         from claude_agent_sdk._errors import MessageParseError
 
-        from nominal_code.agent.runner import _patched_parse_message
+        from nominal_code.agent.cli.runner import _patched_parse_message
 
         with patch(
-            "nominal_code.agent.runner._original_parse_message",
+            "nominal_code.agent.cli.runner._original_parse_message",
             side_effect=lambda d: (_ for _ in ()).throw(MessageParseError("unknown")),
         ):
             result = _patched_parse_message("not-a-dict")
@@ -301,12 +278,12 @@ class TestPatchedParseMessage:
         from claude_agent_sdk import SystemMessage
         from claude_agent_sdk._errors import MessageParseError
 
-        from nominal_code.agent.runner import _patched_parse_message
+        from nominal_code.agent.cli.runner import _patched_parse_message
 
         data = {"type": "rate_limit_event", "retry_after": 30}
 
         with patch(
-            "nominal_code.agent.runner._original_parse_message",
+            "nominal_code.agent.cli.runner._original_parse_message",
             side_effect=lambda d: (_ for _ in ()).throw(MessageParseError("unknown")),
         ):
             result = _patched_parse_message(data)
@@ -319,11 +296,11 @@ class TestLogMessage:
     def test_log_message_does_nothing_when_debug_disabled(self):
         from unittest.mock import MagicMock
 
-        from nominal_code.agent.runner import _log_message
+        from nominal_code.agent.cli.runner import _log_message
 
         message = MagicMock()
 
-        with patch("nominal_code.agent.runner.logger") as mock_logger:
+        with patch("nominal_code.agent.cli.runner.logger") as mock_logger:
             mock_logger.isEnabledFor.return_value = False
             _log_message(message)
 
@@ -333,14 +310,14 @@ class TestLogMessage:
         from claude_agent_sdk import AssistantMessage
         from claude_agent_sdk.types import TextBlock
 
-        from nominal_code.agent.runner import _log_message
+        from nominal_code.agent.cli.runner import _log_message
 
         block = MagicMock(spec=TextBlock)
         block.text = "hello"
         message = MagicMock(spec=AssistantMessage)
         message.content = [block]
 
-        with patch("nominal_code.agent.runner.logger") as mock_logger:
+        with patch("nominal_code.agent.cli.runner.logger") as mock_logger:
             mock_logger.isEnabledFor.return_value = True
             _log_message(message)
 
@@ -350,7 +327,10 @@ class TestLogMessage:
         from claude_agent_sdk import UserMessage
         from claude_agent_sdk.types import ToolResultBlock
 
-        from nominal_code.agent.runner import MAX_TOOL_RESULT_LOG_LENGTH, _log_message
+        from nominal_code.agent.cli.runner import (
+            MAX_TOOL_RESULT_LOG_LENGTH,
+            _log_message,
+        )
 
         block = MagicMock(spec=ToolResultBlock)
         block.content = "x" * (MAX_TOOL_RESULT_LOG_LENGTH + 100)
@@ -359,7 +339,7 @@ class TestLogMessage:
         message = MagicMock(spec=UserMessage)
         message.content = [block]
 
-        with patch("nominal_code.agent.runner.logger") as mock_logger:
+        with patch("nominal_code.agent.cli.runner.logger") as mock_logger:
             mock_logger.isEnabledFor.return_value = True
             _log_message(message)
 
@@ -371,10 +351,10 @@ class TestLogMessage:
     def test_log_message_does_not_crash_for_other_message_types(self):
         from claude_agent_sdk import ResultMessage
 
-        from nominal_code.agent.runner import _log_message
+        from nominal_code.agent.cli.runner import _log_message
 
         message = MagicMock(spec=ResultMessage)
 
-        with patch("nominal_code.agent.runner.logger") as mock_logger:
+        with patch("nominal_code.agent.cli.runner.logger") as mock_logger:
             mock_logger.isEnabledFor.return_value = True
             _log_message(message)

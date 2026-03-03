@@ -15,6 +15,37 @@ EXTENSION_TO_LANGUAGE: dict[str, str] = {
 }
 
 
+def resolve_guidelines(
+    repo_path: Path,
+    default_guidelines: str,
+    language_guidelines: dict[str, str],
+    file_paths: list[Path],
+) -> str:
+    """
+    Compose effective guidelines from general and language-specific sources.
+
+    Public entry point for callers that have a repo path but no workspace
+    (e.g. CI mode where the repo is pre-checked-out).
+
+    Args:
+        repo_path (Path): Absolute path to the repository root.
+        default_guidelines (str): Fallback general guidelines from config.
+        language_guidelines (dict[str, str]): Built-in language guidelines
+            keyed by language name.
+        file_paths (list[Path]): File paths used to detect relevant languages.
+
+    Returns:
+        str: The composed guidelines string.
+    """
+
+    return _resolve_guidelines(
+        repo_path=repo_path,
+        default_guidelines=default_guidelines,
+        language_guidelines=language_guidelines,
+        file_paths=file_paths,
+    )
+
+
 def resolve_system_prompt(
     workspace: GitWorkspace,
     config: Config,

@@ -21,9 +21,11 @@ review/
 - **Tool restrictions** — the reviewer agent is limited to `Read`, `Glob`, `Grep`, `Bash(git clone*)`.
 - **Existing comment context** — up to 50 most recent non-bot comments are included in the prompt so the agent is aware of prior discussion.
 - **Parallel fetching** — `review()` uses `asyncio.gather()` to fetch the PR diff and existing comments concurrently.
+- **CI workspace bypass** — when `workspace_path` is passed (CI mode), `review()` skips cloning entirely and uses the CI runner's checkout. No deps directory is created in this path.
 - **Hunk line parsing** — `_parse_diff_lines()` extracts valid new-side line numbers from unified diff `@@` headers, counting only non-deletion lines.
 - **Diff index** — `_build_diff_index()` maps `{file_path: set[valid_lines]}` for O(1) finding validation.
 - `ReviewResult` bundles the parsed review, valid/rejected findings, effective summary, and raw agent output.
 - `_filter_findings()` returns a `(valid, rejected)` tuple — rejected findings are those on files or lines not in the diff.
 - `_build_effective_summary()` appends rejected findings under an "Additional notes" heading.
 - The prompt includes the full diff, changed file list, deps path, and (optionally) existing comments formatted as markdown.
+- `review()` is called by all three modes (webhook via `review_and_post()`, CLI via `_run_review()`, CI via `run_ci_review()`). The agent runner used depends on `AgentConfig.use_api`.

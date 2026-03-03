@@ -2,17 +2,16 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
-from nominal_code.agent.runner import AgentResult, run_agent
+from nominal_code.agent.result import AgentResult
+from nominal_code.agent.runner import run_agent
 from nominal_code.models import BotType
 from nominal_code.platforms.base import PullRequestEvent
 
 if TYPE_CHECKING:
-    from nominal_code.agent.session import SessionStore
+    from nominal_code.agent.cli.session import SessionStore
     from nominal_code.config import Config
-
-DEFAULT_PERMISSION_MODE: Literal["bypassPermissions"] = "bypassPermissions"
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -62,13 +61,10 @@ async def run_and_track_session(
     result: AgentResult = await run_agent(
         prompt=prompt,
         cwd=cwd,
-        model=config.agent_model,
-        max_turns=config.agent_max_turns,
-        cli_path=config.agent_cli_path,
-        session_id=existing_session or "",
         system_prompt=system_prompt,
-        permission_mode=DEFAULT_PERMISSION_MODE,
         allowed_tools=allowed_tools,
+        agent_config=config.agent,
+        session_id=existing_session or "",
     )
 
     if session_store is not None and result.session_id:

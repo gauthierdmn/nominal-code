@@ -22,6 +22,26 @@ DEFAULT_CLEANUP_INTERVAL_HOURS: int = 6
 
 
 @dataclass(frozen=True)
+class AgentConfig:
+    """
+    Agent runner configuration.
+
+    Attributes:
+        model (str): Optional model override (empty string uses default).
+        max_turns (int): Maximum agentic turns (0 for unlimited).
+        use_api (bool): If True, use the Anthropic API directly; if False,
+            use the Claude Code CLI subprocess.
+        cli_path (str): Path to the Claude Code CLI binary. Only used when
+            use_api is False.
+    """
+
+    model: str = ""
+    max_turns: int = 0
+    use_api: bool = False
+    cli_path: str = ""
+
+
+@dataclass(frozen=True)
 class WorkerConfig:
     """
     Worker bot configuration.
@@ -61,9 +81,7 @@ class Config:
         webhook_port (int): Port to bind the webhook server.
         allowed_users (frozenset[str]): Usernames permitted to trigger the bots.
         workspace_base_dir (Path): Directory for cloning repositories.
-        agent_max_turns (int): Maximum agentic turns (0 for unlimited).
-        agent_model (str): Optional model override.
-        agent_cli_path (str): Path to the agent CLI binary.
+        agent (AgentConfig): Agent runner configuration.
         coding_guidelines (str): Coding guidelines text appended to the
             system prompt.
         language_guidelines (dict[str, str]): Language-specific guidelines
@@ -81,9 +99,7 @@ class Config:
     webhook_port: int
     allowed_users: frozenset[str]
     workspace_base_dir: Path
-    agent_max_turns: int
-    agent_model: str
-    agent_cli_path: str
+    agent: AgentConfig
     coding_guidelines: str
     language_guidelines: dict[str, str]
     cleanup_interval_hours: int
@@ -135,9 +151,78 @@ class Config:
             webhook_port=0,
             allowed_users=frozenset(),
             workspace_base_dir=workspace_base_dir,
-            agent_max_turns=max_turns or env.int("AGENT_MAX_TURNS", 0),
-            agent_model=model or env.str("AGENT_MODEL", ""),
-            agent_cli_path=env.str("AGENT_CLI_PATH", ""),
+            agent=AgentConfig(
+                model=model or env.str("AGENT_MODEL", ""),
+                max_turns=max_turns or env.int("AGENT_MAX_TURNS", 0),
+                use_api=False,
+                cli_path=env.str("AGENT_CLI_PATH", ""),
+            ),
+            coding_guidelines=coding_guidelines,
+            language_guidelines=language_guidelines,
+            cleanup_interval_hours=0,
+        )
+
+    @classmethod
+    def for_ci(
+        cls,
+        model: str = "",
+        max_turns: int = 0,
+        guidelines_path: Path = Path(),
+    ) -> Config:
+        """
+        Build a Config for CI mode (GitHub Actions / GitLab CI).
+
+        Similar to ``for_cli`` but uses the Anthropic API directly and
+        optionally accepts a custom coding guidelines path.
+
+        Args:
+            model (str): Optional agent model override.
+            max_turns (int): Optional agent max turns override.
+            guidelines_path (Path): Optional path to a coding guidelines file.
+
+        Returns:
+            Config: A configuration suitable for CI-triggered reviews.
+        """
+
+        reviewer_system_prompt: str = _load_file_content(
+            env.path("REVIEWER_SYSTEM_PROMPT", DEFAULT_REVIEWER_PROMPT_PATH),
+        )
+
+        workspace_base_dir: Path = env.path(
+            "WORKSPACE_BASE_DIR",
+            Path(tempfile.gettempdir()) / "nominal-code",
+        )
+
+        coding_guidelines: str = _load_file_content(
+            env.path("CODING_GUIDELINES", DEFAULT_CODING_GUIDELINES_PATH),
+        )
+
+        if guidelines_path != Path():
+            custom_coding: str = _load_file_content(guidelines_path)
+
+            if custom_coding:
+                coding_guidelines = custom_coding
+
+        language_guidelines: dict[str, str] = _load_language_guidelines(
+            env.path("LANGUAGE_GUIDELINES_DIR", DEFAULT_LANGUAGE_GUIDELINES_DIR),
+        )
+
+        return cls(
+            worker=None,
+            reviewer=ReviewerConfig(
+                bot_username="",
+                system_prompt=reviewer_system_prompt,
+            ),
+            webhook_host="",
+            webhook_port=0,
+            allowed_users=frozenset(),
+            workspace_base_dir=workspace_base_dir,
+            agent=AgentConfig(
+                model=model or env.str("AGENT_MODEL", ""),
+                max_turns=max_turns or env.int("AGENT_MAX_TURNS", 0),
+                use_api=True,
+                cli_path="",
+            ),
             coding_guidelines=coding_guidelines,
             language_guidelines=language_guidelines,
             cleanup_interval_hours=0,
@@ -210,9 +295,6 @@ class Config:
             Path(tempfile.gettempdir()) / "nominal-code",
         )
 
-        agent_max_turns: int = env.int("AGENT_MAX_TURNS", 0)
-        agent_model: str = env.str("AGENT_MODEL", "")
-        agent_cli_path: str = env.str("AGENT_CLI_PATH", "")
         coding_guidelines: str = _load_file_content(
             env.path("CODING_GUIDELINES", DEFAULT_CODING_GUIDELINES_PATH),
         )
@@ -236,9 +318,12 @@ class Config:
             webhook_port=webhook_port,
             allowed_users=allowed_users,
             workspace_base_dir=workspace_base_dir,
-            agent_max_turns=agent_max_turns,
-            agent_model=agent_model,
-            agent_cli_path=agent_cli_path,
+            agent=AgentConfig(
+                model=env.str("AGENT_MODEL", ""),
+                max_turns=env.int("AGENT_MAX_TURNS", 0),
+                use_api=False,
+                cli_path=env.str("AGENT_CLI_PATH", ""),
+            ),
             coding_guidelines=coding_guidelines,
             language_guidelines=language_guidelines,
             cleanup_interval_hours=cleanup_interval_hours,

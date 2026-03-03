@@ -8,7 +8,7 @@ from datetime import timedelta
 from aiohttp import web
 from environs import Env
 
-from nominal_code.agent.session import SessionQueue, SessionStore
+from nominal_code.agent.cli.session import SessionQueue, SessionStore
 from nominal_code.config import Config
 from nominal_code.platforms import build_platforms
 from nominal_code.platforms.base import Platform
@@ -128,9 +128,7 @@ async def _async_main() -> None:
 
 
 def main() -> None:
-    """
-    Entry point: dispatch to CLI review mode or start the webhook server.
-    """
+    """Entry point: dispatch to CLI review, CI, or start the webhook server."""
 
     if len(sys.argv) > 1 and sys.argv[1] == "review":
         from nominal_code.cli import cli_main
@@ -138,6 +136,15 @@ def main() -> None:
         cli_main()
 
         return
+
+    if len(sys.argv) > 2 and sys.argv[1] == "ci":
+        from nominal_code.ci import run_ci_review
+
+        setup_logging()
+
+        platform_name: str = sys.argv[2]
+        exit_code: int = asyncio.run(run_ci_review(platform_name))
+        sys.exit(exit_code)
 
     setup_logging()
 

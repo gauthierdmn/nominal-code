@@ -8,9 +8,9 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from nominal_code.agent.cli.tracking import run_and_track_session
 from nominal_code.agent.errors import handle_agent_errors
 from nominal_code.agent.prompts import resolve_system_prompt
-from nominal_code.agent.tracking import run_and_track_session
 from nominal_code.models import (
     AgentReview,
     BotType,
@@ -26,8 +26,8 @@ from nominal_code.platforms.base import (
 from nominal_code.workspace.setup import create_workspace, resolve_branch
 
 if TYPE_CHECKING:
+    from nominal_code.agent.cli.session import SessionStore
     from nominal_code.agent.runner import AgentResult
-    from nominal_code.agent.session import SessionStore
     from nominal_code.config import Config
     from nominal_code.platforms.base import ReviewerPlatform
     from nominal_code.workspace.git import GitWorkspace
@@ -75,6 +75,7 @@ async def review(
     platform: ReviewerPlatform,
     session_store: SessionStore | None = None,
     bot_username: str = "",
+    workspace_path: str = "",
 ) -> ReviewResult:
     """
     Run the core review logic without posting results to the platform.
@@ -89,6 +90,8 @@ async def review(
         platform (ReviewerPlatform): The platform client with reviewer capabilities.
         session_store (SessionStore | None): Agent session store (optional for CLI).
         bot_username (str): Bot username to filter from existing comments.
+        workspace_path (str): Pre-existing workspace path (skips cloning). Used
+            in CI mode where the repo is already checked out.
 
     Returns:
         ReviewResult: The review result with findings and summary.
@@ -97,52 +100,93 @@ async def review(
         RuntimeError: If workspace setup fails.
     """
 
-    reviewer_clone_url: str = platform.build_reviewer_clone_url(
-        event.repo_full_name,
-    )
-    effective_event: PullRequestEvent = replace(event, clone_url=reviewer_clone_url)
+    if workspace_path:
+        repo_path: Path = Path(workspace_path)
+        deps_path: Path | None = None
 
-    workspace: GitWorkspace = create_workspace(effective_event, config)
+        changed_files_result: list[ChangedFile]
+        all_comments_result: list[ExistingComment]
 
-    results: tuple[
-        list[ChangedFile], list[ExistingComment], None
-    ] = await asyncio.gather(
-        platform.fetch_pr_diff(
+        changed_files_result, all_comments_result = await asyncio.gather(
+            platform.fetch_pr_diff(
+                event.repo_full_name,
+                event.pr_number,
+            ),
+            platform.fetch_pr_comments(
+                event.repo_full_name,
+                event.pr_number,
+            ),
+        )
+    else:
+        reviewer_clone_url: str = platform.build_reviewer_clone_url(
             event.repo_full_name,
-            event.pr_number,
-        ),
-        platform.fetch_pr_comments(
-            event.repo_full_name,
-            event.pr_number,
-        ),
-        workspace.ensure_ready(),
-    )
-    workspace.maybe_create_deps_dir()
+        )
+        effective_event: PullRequestEvent = replace(
+            event,
+            clone_url=reviewer_clone_url,
+        )
 
-    raw_comments: list[ExistingComment] = results[1]
-    filtered_comments: list[ExistingComment] = [
-        comment for comment in raw_comments if comment.author != bot_username
-    ]
-    capped_comments: list[ExistingComment] = filtered_comments[-MAX_EXISTING_COMMENTS:]
+        workspace: GitWorkspace = create_workspace(effective_event, config)
+
+        results: tuple[
+            list[ChangedFile], list[ExistingComment], None
+        ] = await asyncio.gather(
+            platform.fetch_pr_diff(
+                event.repo_full_name,
+                event.pr_number,
+            ),
+            platform.fetch_pr_comments(
+                event.repo_full_name,
+                event.pr_number,
+            ),
+            workspace.ensure_ready(),
+        )
+        workspace.maybe_create_deps_dir()
+
+        changed_files_result = results[0]
+        all_comments_result = results[1]
+        repo_path = workspace.repo_path
+        deps_path = workspace.deps_path
+
+    changed_files: list[ChangedFile] = changed_files_result
+    all_comments: list[ExistingComment] = all_comments_result
+
+    existing_comments: list[ExistingComment] = [
+        existing for existing in all_comments if existing.author != bot_username
+    ][-MAX_EXISTING_COMMENTS:]
 
     full_prompt: str = _build_reviewer_prompt(
-        event=effective_event,
+        event=event,
         user_prompt=prompt,
-        changed_files=results[0],
-        deps_path=workspace.deps_path,
-        existing_comments=capped_comments,
+        changed_files=changed_files,
+        deps_path=deps_path,
+        existing_comments=existing_comments,
     )
 
     if config.reviewer is None:
         raise RuntimeError("Reviewer config is required but not configured")
 
-    file_paths: list[Path] = [Path(changed.file_path) for changed in results[0]]
-    combined_system_prompt: str = resolve_system_prompt(
-        workspace=workspace,
-        config=config,
-        bot_system_prompt=config.reviewer.system_prompt,
-        file_paths=file_paths,
-    )
+    file_paths: list[Path] = [Path(changed.file_path) for changed in changed_files]
+
+    if workspace_path:
+        from nominal_code.agent.prompts import resolve_guidelines
+
+        effective_guidelines: str = resolve_guidelines(
+            repo_path=repo_path,
+            default_guidelines=config.coding_guidelines,
+            language_guidelines=config.language_guidelines,
+            file_paths=file_paths,
+        )
+        combined_system_prompt: str = (
+            config.reviewer.system_prompt + "\n\n" + effective_guidelines
+        )
+    else:
+        combined_system_prompt = resolve_system_prompt(
+            workspace=workspace,
+            config=config,
+            bot_system_prompt=config.reviewer.system_prompt,
+            file_paths=file_paths,
+        )
 
     result: AgentResult = await run_and_track_session(
         event=event,
@@ -150,7 +194,7 @@ async def review(
         session_store=session_store,
         system_prompt=combined_system_prompt,
         prompt=full_prompt,
-        cwd=workspace.repo_path,
+        cwd=repo_path,
         config=config,
         allowed_tools=REVIEWER_ALLOWED_TOOLS,
     )
@@ -177,7 +221,7 @@ async def review(
             session_store=session_store,
             system_prompt=combined_system_prompt,
             prompt=retry_prompt,
-            cwd=workspace.repo_path,
+            cwd=repo_path,
             config=config,
             allowed_tools=REVIEWER_ALLOWED_TOOLS,
             session_id_override=result.session_id,
@@ -204,7 +248,7 @@ async def review(
 
     valid_findings, rejected_findings = _filter_findings(
         findings=review_result.findings,
-        changed_files=results[0],
+        changed_files=changed_files,
     )
 
     if rejected_findings:

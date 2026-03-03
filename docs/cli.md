@@ -1,6 +1,8 @@
 # CLI Mode
 
-Run a one-off code review on any pull request without deploying a webhook server. All you need is a platform token.
+Run a one-off code review on any pull request without deploying a webhook server. All you need is a platform token and the [Claude Code CLI](https://claude.ai/code) installed.
+
+> CLI mode uses the Claude Code CLI as its agent runner. It uses the authentication method configured on your Claude Code CLI, which means it can leverage **Claude Pro** and **Claude Max** subscriptions instead of paying per-token via the Anthropic API. For a lighter setup that only needs an API key (no CLI installation), see [CI Mode](ci.md).
 
 ## Usage
 
@@ -109,13 +111,16 @@ Findings (2):
 
 When `--dry-run` is not set, the review is also posted to the PR as native inline comments (on GitHub) or discussion notes (on GitLab).
 
-## How It Differs from Webhook Mode
+## How It Differs from Other Modes
 
-| | CLI Mode | Webhook Mode |
-|---|---|---|
-| Trigger | Manual command | PR comment via webhook |
-| Server | Not needed | aiohttp server required |
-| Auth check | None (you are the user) | `ALLOWED_USERS` allowlist |
-| Session continuity | No (one-shot) | Yes (multi-turn per PR) |
-| Workspace cleanup | Manual | Automatic periodic cleanup |
-| Bot username | Not needed | Required for `@mention` |
+| | CLI Mode | CI Mode | Webhook Mode |
+|---|---|---|---|
+| Trigger | Manual command | PR event in CI pipeline | PR comment via webhook |
+| Agent runner | Claude Code CLI | Anthropic API (direct) | Claude Code CLI |
+| Requires Claude Code CLI | Yes | No | Yes |
+| Billing | Claude Code CLI login (Pro/Max or API key) | `ANTHROPIC_API_KEY` (per-token) | Claude Code CLI login (Pro/Max or API key) |
+| Server | Not needed | Not needed | aiohttp server required |
+| Auth check | None (you are the user) | None (CI handles it) | `ALLOWED_USERS` allowlist |
+| Session continuity | No (one-shot) | No (one-shot) | Yes (multi-turn per PR) |
+| Workspace cleanup | Manual | N/A (CI runner) | Automatic periodic cleanup |
+| Bot username | Not needed | Not needed | Required for `@mention` |

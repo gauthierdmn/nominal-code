@@ -8,7 +8,7 @@ from nominal_code.models import BotType
 from nominal_code.platforms.base import CommentEvent, LifecycleEvent
 
 if TYPE_CHECKING:
-    from nominal_code.agent.session import SessionQueue
+    from nominal_code.agent.cli.session import SessionQueue
     from nominal_code.config import Config
     from nominal_code.platforms.base import Platform
 

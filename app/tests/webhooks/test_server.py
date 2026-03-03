@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import pytest_asyncio
 
-from nominal_code.agent.session import SessionQueue, SessionStore
-from nominal_code.config import ReviewerConfig, WorkerConfig
+from nominal_code.agent.cli.session import SessionQueue, SessionStore
+from nominal_code.config import AgentConfig, ReviewerConfig, WorkerConfig
 from nominal_code.models import BotType, EventType
 from nominal_code.platforms.base import CommentEvent, LifecycleEvent, PlatformName
 from nominal_code.webhooks.server import create_app
@@ -26,9 +26,7 @@ def _make_config(worker=True, reviewer=True, reviewer_triggers=None):
     )
     config.allowed_users = frozenset(["alice"])
     config.workspace_base_dir = "/tmp/workspaces"
-    config.agent_model = ""
-    config.agent_max_turns = 0
-    config.agent_cli_path = ""
+    config.agent = AgentConfig()
     config.reviewer_triggers = frozenset(reviewer_triggers or [])
 
     return config

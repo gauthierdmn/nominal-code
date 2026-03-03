@@ -1,207 +1,65 @@
+from __future__ import annotations
+
 import logging
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
 
-from claude_agent_sdk import (
-    AssistantMessage,
-    ClaudeAgentOptions,
-    Message,
-    ResultMessage,
-    SystemMessage,
-    UserMessage,
-    query,
-)
-from claude_agent_sdk._errors import MessageParseError
-from claude_agent_sdk._internal import client as _sdk_client
-from claude_agent_sdk._internal import message_parser as _sdk_parser
-from claude_agent_sdk.types import (
-    TextBlock,
-    ThinkingBlock,
-    ToolResultBlock,
-    ToolUseBlock,
-)
-
-SESSION_ID_INIT_SUBTYPE: str = "init"
-MAX_TOOL_RESULT_LOG_LENGTH: int = 500
+from nominal_code.agent.api.runner import run_agent_api
+from nominal_code.agent.cli.runner import run_agent_cli
+from nominal_code.agent.result import AgentResult
+from nominal_code.config import AgentConfig
 
 logger: logging.Logger = logging.getLogger(__name__)
 
-_original_parse_message = _sdk_parser.parse_message
-
-
-def _patched_parse_message(data: dict[str, Any]) -> Message:
-    """
-    Wrap the SDK's ``parse_message`` to gracefully handle unknown message types.
-
-    The upstream implementation raises ``MessageParseError`` for types it does
-    not recognise (e.g. ``rate_limit_event``). Because ``parse_message`` is
-    called inside the ``process_query`` async generator, the exception kills
-    the generator and the underlying subprocess transport. This wrapper
-    catches the error and returns a ``SystemMessage`` placeholder so the
-    stream stays alive.
-
-    Args:
-        data (dict[str, Any]): Raw message dict from the CLI stream.
-
-    Returns:
-        Message: The parsed message, or a SystemMessage placeholder for
-            unknown types.
-    """
-
-    try:
-        return _original_parse_message(data)
-    except MessageParseError:
-        is_dict: bool = isinstance(data, dict)
-        message_type: str = data.get("type", "unknown") if is_dict else "unknown"
-
-        logger.debug("SDK ignoring unknown message type: %s", message_type)
-
-        return SystemMessage(
-            subtype=message_type,
-            data=data if is_dict else {},
-        )
-
-
-_sdk_parser.parse_message = _patched_parse_message
-_sdk_client.parse_message = _patched_parse_message  # type: ignore[attr-defined]
-
-
-@dataclass(frozen=True)
-class AgentResult:
-    """
-    Result from an agent invocation.
-
-    Attributes:
-        output (str): The text output from the agent.
-        is_error (bool): Whether the invocation ended in error.
-        num_turns (int): Number of agentic turns taken.
-        duration_ms (int): Wall-clock duration in milliseconds.
-        session_id (str): The agent session ID for resumption.
-    """
-
-    output: str
-    is_error: bool
-    num_turns: int
-    duration_ms: int
-    session_id: str
+DEFAULT_API_MODEL: str = "claude-sonnet-4-20250514"
 
 
 async def run_agent(
     prompt: str,
     cwd: Path,
-    model: str = "",
-    max_turns: int = 0,
-    cli_path: str = "",
-    session_id: str = "",
     system_prompt: str = "",
-    permission_mode: Literal[
-        "default",
-        "acceptEdits",
-        "plan",
-        "bypassPermissions",
-    ] = "bypassPermissions",
     allowed_tools: list[str] | None = None,
+    agent_config: AgentConfig | None = None,
+    session_id: str = "",
 ) -> AgentResult:
     """
-    Run the agent via the SDK and return the result.
+    Run the agent and return the result.
+
+    Delegates to either the CLI-based runner (default, for webhook server)
+    or the API-based runner (for CI/CD environments) based on ``agent_config``.
 
     Args:
         prompt (str): The user's prompt to pass to the agent.
         cwd (Path): Working directory for the agent.
-        model (str): Optional model override (empty string to skip).
-        max_turns (int): Maximum agentic turns (0 for unlimited).
-        cli_path (str): Path to the agent CLI binary (empty to use bundled).
-        session_id (str): Optional session ID to resume a previous conversation.
         system_prompt (str): Optional system prompt for the agent.
-        permission_mode (str): Permission mode for the agent.
         allowed_tools (list[str] | None): Restrict which tools the agent may use.
+        agent_config (AgentConfig | None): Agent configuration; defaults apply
+            when None.
+        session_id (str): Optional session ID to resume (CLI mode only).
 
     Returns:
         AgentResult: The parsed result from the agent.
     """
 
-    options: ClaudeAgentOptions = ClaudeAgentOptions(
-        permission_mode=permission_mode,
-        allowed_tools=allowed_tools or [],
+    resolved: AgentConfig = agent_config if agent_config is not None else AgentConfig()
+
+    if resolved.use_api:
+        return await run_agent_api(
+            prompt=prompt,
+            cwd=cwd,
+            model=resolved.model or DEFAULT_API_MODEL,
+            max_turns=resolved.max_turns,
+            system_prompt=system_prompt,
+            allowed_tools=allowed_tools,
+        )
+
+    return await run_agent_cli(
+        prompt=prompt,
         cwd=cwd,
-        model=model or None,
-        max_turns=max_turns if max_turns > 0 else None,
-        cli_path=cli_path or None,
-        resume=session_id or None,
-        system_prompt=system_prompt or None,
+        model=resolved.model,
+        max_turns=resolved.max_turns,
+        cli_path=resolved.cli_path,
+        session_id=session_id,
+        system_prompt=system_prompt,
+        permission_mode="bypassPermissions",
+        allowed_tools=allowed_tools,
     )
-
-    result: AgentResult | None = None
-    captured_session_id: str = ""
-
-    async for message in query(prompt=prompt, options=options):
-        _log_message(message)
-
-        if (
-            isinstance(message, SystemMessage)
-            and message.subtype == SESSION_ID_INIT_SUBTYPE
-        ):
-            captured_session_id = message.data.get("session_id", "")
-
-        if isinstance(message, ResultMessage):
-            output: str = message.result or "Done, no output."
-            captured_session_id = message.session_id or captured_session_id
-
-            result = AgentResult(
-                output=output,
-                is_error=message.is_error,
-                num_turns=message.num_turns,
-                duration_ms=message.duration_ms,
-                session_id=captured_session_id,
-            )
-
-    if result is not None:
-        return result
-
-    return AgentResult(
-        output="No result received from the agent.",
-        is_error=True,
-        num_turns=0,
-        duration_ms=0,
-        session_id=captured_session_id,
-    )
-
-
-def _log_message(message: Message) -> None:
-    """
-    Log an agent message at DEBUG level for auditing.
-
-    Logs assistant text, thinking, tool calls, and tool results so the full
-    agent conversation can be inspected when debug logging is enabled.
-
-    Args:
-        message (Message): The SDK message to log.
-    """
-
-    if not logger.isEnabledFor(logging.DEBUG):
-        return
-
-    if isinstance(message, AssistantMessage):
-        for block in message.content:
-            if isinstance(block, TextBlock):
-                logger.debug("[assistant] %s", block.text)
-            elif isinstance(block, ThinkingBlock):
-                logger.debug("[thinking] %s", block.thinking)
-            elif isinstance(block, ToolUseBlock):
-                logger.debug("[tool_use] %s(%s)", block.name, block.input)
-
-    elif isinstance(message, UserMessage) and isinstance(message.content, list):
-        for block in message.content:
-            if isinstance(block, ToolResultBlock):
-                content: str = str(block.content) if block.content else ""
-
-                if len(content) > MAX_TOOL_RESULT_LOG_LENGTH:
-                    content = content[:MAX_TOOL_RESULT_LOG_LENGTH] + "...(truncated)"
-
-                logger.debug(
-                    "[tool_result] %s error=%s %s",
-                    block.tool_use_id,
-                    block.is_error,
-                    content,
-                )
