@@ -65,6 +65,14 @@ jobs:
           file: ci/Dockerfile
           push: false
 
+  ci:
+    needs: [check, test, build]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: exit 1
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+
   promote:
     needs: [check, test, build]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
