@@ -27,6 +27,7 @@ from nominal_code.agent.result import AgentResult
 
 SESSION_ID_INIT_SUBTYPE: str = "init"
 MAX_TOOL_RESULT_LOG_LENGTH: int = 500
+DEFAULT_PERMISSION_MODE: Literal["bypassPermissions"] = "bypassPermissions"
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -82,7 +83,7 @@ async def run_agent_cli(
         "acceptEdits",
         "plan",
         "bypassPermissions",
-    ] = "bypassPermissions",
+    ] = DEFAULT_PERMISSION_MODE,
     allowed_tools: list[str] | None = None,
 ) -> AgentResult:
     """

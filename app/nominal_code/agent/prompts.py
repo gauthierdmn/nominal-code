@@ -24,8 +24,9 @@ def resolve_guidelines(
     """
     Compose effective guidelines from general and language-specific sources.
 
-    Public entry point for callers that have a repo path but no workspace
-    (e.g. CI mode where the repo is pre-checked-out).
+    Resolution order for general guidelines: ``.nominal/guidelines.md`` in the
+    repository overrides the default. For each detected language: ``.nominal/{lang}.md``
+    overrides the built-in ``prompts/languages/{lang}.md``.
 
     Args:
         repo_path (Path): Absolute path to the repository root.
@@ -38,12 +39,21 @@ def resolve_guidelines(
         str: The composed guidelines string.
     """
 
-    return _resolve_guidelines(
-        repo_path=repo_path,
-        default_guidelines=default_guidelines,
-        language_guidelines=language_guidelines,
-        file_paths=file_paths,
-    )
+    guidelines: list[str] = []
+    repo_guidelines: str = _load_repo_guidelines(repo_path) or default_guidelines
+
+    if repo_guidelines:
+        guidelines.append(repo_guidelines)
+
+    for language in _detect_languages(file_paths):
+        repo_lang_guidelines: str = _load_repo_language_guidelines(
+            repo_path, language
+        ) or language_guidelines.get(language, "")
+
+        if repo_lang_guidelines:
+            guidelines.append(repo_lang_guidelines)
+
+    return "\n\n".join(guidelines)
 
 
 def resolve_system_prompt(
@@ -65,7 +75,7 @@ def resolve_system_prompt(
         str: The combined system prompt with guidelines.
     """
 
-    guidelines: str = _resolve_guidelines(
+    guidelines: str = resolve_guidelines(
         repo_path=workspace.repo_path,
         default_guidelines=config.coding_guidelines,
         language_guidelines=config.language_guidelines,
@@ -140,44 +150,3 @@ def _load_repo_language_guidelines(repo_path: Path, language: str) -> str:
         return ""
 
     return full_path.read_text(encoding="utf-8").strip()
-
-
-def _resolve_guidelines(
-    repo_path: Path,
-    default_guidelines: str,
-    language_guidelines: dict[str, str],
-    file_paths: list[Path],
-) -> str:
-    """
-    Compose effective guidelines from general and language-specific sources.
-
-    Resolution order for general guidelines: ``.nominal/guidelines.md`` in the
-    repository overrides the default. For each detected language: ``.nominal/{lang}.md``
-    overrides the built-in ``prompts/languages/{lang}.md``.
-
-    Args:
-        repo_path (Path): Absolute path to the repository root.
-        default_guidelines (str): Fallback general guidelines from config.
-        language_guidelines (dict[str, str]): Built-in language guidelines
-            keyed by language name.
-        file_paths (list[Path]): File paths used to detect relevant languages.
-
-    Returns:
-        str: The composed guidelines string.
-    """
-
-    guidelines: list[str] = []
-    repo_guidelines: str = _load_repo_guidelines(repo_path) or default_guidelines
-
-    if repo_guidelines:
-        guidelines.append(repo_guidelines)
-
-    for language in _detect_languages(file_paths):
-        repo_lang_guidelines: str = _load_repo_language_guidelines(
-            repo_path, language
-        ) or language_guidelines.get(language, "")
-
-        if repo_lang_guidelines:
-            guidelines.append(repo_lang_guidelines)
-
-    return "\n\n".join(guidelines)

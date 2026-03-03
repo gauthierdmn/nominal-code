@@ -109,35 +109,38 @@ async def review(
 
         changed_files_result, all_comments_result = await asyncio.gather(
             platform.fetch_pr_diff(
-                event.repo_full_name,
-                event.pr_number,
+                repo_full_name=event.repo_full_name,
+                pr_number=event.pr_number,
             ),
             platform.fetch_pr_comments(
-                event.repo_full_name,
-                event.pr_number,
+                repo_full_name=event.repo_full_name,
+                pr_number=event.pr_number,
             ),
         )
     else:
         reviewer_clone_url: str = platform.build_reviewer_clone_url(
-            event.repo_full_name,
+            repo_full_name=event.repo_full_name,
         )
         effective_event: PullRequestEvent = replace(
             event,
             clone_url=reviewer_clone_url,
         )
 
-        workspace: GitWorkspace = create_workspace(effective_event, config)
+        workspace: GitWorkspace = create_workspace(
+            event=effective_event,
+            config=config,
+        )
 
         results: tuple[
             list[ChangedFile], list[ExistingComment], None
         ] = await asyncio.gather(
             platform.fetch_pr_diff(
-                event.repo_full_name,
-                event.pr_number,
+                repo_full_name=event.repo_full_name,
+                pr_number=event.pr_number,
             ),
             platform.fetch_pr_comments(
-                event.repo_full_name,
-                event.pr_number,
+                repo_full_name=event.repo_full_name,
+                pr_number=event.pr_number,
             ),
             workspace.ensure_ready(),
         )
@@ -152,7 +155,9 @@ async def review(
     all_comments: list[ExistingComment] = all_comments_result
 
     existing_comments: list[ExistingComment] = [
-        existing for existing in all_comments if existing.author != bot_username
+        existing
+        for existing in all_comments
+        if not bot_username or existing.author != bot_username
     ][-MAX_EXISTING_COMMENTS:]
 
     full_prompt: str = _build_reviewer_prompt(

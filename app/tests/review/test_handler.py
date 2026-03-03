@@ -144,7 +144,10 @@ class TestReviewerProcessComment:
                     session_store=session_store,
                 )
 
-            platform.fetch_pr_diff.assert_called_once_with("owner/repo", 42)
+            platform.fetch_pr_diff.assert_called_once_with(
+                repo_full_name="owner/repo",
+                pr_number=42,
+            )
 
     @pytest.mark.asyncio
     async def test_reviewer_uses_reviewer_system_prompt(self):
@@ -229,7 +232,7 @@ class TestReviewerProcessComment:
                 mock_ws_class.return_value = mock_ws
 
                 with patch(
-                    "nominal_code.agent.prompts._resolve_guidelines",
+                    "nominal_code.agent.prompts.resolve_guidelines",
                     return_value="Repo guidelines override",
                 ) as mock_resolve:
                     await review_and_post(
@@ -827,11 +830,11 @@ class TestBotCommentFiltering:
 
         call_order = []
 
-        async def track_fetch_diff(*args):
+        async def track_fetch_diff(repo_full_name, pr_number):
             call_order.append("fetch_pr_diff")
             return []
 
-        async def track_fetch_comments(*args):
+        async def track_fetch_comments(repo_full_name, pr_number):
             call_order.append("fetch_pr_comments")
             return []
 
@@ -878,8 +881,14 @@ class TestBotCommentFiltering:
 
                     assert len(gather_args) == 3
 
-            platform.fetch_pr_diff.assert_called_once_with("owner/repo", 42)
-            platform.fetch_pr_comments.assert_called_once_with("owner/repo", 42)
+            platform.fetch_pr_diff.assert_called_once_with(
+                repo_full_name="owner/repo",
+                pr_number=42,
+            )
+            platform.fetch_pr_comments.assert_called_once_with(
+                repo_full_name="owner/repo",
+                pr_number=42,
+            )
             mock_ws.ensure_ready.assert_called_once()
 
             expected = {"fetch_pr_diff", "fetch_pr_comments", "ensure_ready"}

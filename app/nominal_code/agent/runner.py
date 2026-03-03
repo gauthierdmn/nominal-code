@@ -40,14 +40,16 @@ async def run_agent(
         AgentResult: The parsed result from the agent.
     """
 
-    resolved: AgentConfig = agent_config if agent_config is not None else AgentConfig()
+    resolved_config: AgentConfig = (
+        agent_config if agent_config is not None else AgentConfig()
+    )
 
-    if resolved.use_api:
+    if resolved_config.use_api:
         return await run_agent_api(
             prompt=prompt,
             cwd=cwd,
-            model=resolved.model or DEFAULT_API_MODEL,
-            max_turns=resolved.max_turns,
+            model=resolved_config.model or DEFAULT_API_MODEL,
+            max_turns=resolved_config.max_turns,
             system_prompt=system_prompt,
             allowed_tools=allowed_tools,
         )
@@ -55,11 +57,10 @@ async def run_agent(
     return await run_agent_cli(
         prompt=prompt,
         cwd=cwd,
-        model=resolved.model,
-        max_turns=resolved.max_turns,
-        cli_path=resolved.cli_path,
+        model=resolved_config.model,
+        max_turns=resolved_config.max_turns,
+        cli_path=resolved_config.cli_path,
         session_id=session_id,
         system_prompt=system_prompt,
-        permission_mode="bypassPermissions",
         allowed_tools=allowed_tools,
     )

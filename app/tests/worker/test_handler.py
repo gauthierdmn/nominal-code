@@ -132,7 +132,7 @@ class TestWorkerProcessComment:
                 mock_ws_class.return_value = mock_ws
 
                 with patch(
-                    "nominal_code.agent.prompts._resolve_guidelines",
+                    "nominal_code.agent.prompts.resolve_guidelines",
                     return_value="Repo guidelines override",
                 ) as mock_resolve:
                     await review_and_fix(
