@@ -10,6 +10,7 @@ import httpx
 from aiohttp import web
 from environs import Env
 
+from nominal_code.http import request_with_retry
 from nominal_code.models import ChangedFile, EventType, FileStatus, ReviewFinding
 from nominal_code.platforms.base import (
     CommentEvent,
@@ -97,6 +98,35 @@ class GitHubPlatform:
             "Authorization": f"token {self.auth.get_token()}",
             "Accept": "application/vnd.github.v3+json",
         }
+
+    async def _request(
+        self,
+        method: str,
+        url: str,
+        **kwargs: Any,
+    ) -> httpx.Response:
+        """
+        Send an authenticated HTTP request with transient retry.
+
+        Injects authorization headers and delegates to
+        :func:`~nominal_code.http.request_with_retry`.
+
+        Args:
+            method (str): HTTP method (GET, POST, PUT, PATCH, DELETE).
+            url (str): Request URL or path.
+            **kwargs (Any): Additional arguments forwarded to the request.
+
+        Returns:
+            httpx.Response: The HTTP response.
+        """
+
+        return await request_with_retry(
+            self._client,
+            method,
+            url,
+            headers=self._auth_headers(),
+            **kwargs,
+        )
 
     async def ensure_auth(self) -> None:
         """
@@ -224,10 +254,10 @@ class GitHubPlatform:
             url = f"/repos/{event.repo_full_name}/issues/{event.pr_number}/comments"
 
         try:
-            response: httpx.Response = await self._client.post(
+            response: httpx.Response = await self._request(
+                "POST",
                 url,
                 json={"body": body},
-                headers=self._auth_headers(),
             )
             response.raise_for_status()
         except httpx.HTTPError:
@@ -266,10 +296,10 @@ class GitHubPlatform:
 
         for url in endpoints:
             try:
-                response: httpx.Response = await self._client.post(
+                response: httpx.Response = await self._request(
+                    "POST",
                     url,
                     json={"content": reaction},
-                    headers=self._auth_headers(),
                 )
 
                 if response.status_code < 400:
@@ -302,10 +332,7 @@ class GitHubPlatform:
         url: str = f"/repos/{repo_full_name}/pulls/{pr_number}"
 
         try:
-            response: httpx.Response = await self._client.get(
-                url,
-                headers=self._auth_headers(),
-            )
+            response: httpx.Response = await self._request("GET", url)
             response.raise_for_status()
             data: dict[str, Any] = response.json()
 
@@ -334,10 +361,7 @@ class GitHubPlatform:
         url: str = f"/repos/{repo_full_name}/pulls/{pr_number}"
 
         try:
-            response: httpx.Response = await self._client.get(
-                url,
-                headers=self._auth_headers(),
-            )
+            response: httpx.Response = await self._request("GET", url)
             response.raise_for_status()
             data: dict[str, Any] = response.json()
 
@@ -411,10 +435,7 @@ class GitHubPlatform:
             )
 
             try:
-                response: httpx.Response = await self._client.get(
-                    url,
-                    headers=self._auth_headers(),
-                )
+                response: httpx.Response = await self._request("GET", url)
                 response.raise_for_status()
                 data: list[dict[str, Any]] = response.json()
             except httpx.HTTPError:
@@ -485,14 +506,14 @@ class GitHubPlatform:
         url: str = f"/repos/{repo_full_name}/pulls/{pr_number}/reviews"
 
         try:
-            response: httpx.Response = await self._client.post(
+            response: httpx.Response = await self._request(
+                "POST",
                 url,
                 json={
                     "event": "COMMENT",
                     "body": summary,
                     "comments": review_comments,
                 },
-                headers=self._auth_headers(),
             )
             response.raise_for_status()
         except httpx.HTTPError:
@@ -713,10 +734,7 @@ class GitHubPlatform:
             )
 
             try:
-                response: httpx.Response = await self._client.get(
-                    url,
-                    headers=self._auth_headers(),
-                )
+                response: httpx.Response = await self._request("GET", url)
                 response.raise_for_status()
                 data: list[dict[str, Any]] = response.json()
             except httpx.HTTPError:
@@ -774,10 +792,7 @@ class GitHubPlatform:
             )
 
             try:
-                response: httpx.Response = await self._client.get(
-                    url,
-                    headers=self._auth_headers(),
-                )
+                response: httpx.Response = await self._request("GET", url)
                 response.raise_for_status()
                 data: list[dict[str, Any]] = response.json()
             except httpx.HTTPError:

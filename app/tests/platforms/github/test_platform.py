@@ -419,18 +419,18 @@ class TestPostReply:
         mock_response.raise_for_status = MagicMock()
 
         with patch.object(
-            platform._client,
-            "post",
+            platform,
+            "_request",
             new_callable=AsyncMock,
-        ) as mock_post:
-            mock_post.return_value = mock_response
+        ) as mock_request:
+            mock_request.return_value = mock_response
 
             await platform.post_reply(comment, reply)
 
-            mock_post.assert_called_once_with(
+            mock_request.assert_called_once_with(
+                "POST",
                 "/repos/owner/repo/issues/42/comments",
                 json={"body": "Fixed it!"},
-                headers=EXPECTED_AUTH_HEADERS,
             )
 
     @pytest.mark.asyncio
@@ -452,18 +452,18 @@ class TestPostReply:
         mock_response.raise_for_status = MagicMock()
 
         with patch.object(
-            platform._client,
-            "post",
+            platform,
+            "_request",
             new_callable=AsyncMock,
-        ) as mock_post:
-            mock_post.return_value = mock_response
+        ) as mock_request:
+            mock_request.return_value = mock_response
 
             await platform.post_reply(comment, reply)
 
-            mock_post.assert_called_once_with(
+            mock_request.assert_called_once_with(
+                "POST",
                 "/repos/owner/repo/pulls/42/comments/200/replies",
                 json={"body": "Refactored!"},
-                headers=EXPECTED_AUTH_HEADERS,
             )
 
     @pytest.mark.asyncio
@@ -483,18 +483,18 @@ class TestPostReply:
         mock_response.raise_for_status = MagicMock()
 
         with patch.object(
-            platform._client,
-            "post",
+            platform,
+            "_request",
             new_callable=AsyncMock,
-        ) as mock_post:
-            mock_post.return_value = mock_response
+        ) as mock_request:
+            mock_request.return_value = mock_response
 
             await platform.post_reply(comment, reply)
 
-            mock_post.assert_called_once_with(
+            mock_request.assert_called_once_with(
+                "POST",
                 "/repos/owner/repo/issues/42/comments",
                 json={"body": "Done!"},
-                headers=EXPECTED_AUTH_HEADERS,
             )
 
     @pytest.mark.asyncio
@@ -514,15 +514,15 @@ class TestPostReply:
         mock_response.raise_for_status = MagicMock()
 
         with patch.object(
-            platform._client,
-            "post",
+            platform,
+            "_request",
             new_callable=AsyncMock,
-        ) as mock_post:
-            mock_post.return_value = mock_response
+        ) as mock_request:
+            mock_request.return_value = mock_response
 
             await platform.post_reply(comment, reply)
 
-            call_args = mock_post.call_args
+            call_args = mock_request.call_args
             posted_body = call_args[1]["json"]["body"]
 
             assert "abc123" in posted_body
@@ -545,15 +545,15 @@ class TestPostReaction:
         mock_response.status_code = 201
 
         with patch.object(
-            platform._client,
-            "post",
+            platform,
+            "_request",
             new_callable=AsyncMock,
-        ) as mock_post:
-            mock_post.return_value = mock_response
+        ) as mock_request:
+            mock_request.return_value = mock_response
 
             await platform.post_reaction(comment, "eyes")
 
-            mock_post.assert_called_once()
+            mock_request.assert_called_once()
 
 
 class TestIsPrOpen:
@@ -564,17 +564,17 @@ class TestIsPrOpen:
         mock_response.json.return_value = {"state": "open"}
 
         with patch.object(
-            platform._client,
-            "get",
+            platform,
+            "_request",
             new_callable=AsyncMock,
-        ) as mock_get:
-            mock_get.return_value = mock_response
+        ) as mock_request:
+            mock_request.return_value = mock_response
             result = await platform.is_pr_open("owner/repo", 42)
 
         assert result is True
-        mock_get.assert_called_once_with(
+        mock_request.assert_called_once_with(
+            "GET",
             "/repos/owner/repo/pulls/42",
-            headers=EXPECTED_AUTH_HEADERS,
         )
 
     @pytest.mark.asyncio
@@ -584,11 +584,11 @@ class TestIsPrOpen:
         mock_response.json.return_value = {"state": "closed"}
 
         with patch.object(
-            platform._client,
-            "get",
+            platform,
+            "_request",
             new_callable=AsyncMock,
-        ) as mock_get:
-            mock_get.return_value = mock_response
+        ) as mock_request:
+            mock_request.return_value = mock_response
             result = await platform.is_pr_open("owner/repo", 42)
 
         assert result is False
@@ -598,11 +598,11 @@ class TestIsPrOpen:
         import httpx
 
         with patch.object(
-            platform._client,
-            "get",
+            platform,
+            "_request",
             new_callable=AsyncMock,
-        ) as mock_get:
-            mock_get.side_effect = httpx.HTTPError("connection failed")
+        ) as mock_request:
+            mock_request.side_effect = httpx.HTTPError("connection failed")
             result = await platform.is_pr_open("owner/repo", 42)
 
         assert result is True
@@ -627,11 +627,11 @@ class TestFetchPrDiff:
         ]
 
         with patch.object(
-            platform._client,
-            "get",
+            platform,
+            "_request",
             new_callable=AsyncMock,
-        ) as mock_get:
-            mock_get.return_value = mock_response
+        ) as mock_request:
+            mock_request.return_value = mock_response
             files = await platform.fetch_pr_diff("owner/repo", 42)
 
         assert len(files) == 2
@@ -658,26 +658,26 @@ class TestFetchPrDiff:
         mock_response_2.json.return_value = page2_data
 
         with patch.object(
-            platform._client,
-            "get",
+            platform,
+            "_request",
             new_callable=AsyncMock,
-        ) as mock_get:
-            mock_get.side_effect = [mock_response_1, mock_response_2]
+        ) as mock_request:
+            mock_request.side_effect = [mock_response_1, mock_response_2]
             files = await platform.fetch_pr_diff("owner/repo", 42)
 
         assert len(files) == 101
-        assert mock_get.call_count == 2
+        assert mock_request.call_count == 2
 
     @pytest.mark.asyncio
     async def test_fetch_pr_diff_http_error_returns_empty(self, platform):
         import httpx
 
         with patch.object(
-            platform._client,
-            "get",
+            platform,
+            "_request",
             new_callable=AsyncMock,
-        ) as mock_get:
-            mock_get.side_effect = httpx.HTTPError("connection failed")
+        ) as mock_request:
+            mock_request.side_effect = httpx.HTTPError("connection failed")
             files = await platform.fetch_pr_diff("owner/repo", 42)
 
         assert files == []
@@ -694,11 +694,11 @@ class TestSubmitReview:
         mock_response.raise_for_status = MagicMock()
 
         with patch.object(
-            platform._client,
-            "post",
+            platform,
+            "_request",
             new_callable=AsyncMock,
-        ) as mock_post:
-            mock_post.return_value = mock_response
+        ) as mock_request:
+            mock_request.return_value = mock_response
 
             await platform.submit_review(
                 "owner/repo",
@@ -708,8 +708,8 @@ class TestSubmitReview:
                 comment,
             )
 
-            mock_post.assert_called_once()
-            call_kwargs = mock_post.call_args[1]
+            mock_request.assert_called_once()
+            call_kwargs = mock_request.call_args[1]
 
             assert call_kwargs["json"]["event"] == "COMMENT"
             assert call_kwargs["json"]["body"] == "Found issues"
@@ -725,11 +725,11 @@ class TestSubmitReview:
         ]
 
         with patch.object(
-            platform._client,
-            "post",
+            platform,
+            "_request",
             new_callable=AsyncMock,
-        ) as mock_post:
-            mock_post.side_effect = [
+        ) as mock_request:
+            mock_request.side_effect = [
                 httpx.HTTPError("review API failed"),
                 MagicMock(raise_for_status=MagicMock()),
             ]
@@ -742,7 +742,7 @@ class TestSubmitReview:
                 comment,
             )
 
-            assert mock_post.call_count == 2
+            assert mock_request.call_count == 2
 
 
 class TestFetchPrComments:
@@ -774,11 +774,11 @@ class TestFetchPrComments:
         mock_review_resp.json.return_value = review_comments
 
         with patch.object(
-            platform._client,
-            "get",
+            platform,
+            "_request",
             new_callable=AsyncMock,
-        ) as mock_get:
-            mock_get.side_effect = [mock_issue_resp, mock_review_resp]
+        ) as mock_request:
+            mock_request.side_effect = [mock_issue_resp, mock_review_resp]
             result = await platform.fetch_pr_comments("owner/repo", 42)
 
         assert len(result) == 2
@@ -817,11 +817,11 @@ class TestFetchPrComments:
         mock_review_resp.json.return_value = review_comments
 
         with patch.object(
-            platform._client,
-            "get",
+            platform,
+            "_request",
             new_callable=AsyncMock,
-        ) as mock_get:
-            mock_get.side_effect = [mock_issue_resp, mock_review_resp]
+        ) as mock_request:
+            mock_request.side_effect = [mock_issue_resp, mock_review_resp]
             result = await platform.fetch_pr_comments("owner/repo", 42)
 
         assert result[0].created_at < result[1].created_at
@@ -857,11 +857,11 @@ class TestFetchPrComments:
         mock_review_resp.json.return_value = []
 
         with patch.object(
-            platform._client,
-            "get",
+            platform,
+            "_request",
             new_callable=AsyncMock,
-        ) as mock_get:
-            mock_get.side_effect = [mock_resp1, mock_resp2, mock_review_resp]
+        ) as mock_request:
+            mock_request.side_effect = [mock_resp1, mock_resp2, mock_review_resp]
             result = await platform.fetch_pr_comments("owner/repo", 42)
 
         assert len(result) == 101
@@ -883,11 +883,11 @@ class TestFetchPrComments:
         ]
 
         with patch.object(
-            platform._client,
-            "get",
+            platform,
+            "_request",
             new_callable=AsyncMock,
-        ) as mock_get:
-            mock_get.side_effect = [
+        ) as mock_request:
+            mock_request.side_effect = [
                 httpx.HTTPError("issue comments failed"),
                 mock_review_resp,
             ]
@@ -915,11 +915,11 @@ class TestFetchPrComments:
         ]
 
         with patch.object(
-            platform._client,
-            "get",
+            platform,
+            "_request",
             new_callable=AsyncMock,
-        ) as mock_get:
-            mock_get.side_effect = [mock_issue_resp, mock_review_resp]
+        ) as mock_request:
+            mock_request.side_effect = [mock_issue_resp, mock_review_resp]
             result = await platform.fetch_pr_comments("owner/repo", 42)
 
         assert result[0].line == 0
@@ -1057,8 +1057,8 @@ class TestFetchIssueComments:
         ]
 
         with patch.object(
-            platform._client,
-            "get",
+            platform,
+            "_request",
             new=AsyncMock(return_value=mock_response),
         ):
             result = await platform._fetch_issue_comments("owner/repo", 42)
@@ -1074,8 +1074,8 @@ class TestFetchIssueComments:
         mock_response.json.return_value = []
 
         with patch.object(
-            platform._client,
-            "get",
+            platform,
+            "_request",
             new=AsyncMock(return_value=mock_response),
         ):
             result = await platform._fetch_issue_comments("owner/repo", 42)
@@ -1087,8 +1087,8 @@ class TestFetchIssueComments:
         import httpx
 
         with patch.object(
-            platform._client,
-            "get",
+            platform,
+            "_request",
             new=AsyncMock(side_effect=httpx.HTTPError("connection error")),
         ):
             result = await platform._fetch_issue_comments("owner/repo", 42)
@@ -1112,8 +1112,8 @@ class TestFetchReviewComments:
         ]
 
         with patch.object(
-            platform._client,
-            "get",
+            platform,
+            "_request",
             new=AsyncMock(return_value=mock_response),
         ):
             result = await platform._fetch_review_comments("owner/repo", 42)
@@ -1128,8 +1128,8 @@ class TestFetchReviewComments:
         import httpx
 
         with patch.object(
-            platform._client,
-            "get",
+            platform,
+            "_request",
             new=AsyncMock(side_effect=httpx.HTTPError("timeout")),
         ):
             result = await platform._fetch_review_comments("owner/repo", 42)
@@ -1143,8 +1143,8 @@ class TestFetchReviewComments:
         mock_response.json.return_value = []
 
         with patch.object(
-            platform._client,
-            "get",
+            platform,
+            "_request",
             new=AsyncMock(return_value=mock_response),
         ):
             result = await platform._fetch_review_comments("owner/repo", 42)
