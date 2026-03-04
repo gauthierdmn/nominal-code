@@ -10,6 +10,7 @@ import httpx
 from aiohttp import web
 from environs import Env
 
+from nominal_code.http import request_with_retry
 from nominal_code.models import (
     ChangedFile,
     DiffSide,
@@ -76,6 +77,29 @@ class GitLabPlatform:
             headers={"PRIVATE-TOKEN": token},
             timeout=30.0,
         )
+
+    async def _request(
+        self,
+        method: str,
+        url: str,
+        **kwargs: Any,
+    ) -> httpx.Response:
+        """
+        Send an HTTP request with transient retry.
+
+        Auth headers are set on the client, so no per-request injection
+        is needed.
+
+        Args:
+            method (str): HTTP method (GET, POST, PUT, PATCH, DELETE).
+            url (str): Request URL or path.
+            **kwargs (Any): Additional arguments forwarded to the request.
+
+        Returns:
+            httpx.Response: The HTTP response.
+        """
+
+        return await request_with_retry(self._client, method, url, **kwargs)
 
     @property
     def name(self) -> str:
@@ -189,7 +213,8 @@ class GitLabPlatform:
             url = f"/projects/{project_path}/merge_requests/{event.pr_number}/notes"
 
         try:
-            response: httpx.Response = await self._client.post(
+            response: httpx.Response = await self._request(
+                "POST",
                 url,
                 json={"body": body},
             )
@@ -222,7 +247,8 @@ class GitLabPlatform:
         )
 
         try:
-            response: httpx.Response = await self._client.post(
+            response: httpx.Response = await self._request(
+                "POST",
                 url,
                 json={"name": reaction},
             )
@@ -253,7 +279,7 @@ class GitLabPlatform:
         url: str = f"/projects/{project_path}/merge_requests/{pr_number}"
 
         try:
-            response: httpx.Response = await self._client.get(url)
+            response: httpx.Response = await self._request("GET", url)
             response.raise_for_status()
             data: dict[str, Any] = response.json()
 
@@ -314,7 +340,7 @@ class GitLabPlatform:
             )
 
             try:
-                response: httpx.Response = await self._client.get(url)
+                response: httpx.Response = await self._request("GET", url)
                 response.raise_for_status()
                 data: list[dict[str, Any]] = response.json()
             except httpx.HTTPError:
@@ -392,7 +418,7 @@ class GitLabPlatform:
         url: str = f"/projects/{project_path}/merge_requests/{pr_number}/diffs"
 
         try:
-            response: httpx.Response = await self._client.get(url)
+            response: httpx.Response = await self._request("GET", url)
             response.raise_for_status()
             data: list[dict[str, Any]] = response.json()
         except httpx.HTTPError:
@@ -469,7 +495,8 @@ class GitLabPlatform:
         )
 
         try:
-            versions_response: httpx.Response = await self._client.get(
+            versions_response: httpx.Response = await self._request(
+                "GET",
                 versions_url,
             )
             versions_response.raise_for_status()
@@ -517,7 +544,8 @@ class GitLabPlatform:
                 position_payload["new_line"] = finding.line
 
             try:
-                discussion_response: httpx.Response = await self._client.post(
+                discussion_response: httpx.Response = await self._request(
+                    "POST",
                     discussions_url,
                     json={
                         "body": finding.body,

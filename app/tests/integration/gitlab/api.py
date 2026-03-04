@@ -1,8 +1,12 @@
 import asyncio
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from urllib.parse import quote
 
 import httpx
+
+from nominal_code.http import request_with_retry
 
 GITLAB_API_BASE = "https://gitlab.com/api/v4"
 TIMEOUT = 30.0
@@ -13,6 +17,26 @@ CREATE_MR_MAX_RETRIES = 3
 PIPELINE_POLL_INTERVAL = 10.0
 
 logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def _gitlab_client(token: str) -> AsyncIterator[httpx.AsyncClient]:
+    """
+    Yield an authenticated GitLab API client.
+
+    Args:
+        token (str): GitLab API token.
+
+    Yields:
+        httpx.AsyncClient: Configured HTTP client.
+    """
+
+    async with httpx.AsyncClient(
+        base_url=GITLAB_API_BASE,
+        timeout=TIMEOUT,
+        headers=_headers(token),
+    ) as client:
+        yield client
 
 
 def _headers(token: str) -> dict[str, str]:
@@ -58,19 +82,17 @@ async def create_mr(
 
     project = _encode_project(repo)
 
-    async with httpx.AsyncClient(
-        base_url=GITLAB_API_BASE,
-        timeout=TIMEOUT,
-    ) as client:
+    async with _gitlab_client(token) as client:
         for attempt in range(1, CREATE_MR_MAX_RETRIES + 1):
-            response = await client.post(
+            response = await request_with_retry(
+                client,
+                "POST",
                 f"/projects/{project}/merge_requests",
                 json={
                     "title": title,
                     "source_branch": head,
                     "target_branch": base,
                 },
-                headers=_headers(token),
             )
 
             if response.status_code != 409:
@@ -112,23 +134,21 @@ async def wait_for_mr_diff(token: str, repo: str, mr_iid: int) -> None:
 
     elapsed = 0.0
 
-    while elapsed < DIFF_POLL_TIMEOUT:
-        async with httpx.AsyncClient(
-            base_url=GITLAB_API_BASE,
-            timeout=TIMEOUT,
-        ) as client:
-            response = await client.get(
+    async with _gitlab_client(token) as client:
+        while elapsed < DIFF_POLL_TIMEOUT:
+            response = await request_with_retry(
+                client,
+                "GET",
                 f"/projects/{_encode_project(repo)}/merge_requests/{mr_iid}/diffs",
-                headers=_headers(token),
             )
             response.raise_for_status()
             data: list[dict] = response.json()
 
-        if data:
-            return
+            if data:
+                return
 
-        await asyncio.sleep(DIFF_POLL_INTERVAL)
-        elapsed += DIFF_POLL_INTERVAL
+            await asyncio.sleep(DIFF_POLL_INTERVAL)
+            elapsed += DIFF_POLL_INTERVAL
 
     raise TimeoutError(
         f"MR diff not ready after {DIFF_POLL_TIMEOUT}s for {repo}!{mr_iid}"
@@ -145,14 +165,12 @@ async def close_mr(token: str, repo: str, mr_iid: int) -> None:
         mr_iid (int): Merge request IID.
     """
 
-    async with httpx.AsyncClient(
-        base_url=GITLAB_API_BASE,
-        timeout=TIMEOUT,
-    ) as client:
-        response = await client.put(
+    async with _gitlab_client(token) as client:
+        response = await request_with_retry(
+            client,
+            "PUT",
             f"/projects/{_encode_project(repo)}/merge_requests/{mr_iid}",
             json={"state_event": "close"},
-            headers=_headers(token),
         )
 
         if response.status_code == 422:
@@ -178,13 +196,11 @@ async def fetch_mr_notes(
         list[dict]: List of note objects.
     """
 
-    async with httpx.AsyncClient(
-        base_url=GITLAB_API_BASE,
-        timeout=TIMEOUT,
-    ) as client:
-        response = await client.get(
+    async with _gitlab_client(token) as client:
+        response = await request_with_retry(
+            client,
+            "GET",
             f"/projects/{_encode_project(repo)}/merge_requests/{mr_iid}/notes",
-            headers=_headers(token),
         )
         response.raise_for_status()
 
@@ -208,13 +224,11 @@ async def fetch_mr_discussions(
         list[dict]: List of discussion objects.
     """
 
-    async with httpx.AsyncClient(
-        base_url=GITLAB_API_BASE,
-        timeout=TIMEOUT,
-    ) as client:
-        response = await client.get(
+    async with _gitlab_client(token) as client:
+        response = await request_with_retry(
+            client,
+            "GET",
             f"/projects/{_encode_project(repo)}/merge_requests/{mr_iid}/discussions",
-            headers=_headers(token),
         )
         response.raise_for_status()
 
@@ -237,14 +251,12 @@ async def create_branch(
         ref (str): Source branch or SHA to branch from.
     """
 
-    async with httpx.AsyncClient(
-        base_url=GITLAB_API_BASE,
-        timeout=TIMEOUT,
-    ) as client:
-        response = await client.post(
+    async with _gitlab_client(token) as client:
+        response = await request_with_retry(
+            client,
+            "POST",
             f"/projects/{_encode_project(repo)}/repository/branches",
             json={"branch": branch, "ref": ref},
-            headers=_headers(token),
         )
         response.raise_for_status()
 
@@ -259,14 +271,12 @@ async def delete_branch(token: str, repo: str, branch: str) -> None:
         branch (str): Branch name to delete.
     """
 
-    async with httpx.AsyncClient(
-        base_url=GITLAB_API_BASE,
-        timeout=TIMEOUT,
-    ) as client:
+    async with _gitlab_client(token) as client:
         encoded_branch = quote(branch, safe="")
-        response = await client.delete(
+        response = await request_with_retry(
+            client,
+            "DELETE",
             f"/projects/{_encode_project(repo)}/repository/branches/{encoded_branch}",
-            headers=_headers(token),
         )
         response.raise_for_status()
 
@@ -296,27 +306,26 @@ async def create_or_update_file(
     encoded_project = _encode_project(repo)
     encoded_path = quote(path, safe="")
 
-    async with httpx.AsyncClient(
-        base_url=GITLAB_API_BASE,
-        timeout=TIMEOUT,
-    ) as client:
+    async with _gitlab_client(token) as client:
         payload = {
             "branch": branch,
             "content": content,
             "commit_message": message,
         }
 
-        response = await client.post(
+        response = await request_with_retry(
+            client,
+            "POST",
             f"/projects/{encoded_project}/repository/files/{encoded_path}",
             json=payload,
-            headers=_headers(token),
         )
 
         if response.status_code == 400:
-            response = await client.put(
+            response = await request_with_retry(
+                client,
+                "PUT",
                 f"/projects/{encoded_project}/repository/files/{encoded_path}",
                 json=payload,
-                headers=_headers(token),
             )
 
         response.raise_for_status()
@@ -343,11 +352,10 @@ async def create_webhook(
         int: The webhook ID.
     """
 
-    async with httpx.AsyncClient(
-        base_url=GITLAB_API_BASE,
-        timeout=TIMEOUT,
-    ) as client:
-        response = await client.post(
+    async with _gitlab_client(token) as client:
+        response = await request_with_retry(
+            client,
+            "POST",
             f"/projects/{_encode_project(repo)}/hooks",
             json={
                 "url": url,
@@ -355,7 +363,6 @@ async def create_webhook(
                 "merge_requests_events": merge_requests_events,
                 "push_events": False,
             },
-            headers=_headers(token),
         )
         response.raise_for_status()
         data: dict = response.json()
@@ -373,13 +380,11 @@ async def delete_webhook(token: str, repo: str, hook_id: int) -> None:
         hook_id (int): Webhook ID to delete.
     """
 
-    async with httpx.AsyncClient(
-        base_url=GITLAB_API_BASE,
-        timeout=TIMEOUT,
-    ) as client:
-        response = await client.delete(
+    async with _gitlab_client(token) as client:
+        response = await request_with_retry(
+            client,
+            "DELETE",
             f"/projects/{_encode_project(repo)}/hooks/{hook_id}",
-            headers=_headers(token),
         )
         response.raise_for_status()
 
@@ -408,24 +413,22 @@ async def wait_for_pipeline(
 
     elapsed = 0.0
 
-    while elapsed < timeout:
-        async with httpx.AsyncClient(
-            base_url=GITLAB_API_BASE,
-            timeout=TIMEOUT,
-        ) as client:
-            response = await client.get(
+    async with _gitlab_client(token) as client:
+        while elapsed < timeout:
+            response = await request_with_retry(
+                client,
+                "GET",
                 f"/projects/{_encode_project(repo)}/pipelines",
                 params={"ref": branch, "per_page": 5},
-                headers=_headers(token),
             )
             response.raise_for_status()
             pipelines: list[dict] = response.json()
 
-        for pipeline in pipelines:
-            if pipeline["status"] in ("success", "failed", "canceled"):
-                return pipeline
+            for pipeline in pipelines:
+                if pipeline["status"] in ("success", "failed", "canceled"):
+                    return pipeline
 
-        await asyncio.sleep(PIPELINE_POLL_INTERVAL)
-        elapsed += PIPELINE_POLL_INTERVAL
+            await asyncio.sleep(PIPELINE_POLL_INTERVAL)
+            elapsed += PIPELINE_POLL_INTERVAL
 
     raise TimeoutError(f"No completed pipeline on {repo}@{branch} after {timeout}s")

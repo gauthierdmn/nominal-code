@@ -1,7 +1,11 @@
 import asyncio
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 import httpx
+
+from nominal_code.http import request_with_retry
 
 GITHUB_API_BASE = "https://api.github.com"
 TIMEOUT = 30.0
@@ -10,6 +14,26 @@ CREATE_PR_RETRY_DELAY = 3.0
 CREATE_PR_MAX_RETRIES = 5
 
 logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def _github_client(token: str) -> AsyncIterator[httpx.AsyncClient]:
+    """
+    Yield an authenticated GitHub API client.
+
+    Args:
+        token (str): GitHub API token.
+
+    Yields:
+        httpx.AsyncClient: Configured HTTP client.
+    """
+
+    async with httpx.AsyncClient(
+        base_url=GITHUB_API_BASE,
+        timeout=TIMEOUT,
+        headers=_headers(token),
+    ) as client:
+        yield client
 
 
 def _headers(token: str) -> dict[str, str]:
@@ -42,15 +66,13 @@ async def create_pr(
         int: The PR number.
     """
 
-    async with httpx.AsyncClient(
-        base_url=GITHUB_API_BASE,
-        timeout=TIMEOUT,
-    ) as client:
+    async with _github_client(token) as client:
         for attempt in range(1, CREATE_PR_MAX_RETRIES + 1):
-            response = await client.post(
+            response = await request_with_retry(
+                client,
+                "POST",
                 f"/repos/{repo}/pulls",
                 json={"title": title, "head": head, "base": base},
-                headers=_headers(token),
             )
 
             if response.status_code != 422:
@@ -84,14 +106,12 @@ async def close_pr(token: str, repo: str, pr_number: int) -> None:
         pr_number (int): PR number to close.
     """
 
-    async with httpx.AsyncClient(
-        base_url=GITHUB_API_BASE,
-        timeout=TIMEOUT,
-    ) as client:
-        response = await client.patch(
+    async with _github_client(token) as client:
+        response = await request_with_retry(
+            client,
+            "PATCH",
             f"/repos/{repo}/pulls/{pr_number}",
             json={"state": "closed"},
-            headers=_headers(token),
         )
 
         if response.status_code == 422:
@@ -105,13 +125,11 @@ async def fetch_pr_reviews(
     repo: str,
     pr_number: int,
 ) -> list[dict]:
-    async with httpx.AsyncClient(
-        base_url=GITHUB_API_BASE,
-        timeout=TIMEOUT,
-    ) as client:
-        response = await client.get(
+    async with _github_client(token) as client:
+        response = await request_with_retry(
+            client,
+            "GET",
             f"/repos/{repo}/pulls/{pr_number}/reviews",
-            headers=_headers(token),
         )
         response.raise_for_status()
 
@@ -123,13 +141,11 @@ async def fetch_pr_review_comments(
     repo: str,
     pr_number: int,
 ) -> list[dict]:
-    async with httpx.AsyncClient(
-        base_url=GITHUB_API_BASE,
-        timeout=TIMEOUT,
-    ) as client:
-        response = await client.get(
+    async with _github_client(token) as client:
+        response = await request_with_retry(
+            client,
+            "GET",
             f"/repos/{repo}/pulls/{pr_number}/comments",
-            headers=_headers(token),
         )
         response.raise_for_status()
 
@@ -141,13 +157,11 @@ async def fetch_pr_comments(
     repo: str,
     pr_number: int,
 ) -> list[dict]:
-    async with httpx.AsyncClient(
-        base_url=GITHUB_API_BASE,
-        timeout=TIMEOUT,
-    ) as client:
-        response = await client.get(
+    async with _github_client(token) as client:
+        response = await request_with_retry(
+            client,
+            "GET",
             f"/repos/{repo}/issues/{pr_number}/comments",
-            headers=_headers(token),
         )
         response.raise_for_status()
 
@@ -167,13 +181,11 @@ async def get_branch_sha(token: str, repo: str, branch: str) -> str:
         str: The SHA of the branch HEAD commit.
     """
 
-    async with httpx.AsyncClient(
-        base_url=GITHUB_API_BASE,
-        timeout=TIMEOUT,
-    ) as client:
-        response = await client.get(
+    async with _github_client(token) as client:
+        response = await request_with_retry(
+            client,
+            "GET",
             f"/repos/{repo}/branches/{branch}",
-            headers=_headers(token),
         )
         response.raise_for_status()
         data: dict = response.json()
@@ -201,14 +213,12 @@ async def create_branch(
         from_sha (str): SHA to branch from.
     """
 
-    async with httpx.AsyncClient(
-        base_url=GITHUB_API_BASE,
-        timeout=TIMEOUT,
-    ) as client:
-        response = await client.post(
+    async with _github_client(token) as client:
+        response = await request_with_retry(
+            client,
+            "POST",
             f"/repos/{repo}/git/refs",
             json={"ref": f"refs/heads/{branch}", "sha": from_sha},
-            headers=_headers(token),
         )
         response.raise_for_status()
 
@@ -223,13 +233,11 @@ async def delete_branch(token: str, repo: str, branch: str) -> None:
         branch (str): Branch name to delete.
     """
 
-    async with httpx.AsyncClient(
-        base_url=GITHUB_API_BASE,
-        timeout=TIMEOUT,
-    ) as client:
-        response = await client.delete(
+    async with _github_client(token) as client:
+        response = await request_with_retry(
+            client,
+            "DELETE",
             f"/repos/{repo}/git/refs/heads/{branch}",
-            headers=_headers(token),
         )
         response.raise_for_status()
 
@@ -254,14 +262,12 @@ async def create_or_update_file(
         branch (str): Branch to commit to.
     """
 
-    async with httpx.AsyncClient(
-        base_url=GITHUB_API_BASE,
-        timeout=TIMEOUT,
-    ) as client:
-        get_response = await client.get(
+    async with _github_client(token) as client:
+        get_response = await request_with_retry(
+            client,
+            "GET",
             f"/repos/{repo}/contents/{path}",
             params={"ref": branch},
-            headers=_headers(token),
         )
 
         payload: dict = {
@@ -274,10 +280,11 @@ async def create_or_update_file(
             existing: dict = get_response.json()
             payload["sha"] = existing["sha"]
 
-        response = await client.put(
+        response = await request_with_retry(
+            client,
+            "PUT",
             f"/repos/{repo}/contents/{path}",
             json=payload,
-            headers=_headers(token),
         )
         response.raise_for_status()
 
@@ -303,11 +310,10 @@ async def create_webhook(
         int: The webhook ID.
     """
 
-    async with httpx.AsyncClient(
-        base_url=GITHUB_API_BASE,
-        timeout=TIMEOUT,
-    ) as client:
-        response = await client.post(
+    async with _github_client(token) as client:
+        response = await request_with_retry(
+            client,
+            "POST",
             f"/repos/{repo}/hooks",
             json={
                 "name": "web",
@@ -320,7 +326,6 @@ async def create_webhook(
                     "insecure_ssl": "0",
                 },
             },
-            headers=_headers(token),
         )
         response.raise_for_status()
         data: dict = response.json()
@@ -338,13 +343,11 @@ async def delete_webhook(token: str, repo: str, hook_id: int) -> None:
         hook_id (int): Webhook ID to delete.
     """
 
-    async with httpx.AsyncClient(
-        base_url=GITHUB_API_BASE,
-        timeout=TIMEOUT,
-    ) as client:
-        response = await client.delete(
+    async with _github_client(token) as client:
+        response = await request_with_retry(
+            client,
+            "DELETE",
             f"/repos/{repo}/hooks/{hook_id}",
-            headers=_headers(token),
         )
         response.raise_for_status()
 
@@ -373,26 +376,24 @@ async def wait_for_workflow_run(
 
     elapsed = 0.0
 
-    while elapsed < timeout:
-        async with httpx.AsyncClient(
-            base_url=GITHUB_API_BASE,
-            timeout=TIMEOUT,
-        ) as client:
-            response = await client.get(
+    async with _github_client(token) as client:
+        while elapsed < timeout:
+            response = await request_with_retry(
+                client,
+                "GET",
                 f"/repos/{repo}/actions/runs",
                 params={"branch": branch, "per_page": 5},
-                headers=_headers(token),
             )
             response.raise_for_status()
             data: dict = response.json()
 
-        runs: list[dict] = data.get("workflow_runs", [])
+            runs: list[dict] = data.get("workflow_runs", [])
 
-        for run in runs:
-            if run["status"] == "completed":
-                return run
+            for run in runs:
+                if run["status"] == "completed":
+                    return run
 
-        await asyncio.sleep(WORKFLOW_POLL_INTERVAL)
-        elapsed += WORKFLOW_POLL_INTERVAL
+            await asyncio.sleep(WORKFLOW_POLL_INTERVAL)
+            elapsed += WORKFLOW_POLL_INTERVAL
 
     raise TimeoutError(f"No completed workflow run on {repo}@{branch} after {timeout}s")
