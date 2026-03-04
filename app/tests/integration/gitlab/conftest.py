@@ -25,7 +25,7 @@ CLEAN_COMMIT_MESSAGE = "test: add clean calculator"
 BUGGY_MR_TITLE = "test: buggy-calculator [{pipeline_id}]"
 CLEAN_MR_TITLE = "test: clean-change [{pipeline_id}]"
 PIPELINE_MR_TITLE = "test: pipeline review [{pipeline_id}]"
-WEBHOOK_MR_TITLE = "test: webhook server [{pipeline_id}]"
+WEBHOOK_MR_TITLE = "test: webhook server [nominalbot] [{pipeline_id}]"
 CI_CONFIG_COMMIT_MESSAGE = "test: add CI config"
 
 

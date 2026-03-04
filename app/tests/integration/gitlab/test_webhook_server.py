@@ -66,6 +66,7 @@ async def test_webhook_server_posts_review(
         language_guidelines={},
         cleanup_interval_hours=0,
         reviewer_triggers=frozenset({EventType.PR_OPENED}),
+        pr_title_include_tags=frozenset({"nominalbot"}),
     )
 
     platform = GitLabPlatform(
@@ -117,7 +118,7 @@ async def test_webhook_server_posts_review(
                 token=gitlab_token,
                 repo=GITLAB_TEST_REPO,
                 head=gitlab_webhook_branch.branch_name,
-                title=f"test: webhook server [{pipeline_id}]",
+                title=f"test: webhook server [nominalbot] [{pipeline_id}]",
             )
 
             await wait_for_mr_diff(

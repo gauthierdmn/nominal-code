@@ -37,6 +37,8 @@ class PullRequestEvent:
         clone_url (str): Authenticated clone URL for the repository.
             Defaults to empty; populated after ``ensure_auth()`` by the
             webhook handler or CLI.
+        pr_title (str): Pull request or merge request title. Defaults to
+            empty; populated by webhook parsers.
     """
 
     platform: PlatformName
@@ -45,6 +47,7 @@ class PullRequestEvent:
     pr_branch: str
     event_type: EventType
     clone_url: str = ""
+    pr_title: str = ""
 
 
 @dataclass(frozen=True)
@@ -75,11 +78,9 @@ class LifecycleEvent(PullRequestEvent):
     A lifecycle event triggered by PR state changes (opened, push, reopened).
 
     Attributes:
-        pr_title (str): Pull request title.
         pr_author (str): Pull request author username.
     """
 
-    pr_title: str = ""
     pr_author: str = ""
 
 

@@ -25,7 +25,7 @@ CLEAN_COMMIT_MESSAGE = "test: add clean calculator"
 BUGGY_PR_TITLE = "test: buggy-calculator [{pipeline_id}]"
 CLEAN_PR_TITLE = "test: clean-change [{pipeline_id}]"
 PIPELINE_PR_TITLE = "test: pipeline review [{pipeline_id}]"
-WEBHOOK_PR_TITLE = "test: webhook server [{pipeline_id}]"
+WEBHOOK_PR_TITLE = "test: webhook server [nominalbot] [{pipeline_id}]"
 WORKFLOW_COMMIT_MESSAGE = "test: add review workflow"
 
 

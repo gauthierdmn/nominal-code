@@ -603,6 +603,7 @@ class GitLabPlatform:
             pr_number=merge_request.get("iid", 0),
             pr_branch=merge_request.get("source_branch", ""),
             event_type=EventType.NOTE,
+            pr_title=merge_request.get("title", ""),
             comment_id=object_attributes.get("id", 0),
             author_username=user.get("username", ""),
             body=object_attributes.get("note", ""),
