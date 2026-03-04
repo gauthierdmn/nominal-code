@@ -109,7 +109,7 @@ async def _async_main() -> None:
 
     try:
         if cleaner is not None:
-            await cleaner.run_once()
+            cleaner.purge()
             await cleaner.start()
 
         await site.start()

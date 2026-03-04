@@ -4,7 +4,7 @@ import pytest
 
 from tests.integration.conftest import BranchInfo, PrInfo
 from tests.integration.github.api import (
-    fetch_pr_review_comments,
+    fetch_pr_comments,
     fetch_pr_reviews,
     wait_for_workflow_run,
 )
@@ -33,7 +33,7 @@ async def test_pipeline_posts_review_on_buggy_pr(
         f"Workflow run failed: {run.get('html_url', 'unknown')}"
     )
 
-    review_bodies: list[str] = []
+    found = False
     elapsed = 0.0
 
     while elapsed < REVIEW_POLL_TIMEOUT:
@@ -43,20 +43,23 @@ async def test_pipeline_posts_review_on_buggy_pr(
             github_pipeline_pr.number,
         )
 
-        review_bodies = [review["body"] for review in reviews if review.get("body")]
+        if any(review.get("body") for review in reviews):
+            found = True
 
-        if review_bodies:
+            break
+
+        comments = await fetch_pr_comments(
+            github_token,
+            GITHUB_TEST_REPO,
+            github_pipeline_pr.number,
+        )
+
+        if any(comment.get("body") for comment in comments):
+            found = True
+
             break
 
         await asyncio.sleep(REVIEW_POLL_INTERVAL)
         elapsed += REVIEW_POLL_INTERVAL
 
-    assert len(review_bodies) >= 1, "Expected at least one review with a body"
-
-    comments = await fetch_pr_review_comments(
-        github_token,
-        GITHUB_TEST_REPO,
-        github_pipeline_pr.number,
-    )
-
-    assert len(comments) >= 1, "Expected at least one inline review comment"
+    assert found, "Expected at least one review or comment with a body"

@@ -78,6 +78,28 @@ class WorkspaceCleaner:
             self._task = None
             logger.info("Workspace cleaner stopped")
 
+    def purge(self) -> None:
+        """
+        Delete all workspace directories under ``base_dir``.
+
+        Intended to be called once at startup to resume from a clean state.
+        """
+
+        if not self.base_dir.is_dir():
+            return
+
+        for child in self.base_dir.iterdir():
+            if not child.is_dir():
+                continue
+
+            try:
+                shutil.rmtree(child)
+            except OSError:
+                logger.warning("Failed to purge directory %s", child)
+                continue
+
+            logger.info("Purged workspace directory: %s", child)
+
     async def run_once(self) -> None:
         """
         Perform a single cleanup scan.
