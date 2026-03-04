@@ -276,6 +276,20 @@ class TestFromEnv:
 
         assert config.reviewer_triggers == frozenset()
 
+    def test_from_env_allowed_repos_parsed(self, _both_bots_env):
+        with patch.dict(
+            os.environ,
+            {"ALLOWED_REPOS": "owner/repo-a, owner/repo-b"},
+        ):
+            config = Config.from_env()
+
+        assert config.allowed_repos == frozenset({"owner/repo-a", "owner/repo-b"})
+
+    def test_from_env_allowed_repos_default_empty(self, _both_bots_env):
+        config = Config.from_env()
+
+        assert config.allowed_repos == frozenset()
+
 
 class TestParseReviewerTriggers:
     def test_parse_reviewer_triggers_empty_string(self):
@@ -442,6 +456,12 @@ class TestConfigForCli:
 
         assert config.pr_title_include_tags == frozenset()
         assert config.pr_title_exclude_tags == frozenset()
+
+    def test_config_for_cli_allowed_repos_default_empty(self, tmp_path):
+        with patch.dict(os.environ, {"WORKSPACE_BASE_DIR": str(tmp_path)}, clear=True):
+            config = Config.for_cli()
+
+        assert config.allowed_repos == frozenset()
 
 
 class TestParseTitleTags:

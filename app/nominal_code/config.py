@@ -91,6 +91,8 @@ class Config:
             (0 disables).
         reviewer_triggers (frozenset[EventType]): PR lifecycle event types
             that auto-trigger the reviewer bot. Empty means disabled.
+        allowed_repos (frozenset[str]): Repository full names (e.g.
+            ``owner/repo``) to process. When empty, all repos are accepted.
         pr_title_include_tags (frozenset[str]): Allowlist of tags. When set,
             only events whose PR title contains ``[tag]`` for at least one
             tag are processed. Empty means disabled.
@@ -110,6 +112,7 @@ class Config:
     language_guidelines: dict[str, str]
     cleanup_interval_hours: int
     reviewer_triggers: frozenset[EventType] = frozenset()
+    allowed_repos: frozenset[str] = frozenset()
     pr_title_include_tags: frozenset[str] = frozenset()
     pr_title_exclude_tags: frozenset[str] = frozenset()
 
@@ -319,6 +322,12 @@ class Config:
             env.str("REVIEWER_TRIGGERS", ""),
         )
 
+        allowed_repos: frozenset[str] = frozenset(
+            repo.strip()
+            for repo in env.str("ALLOWED_REPOS", "").split(",")
+            if repo.strip()
+        )
+
         pr_title_include_tags: frozenset[str] = _parse_title_tags(
             env.str("PR_TITLE_INCLUDE_TAGS", ""),
         )
@@ -343,6 +352,7 @@ class Config:
             language_guidelines=language_guidelines,
             cleanup_interval_hours=cleanup_interval_hours,
             reviewer_triggers=reviewer_triggers,
+            allowed_repos=allowed_repos,
             pr_title_include_tags=pr_title_include_tags,
             pr_title_exclude_tags=pr_title_exclude_tags,
         )

@@ -59,7 +59,7 @@ class WorkspaceCleaner:
         self._task = asyncio.create_task(self._loop())
         logger.info(
             "Workspace cleaner started (interval=%ds)",
-            self.cleanup_wait,
+            int(self.cleanup_wait.total_seconds()),
         )
 
     async def stop(self) -> None:

@@ -16,6 +16,7 @@ def _make_config(
     worker=True,
     reviewer=True,
     reviewer_triggers=None,
+    allowed_repos=None,
     pr_title_include_tags=None,
     pr_title_exclude_tags=None,
 ):
@@ -34,6 +35,7 @@ def _make_config(
     config.workspace_base_dir = "/tmp/workspaces"
     config.agent = AgentConfig()
     config.reviewer_triggers = frozenset(reviewer_triggers or [])
+    config.allowed_repos = frozenset(allowed_repos or [])
     config.pr_title_include_tags = frozenset(pr_title_include_tags or [])
     config.pr_title_exclude_tags = frozenset(pr_title_exclude_tags or [])
 
@@ -718,3 +720,141 @@ class TestTitleTagFilter:
         event = self._lifecycle("test: normal feature")
 
         assert _should_process_event(event, config) is True
+
+
+class TestAllowedReposFilter:
+    @pytest.mark.asyncio
+    async def test_allowed_repos_empty_accepts_all(self, aiohttp_client):
+        config = _make_config(allowed_repos=[])
+        github_platform = _make_github_platform()
+        platforms = {"github": github_platform}
+
+        comment = CommentEvent(
+            platform=PlatformName.GITHUB,
+            repo_full_name="any-owner/any-repo",
+            pr_number=1,
+            pr_branch="main",
+            event_type=EventType.ISSUE_COMMENT,
+            comment_id=100,
+            author_username="alice",
+            body="@claude-worker fix this",
+        )
+        github_platform.parse_event.return_value = comment
+
+        app = create_app(
+            config=config,
+            platforms=platforms,
+            session_store=SessionStore(),
+            session_queue=SessionQueue(),
+        )
+        client = await aiohttp_client(app)
+
+        with patch(
+            "nominal_code.webhooks.server.enqueue_job",
+            new_callable=AsyncMock,
+        ):
+            response = await client.post("/webhooks/github", data=b"{}")
+
+        data = await response.json()
+
+        assert data["status"] == "accepted"
+
+    @pytest.mark.asyncio
+    async def test_allowed_repos_filters_unlisted_repo(self, aiohttp_client):
+        config = _make_config(allowed_repos=["owner/allowed-repo"])
+        github_platform = _make_github_platform()
+        platforms = {"github": github_platform}
+
+        comment = CommentEvent(
+            platform=PlatformName.GITHUB,
+            repo_full_name="owner/other-repo",
+            pr_number=1,
+            pr_branch="main",
+            event_type=EventType.ISSUE_COMMENT,
+            comment_id=100,
+            author_username="alice",
+            body="@claude-worker fix this",
+        )
+        github_platform.parse_event.return_value = comment
+
+        app = create_app(
+            config=config,
+            platforms=platforms,
+            session_store=SessionStore(),
+            session_queue=SessionQueue(),
+        )
+        client = await aiohttp_client(app)
+
+        response = await client.post("/webhooks/github", data=b"{}")
+        data = await response.json()
+
+        assert data["status"] == "filtered"
+
+    @pytest.mark.asyncio
+    async def test_allowed_repos_accepts_listed_repo(self, aiohttp_client):
+        config = _make_config(allowed_repos=["owner/allowed-repo"])
+        github_platform = _make_github_platform()
+        platforms = {"github": github_platform}
+
+        comment = CommentEvent(
+            platform=PlatformName.GITHUB,
+            repo_full_name="owner/allowed-repo",
+            pr_number=1,
+            pr_branch="main",
+            event_type=EventType.ISSUE_COMMENT,
+            comment_id=100,
+            author_username="alice",
+            body="@claude-worker fix this",
+        )
+        github_platform.parse_event.return_value = comment
+
+        app = create_app(
+            config=config,
+            platforms=platforms,
+            session_store=SessionStore(),
+            session_queue=SessionQueue(),
+        )
+        client = await aiohttp_client(app)
+
+        with patch(
+            "nominal_code.webhooks.server.enqueue_job",
+            new_callable=AsyncMock,
+        ):
+            response = await client.post("/webhooks/github", data=b"{}")
+
+        data = await response.json()
+
+        assert data["status"] == "accepted"
+
+    @pytest.mark.asyncio
+    async def test_allowed_repos_filters_lifecycle_event(self, aiohttp_client):
+        config = _make_config(
+            allowed_repos=["owner/allowed-repo"],
+            reviewer_triggers=[EventType.PR_OPENED],
+        )
+        github_platform = _make_github_platform()
+        platforms = {"github": github_platform}
+
+        event = LifecycleEvent(
+            platform=PlatformName.GITHUB,
+            repo_full_name="owner/other-repo",
+            pr_number=1,
+            pr_branch="feature",
+            event_type=EventType.PR_OPENED,
+            pr_title="New feature",
+            pr_author="alice",
+        )
+        github_platform.parse_event.return_value = event
+
+        app = create_app(
+            config=config,
+            platforms=platforms,
+            session_store=SessionStore(),
+            session_queue=SessionQueue(),
+        )
+        client = await aiohttp_client(app)
+
+        response = await client.post("/webhooks/github", data=b"{}")
+        data = await response.json()
+
+        assert data["status"] == "filtered"

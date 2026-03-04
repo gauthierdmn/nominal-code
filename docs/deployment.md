@@ -1,6 +1,6 @@
 # Deployment
 
-## Running in Production
+## Running the Server
 
 The bot is a single-process asyncio application with no external dependencies (no database, no message broker, no Redis). All state is held in memory.
 
@@ -10,6 +10,8 @@ uv run nominal-code
 ```
 
 The process runs until terminated. It handles multiple concurrent webhook events using asyncio, with per-PR serial processing enforced by the session queue.
+
+For multi-platform configuration (GitHub + GitLab simultaneously), see [Webhook Mode — Multi-Platform Setup](modes/webhook.md#multi-platform).
 
 ## Health Endpoint
 
@@ -42,29 +44,7 @@ To control disk usage:
 - Tune `CLEANUP_INTERVAL_HOURS` (default: 6) to clean up stale workspaces more or less frequently.
 - Set `CLEANUP_INTERVAL_HOURS=0` to disable automatic cleanup and manage disk space manually.
 
-The cleaner only removes workspaces for PRs that are no longer open. If an API check fails, the workspace is kept as a safety measure.
-
-## Running Both Platforms
-
-To handle both GitHub and GitLab simultaneously, set tokens for both:
-
-```bash
-# Bot config
-WORKER_BOT_USERNAME=my-worker
-REVIEWER_BOT_USERNAME=my-reviewer
-ALLOWED_USERS=alice,bob
-
-# GitHub
-GITHUB_TOKEN=ghp_...
-GITHUB_WEBHOOK_SECRET=gh-secret
-
-# GitLab
-GITLAB_TOKEN=glpat-...
-GITLAB_WEBHOOK_SECRET=gl-secret
-GITLAB_API_BASE=https://gitlab.example.com
-```
-
-Both platforms share the same bot usernames and allowed users list. Each platform gets its own webhook route (`/webhooks/github` and `/webhooks/gitlab`).
+The cleaner only removes workspaces for PRs that are no longer open. If an API check fails, the workspace is kept as a safety measure. See [Configuration — Workspace Cleanup](reference/configuration.md#workspace-cleanup) for details.
 
 ## Exposing Webhooks
 
@@ -72,7 +52,7 @@ The server binds to `WEBHOOK_HOST:WEBHOOK_PORT` (default: `0.0.0.0:8080`). You n
 
 ### Reverse Proxy
 
-In production, place the bot behind a reverse proxy (nginx, Caddy, etc.) that handles TLS termination:
+To serve over HTTPS, place the bot behind a reverse proxy (nginx, Caddy, etc.) that handles TLS termination:
 
 ```
 https://bot.example.com/webhooks/github  →  http://localhost:8080/webhooks/github
@@ -88,6 +68,9 @@ ngrok http 8080
 
 # cloudflared
 cloudflared tunnel --url http://localhost:8080
+
+# tailscale funnel
+tailscale funnel 8080
 ```
 
 Then use the tunnel URL as your webhook Payload URL.

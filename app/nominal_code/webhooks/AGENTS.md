@@ -21,7 +21,8 @@ webhooks/
 ## Important details
 
 - **Route structure** — `/health` (GET) returns 200; `/webhooks/{platform_name}` (POST) handles events for each configured platform.
-- **Webhook handler flow**: verify signature → parse event → check auto-triggers → extract mentions → enqueue job.
+- **Webhook handler flow**: verify signature → parse event → repo filter → title tag filter → check auto-triggers → extract mentions → enqueue job.
+- **Repo filtering** — when `config.allowed_repos` is set, events from unlisted repositories are rejected early with `{"status": "filtered"}`. Empty means all repos are accepted.
 - **Auto-trigger** — if the event is a `LifecycleEvent` and its `event_type` is in `config.reviewer_triggers`, the reviewer runs automatically (no @mention needed).
 - **Mention priority** — if both worker and reviewer are mentioned in the same comment, only the worker is dispatched.
 - **Response codes** — 401 for invalid signatures; 200 with JSON status for everything else (processed, ignored, no mention).

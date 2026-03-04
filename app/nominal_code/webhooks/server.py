@@ -163,6 +163,14 @@ async def _handle_webhook(
         if event is None:
             return web.json_response({"status": "ignored"})
 
+        if config.allowed_repos and event.repo_full_name not in config.allowed_repos:
+            logger.debug(
+                "Ignoring event from repo %s (not in ALLOWED_REPOS)",
+                event.repo_full_name,
+            )
+
+            return web.json_response({"status": "filtered"})
+
         if not _should_process_event(event, config):
             return web.json_response({"status": "filtered"})
 

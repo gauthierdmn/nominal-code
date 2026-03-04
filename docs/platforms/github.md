@@ -30,12 +30,6 @@ export GITHUB_TOKEN=ghp_...
 
 This token is used for both API calls and git clone operations.
 
-#### Reviewer token (`GITHUB_REVIEWER_TOKEN`)
-
-Optional. When set, the reviewer bot uses this token for `git clone` instead of `GITHUB_TOKEN`. This lets you issue a token with **read-only** access to Contents, limiting what the reviewer agent can do at the git level.
-
-The reviewer still uses `GITHUB_TOKEN` for API calls (posting reviews, fetching diffs).
-
 ### Option B: GitHub App
 
 Using a GitHub App provides automatic token rotation, fine-grained permissions scoped at the installation level, and no need for a separate reviewer token.
@@ -62,6 +56,8 @@ export GITHUB_INSTALLATION_ID=67890
 
 Tokens are generated on the fly and automatically refreshed before they expire.
 
+For all authentication variables, see [Environment Variables](../reference/env-vars.md#github).
+
 ## Supported Event Types
 
 ### Comment Events
@@ -76,7 +72,7 @@ Comments on issues (not PRs) are ignored. Events without an `@mention` of the bo
 
 ### Lifecycle Events (Auto-Trigger)
 
-These events are only processed when `REVIEWER_TRIGGERS` includes the corresponding event type. See [Auto-Trigger](../configuration.md#auto-trigger).
+These events are only processed when `REVIEWER_TRIGGERS` includes the corresponding event type. See [Auto-Trigger](../reference/configuration.md#auto-trigger).
 
 | GitHub Event | Action | Event Type | Notes |
 |---|---|---|---|
@@ -89,4 +85,4 @@ Draft PRs (`draft: true`) are skipped for all lifecycle events. Other `pull_requ
 
 ## Webhook Verification
 
-When `GITHUB_WEBHOOK_SECRET` is set, the bot verifies the `X-Hub-Signature-256` header using HMAC-SHA256. If the signature does not match, the request is rejected. If the secret is not set, signature verification is skipped.
+When `GITHUB_WEBHOOK_SECRET` is set, the bot verifies the `X-Hub-Signature-256` header using HMAC-SHA256. See [Security — Webhook Verification](../security.md#webhook-verification) for implementation details.
