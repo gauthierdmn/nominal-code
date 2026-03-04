@@ -91,6 +91,12 @@ class Config:
             (0 disables).
         reviewer_triggers (frozenset[EventType]): PR lifecycle event types
             that auto-trigger the reviewer bot. Empty means disabled.
+        pr_title_include_tags (frozenset[str]): Allowlist of tags. When set,
+            only events whose PR title contains ``[tag]`` for at least one
+            tag are processed. Empty means disabled.
+        pr_title_exclude_tags (frozenset[str]): Blocklist of tags. Events
+            whose PR title contains ``[tag]`` for any tag in this set are
+            skipped. Empty means disabled.
     """
 
     worker: WorkerConfig | None
@@ -104,6 +110,8 @@ class Config:
     language_guidelines: dict[str, str]
     cleanup_interval_hours: int
     reviewer_triggers: frozenset[EventType] = frozenset()
+    pr_title_include_tags: frozenset[str] = frozenset()
+    pr_title_exclude_tags: frozenset[str] = frozenset()
 
     @classmethod
     def for_cli(
@@ -311,6 +319,13 @@ class Config:
             env.str("REVIEWER_TRIGGERS", ""),
         )
 
+        pr_title_include_tags: frozenset[str] = _parse_title_tags(
+            env.str("PR_TITLE_INCLUDE_TAGS", ""),
+        )
+        pr_title_exclude_tags: frozenset[str] = _parse_title_tags(
+            env.str("PR_TITLE_EXCLUDE_TAGS", ""),
+        )
+
         return cls(
             worker=worker,
             reviewer=reviewer,
@@ -328,7 +343,28 @@ class Config:
             language_guidelines=language_guidelines,
             cleanup_interval_hours=cleanup_interval_hours,
             reviewer_triggers=reviewer_triggers,
+            pr_title_include_tags=pr_title_include_tags,
+            pr_title_exclude_tags=pr_title_exclude_tags,
         )
+
+
+def _parse_title_tags(raw: str) -> frozenset[str]:
+    """
+    Parse a comma-separated string of tag names into a lowercased frozenset.
+
+    Strips whitespace and lowercases each tag.
+
+    Args:
+        raw (str): Comma-separated tag names (e.g. ``"nominalbot, CI"``).
+
+    Returns:
+        frozenset[str]: The parsed tags, lowercased.
+    """
+
+    if not raw.strip():
+        return frozenset()
+
+    return frozenset(tag.strip().lower() for tag in raw.split(",") if tag.strip())
 
 
 def _parse_reviewer_triggers(raw: str) -> frozenset[EventType]:

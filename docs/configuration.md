@@ -36,6 +36,8 @@ The bot is configured entirely via environment variables. You can set them in a 
 | `LANGUAGE_GUIDELINES_DIR` | No | `prompts/languages` | Directory containing language-specific guideline files (e.g. `python.md`) |
 | `CLEANUP_INTERVAL_HOURS` | No | `6` | Hours between workspace cleanup runs (`0` to disable) |
 | `REVIEWER_TRIGGERS` | No | — | Comma-separated PR lifecycle events that auto-trigger the reviewer (e.g. `pr_opened,pr_push`) |
+| `PR_TITLE_INCLUDE_TAGS` | No | — | Comma-separated allowlist of tags. Only events whose PR title contains `[tag]` are processed |
+| `PR_TITLE_EXCLUDE_TAGS` | No | — | Comma-separated blocklist of tags. Events whose PR title contains `[tag]` are skipped |
 | `LOG_LEVEL` | No | `INFO` | Python log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
 
 \*At least one of `WORKER_BOT_USERNAME` or `REVIEWER_BOT_USERNAME` must be set. You can deploy worker-only, reviewer-only, or both.
@@ -94,6 +96,33 @@ REVIEWER_TRIGGERS=pr_opened,pr_push
 When unset or empty, auto-triggering is disabled and the reviewer only responds to `@mentions` (backward compatible).
 
 Auto-triggered reviews skip the `ALLOWED_USERS` check since there is no comment author. Draft PRs on GitHub and WIP merge requests on GitLab are automatically skipped.
+
+## PR Title Tag Filtering
+
+The webhook server can filter events based on tags in the PR/MR title. Tags are substrings enclosed in square brackets (e.g. `[nominalbot]`). This is useful when multiple test suites or bot instances share a single repository and you want each to process only its own events.
+
+```bash
+PR_TITLE_INCLUDE_TAGS=nominalbot
+PR_TITLE_EXCLUDE_TAGS=skip,wip
+```
+
+**Rules:**
+
+- **`PR_TITLE_INCLUDE_TAGS`** (allowlist) — when set, only events whose PR title contains at least one `[tag]` are processed. Events without any matching include tag are skipped.
+- **`PR_TITLE_EXCLUDE_TAGS`** (blocklist) — events whose PR title contains any `[tag]` from this list are skipped.
+- Exclude takes priority over include. If both match, the event is skipped.
+- Both empty = no filtering (backward compatible).
+- Matching is case-insensitive.
+
+**Examples:**
+
+| PR Title | Include Tags | Exclude Tags | Result |
+|---|---|---|---|
+| `feat: add login [nominalbot]` | `nominalbot` | — | Processed |
+| `feat: add login` | `nominalbot` | — | Skipped |
+| `feat: add login [skip]` | — | `skip` | Skipped |
+| `feat: add login [nominalbot] [skip]` | `nominalbot` | `skip` | Skipped (exclude wins) |
+| `feat: add login` | — | `skip` | Processed |
 
 ## Reviewer Token Separation
 

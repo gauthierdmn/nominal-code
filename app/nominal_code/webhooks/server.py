@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, cast
 from aiohttp import web
 
 from nominal_code.models import COMMENT_EVENT_TYPES, BotType
-from nominal_code.platforms.base import CommentEvent, LifecycleEvent
+from nominal_code.platforms.base import CommentEvent, LifecycleEvent, PullRequestEvent
 from nominal_code.webhooks.dispatch import enqueue_job
 from nominal_code.webhooks.mention import extract_mention
 
@@ -18,6 +18,40 @@ if TYPE_CHECKING:
     from nominal_code.platforms.base import Platform, ReviewerPlatform
 
 logger: logging.Logger = logging.getLogger(__name__)
+
+
+def _should_process_event(event: PullRequestEvent, config: Config) -> bool:
+    """
+    Check whether an event passes the PR title tag filters.
+
+    When both tag lists are empty, all events are processed (backward
+    compatible). Exclude tags take priority over include tags.
+
+    Args:
+        event (PullRequestEvent): The parsed webhook event.
+        config (Config): Application configuration with tag filter lists.
+
+    Returns:
+        bool: True if the event should be processed.
+    """
+
+    if not config.pr_title_include_tags and not config.pr_title_exclude_tags:
+        return True
+
+    title_lower: str = event.pr_title.lower()
+
+    for tag in config.pr_title_exclude_tags:
+        if f"[{tag}]" in title_lower:
+            return False
+
+    if config.pr_title_include_tags:
+        for tag in config.pr_title_include_tags:
+            if f"[{tag}]" in title_lower:
+                return True
+
+        return False
+
+    return True
 
 
 def create_app(
@@ -128,6 +162,9 @@ async def _handle_webhook(
 
         if event is None:
             return web.json_response({"status": "ignored"})
+
+        if not _should_process_event(event, config):
+            return web.json_response({"status": "filtered"})
 
         if event.event_type in config.reviewer_triggers:
             if config.reviewer is None:

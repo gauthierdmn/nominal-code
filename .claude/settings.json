@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ../scripts/check_docstrings.py"
+            "command": "cd $(git rev-parse --show-toplevel) && python3 scripts/check_docstrings.py"
           }
         ]
       }

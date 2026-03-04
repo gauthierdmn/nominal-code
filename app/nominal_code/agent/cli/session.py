@@ -86,7 +86,7 @@ class SessionQueue:
 
         self._queues: dict[
             SessionKey,
-            asyncio.Queue[Callable[[], Awaitable[None]] | None],
+            asyncio.Queue[Callable[[], Awaitable[None]]],
         ] = {}
         self._consumers: dict[SessionKey, asyncio.Task[None]] = {}
 
@@ -122,27 +122,22 @@ class SessionQueue:
 
         if key not in self._consumers or self._consumers[key].done():
             self._consumers[key] = asyncio.create_task(self._consume(key))
-        else:
-            await self._queues[key].put(None)
 
     async def _consume(self, key: SessionKey) -> None:
         """
         Consume jobs from the queue for a specific session key.
 
-        Runs until a sentinel None is received, then cleans up.
+        Processes all queued jobs, then exits. A new consumer is spawned
+        if more jobs arrive after this one finishes.
 
         Args:
             key (SessionKey): The (platform, repo, pr_number, bot_type) session key.
         """
 
-        queue: asyncio.Queue[Callable[[], Awaitable[None]] | None] = self._queues[key]
+        queue: asyncio.Queue[Callable[[], Awaitable[None]]] = self._queues[key]
 
-        while True:
-            job: Callable[[], Awaitable[None]] | None = await queue.get()
-
-            if job is None:
-                queue.task_done()
-                break
+        while not queue.empty():
+            job: Callable[[], Awaitable[None]] = await queue.get()
 
             try:
                 await job()

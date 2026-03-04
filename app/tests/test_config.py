@@ -10,6 +10,7 @@ from nominal_code.config import (
     _load_file_content,
     _load_language_guidelines,
     _parse_reviewer_triggers,
+    _parse_title_tags,
 )
 from nominal_code.models import EventType
 
@@ -434,3 +435,73 @@ class TestConfigForCli:
             config = Config.for_cli()
 
         assert config.cleanup_interval_hours == 0
+
+    def test_config_for_cli_title_tags_default_empty(self, tmp_path):
+        with patch.dict(os.environ, {"WORKSPACE_BASE_DIR": str(tmp_path)}, clear=True):
+            config = Config.for_cli()
+
+        assert config.pr_title_include_tags == frozenset()
+        assert config.pr_title_exclude_tags == frozenset()
+
+
+class TestParseTitleTags:
+    def test_parse_title_tags_empty_string(self):
+        result = _parse_title_tags("")
+
+        assert result == frozenset()
+
+    def test_parse_title_tags_whitespace_only(self):
+        result = _parse_title_tags("   ")
+
+        assert result == frozenset()
+
+    def test_parse_title_tags_single_value(self):
+        result = _parse_title_tags("nominalbot")
+
+        assert result == frozenset({"nominalbot"})
+
+    def test_parse_title_tags_multiple_values(self):
+        result = _parse_title_tags("alpha,beta,gamma")
+
+        assert result == frozenset({"alpha", "beta", "gamma"})
+
+    def test_parse_title_tags_strips_whitespace(self):
+        result = _parse_title_tags(" alpha , beta ")
+
+        assert result == frozenset({"alpha", "beta"})
+
+    def test_parse_title_tags_lowercases(self):
+        result = _parse_title_tags("NominalBot,CI")
+
+        assert result == frozenset({"nominalbot", "ci"})
+
+    def test_parse_title_tags_trailing_comma(self):
+        result = _parse_title_tags("alpha,")
+
+        assert result == frozenset({"alpha"})
+
+    def test_parse_title_tags_empty_segments_skipped(self):
+        result = _parse_title_tags("alpha,,beta,")
+
+        assert result == frozenset({"alpha", "beta"})
+
+
+class TestFromEnvTitleTags:
+    def test_from_env_title_tags_parsed(self, _both_bots_env):
+        with patch.dict(
+            os.environ,
+            {
+                "PR_TITLE_INCLUDE_TAGS": "nominalbot,ci",
+                "PR_TITLE_EXCLUDE_TAGS": "skip",
+            },
+        ):
+            config = Config.from_env()
+
+        assert config.pr_title_include_tags == frozenset({"nominalbot", "ci"})
+        assert config.pr_title_exclude_tags == frozenset({"skip"})
+
+    def test_from_env_title_tags_default_empty(self, _both_bots_env):
+        config = Config.from_env()
+
+        assert config.pr_title_include_tags == frozenset()
+        assert config.pr_title_exclude_tags == frozenset()

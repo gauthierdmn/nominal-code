@@ -9,10 +9,16 @@ from nominal_code.agent.cli.session import SessionQueue, SessionStore
 from nominal_code.config import AgentConfig, ReviewerConfig, WorkerConfig
 from nominal_code.models import BotType, EventType
 from nominal_code.platforms.base import CommentEvent, LifecycleEvent, PlatformName
-from nominal_code.webhooks.server import create_app
+from nominal_code.webhooks.server import _should_process_event, create_app
 
 
-def _make_config(worker=True, reviewer=True, reviewer_triggers=None):
+def _make_config(
+    worker=True,
+    reviewer=True,
+    reviewer_triggers=None,
+    pr_title_include_tags=None,
+    pr_title_exclude_tags=None,
+):
     config = MagicMock()
     config.worker = (
         WorkerConfig(bot_username="claude-worker", system_prompt="Be concise.")
@@ -28,6 +34,8 @@ def _make_config(worker=True, reviewer=True, reviewer_triggers=None):
     config.workspace_base_dir = "/tmp/workspaces"
     config.agent = AgentConfig()
     config.reviewer_triggers = frozenset(reviewer_triggers or [])
+    config.pr_title_include_tags = frozenset(pr_title_include_tags or [])
+    config.pr_title_exclude_tags = frozenset(pr_title_exclude_tags or [])
 
     return config
 
@@ -615,3 +623,98 @@ class TestAutoTriggerJob:
         data = await response.json()
 
         assert data["status"] == "ignored"
+
+
+class TestTitleTagFilter:
+    def _lifecycle(self, title=""):
+        return LifecycleEvent(
+            platform=PlatformName.GITHUB,
+            repo_full_name="owner/repo",
+            pr_number=1,
+            pr_branch="main",
+            event_type=EventType.PR_OPENED,
+            pr_title=title,
+            pr_author="alice",
+        )
+
+    def _comment(self, title=""):
+        return CommentEvent(
+            platform=PlatformName.GITHUB,
+            repo_full_name="owner/repo",
+            pr_number=1,
+            pr_branch="main",
+            event_type=EventType.ISSUE_COMMENT,
+            pr_title=title,
+            comment_id=100,
+            author_username="alice",
+            body="@claude-reviewer review",
+        )
+
+    def test_both_empty_accepts(self):
+        config = _make_config()
+        event = self._lifecycle("any title")
+
+        assert _should_process_event(event, config) is True
+
+    def test_exclude_tag_in_title_filters(self):
+        config = _make_config(pr_title_exclude_tags=["skip"])
+        event = self._lifecycle("fix: some change [skip]")
+
+        assert _should_process_event(event, config) is False
+
+    def test_include_tag_in_title_accepts(self):
+        config = _make_config(pr_title_include_tags=["nominalbot"])
+        event = self._lifecycle("test: webhook [nominalbot]")
+
+        assert _should_process_event(event, config) is True
+
+    def test_include_tags_set_but_no_match_filters(self):
+        config = _make_config(pr_title_include_tags=["nominalbot"])
+        event = self._lifecycle("test: unrelated change")
+
+        assert _should_process_event(event, config) is False
+
+    def test_exclude_takes_priority_over_include(self):
+        config = _make_config(
+            pr_title_include_tags=["nominalbot"],
+            pr_title_exclude_tags=["skip"],
+        )
+        event = self._lifecycle("test: [nominalbot] [skip]")
+
+        assert _should_process_event(event, config) is False
+
+    def test_case_insensitive_matching(self):
+        config = _make_config(pr_title_include_tags=["nominalbot"])
+        event = self._lifecycle("test: [NominalBot] feature")
+
+        assert _should_process_event(event, config) is True
+
+    def test_comment_event_with_pr_title_filtered(self):
+        config = _make_config(pr_title_include_tags=["nominalbot"])
+        event = self._comment("test: unrelated change")
+
+        assert _should_process_event(event, config) is False
+
+    def test_comment_event_with_pr_title_accepted(self):
+        config = _make_config(pr_title_include_tags=["nominalbot"])
+        event = self._comment("test: [nominalbot] feature")
+
+        assert _should_process_event(event, config) is True
+
+    def test_multiple_include_tags_any_match(self):
+        config = _make_config(pr_title_include_tags=["alpha", "beta"])
+        event = self._lifecycle("test: [beta] feature")
+
+        assert _should_process_event(event, config) is True
+
+    def test_multiple_exclude_tags_any_match(self):
+        config = _make_config(pr_title_exclude_tags=["skip", "ignore"])
+        event = self._lifecycle("test: [ignore] feature")
+
+        assert _should_process_event(event, config) is False
+
+    def test_exclude_only_no_match_accepts(self):
+        config = _make_config(pr_title_exclude_tags=["skip"])
+        event = self._lifecycle("test: normal feature")
+
+        assert _should_process_event(event, config) is True
