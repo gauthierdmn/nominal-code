@@ -1,3 +1,4 @@
+import asyncio
 import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -21,7 +22,9 @@ from tests.integration.gitlab.api import (
     create_mr,
     create_webhook,
     delete_webhook,
+    fetch_latest_webhook_event,
     fetch_mr_notes,
+    resend_webhook_event,
     wait_for_mr_diff,
 )
 from tests.integration.helpers.fixtures import (
@@ -88,8 +91,10 @@ async def test_webhook_server_posts_review(
     site = web.TCPSite(runner, "0.0.0.0", 0)
     await site.start()
 
-    sockets = site._server.sockets
-    assert sockets, "No sockets bound"
+    server = site._server
+    assert isinstance(server, asyncio.Server), "Server not started"
+    assert server.sockets, "No sockets bound"
+    sockets = server.sockets
     port = sockets[0].getsockname()[1]
 
     tunnel = None
@@ -127,7 +132,30 @@ async def test_webhook_server_posts_review(
                 mr_iid,
             )
 
-            await wait_for_webhook_processing(session_queue)
+            async def _attempt_gitlab_redelivery() -> None:
+                event = await fetch_latest_webhook_event(
+                    gitlab_token,
+                    GITLAB_TEST_REPO,
+                    hook_id,
+                )
+
+                if event is None:
+                    raise TimeoutError(
+                        "No webhook job enqueued and GitLab never attempted delivery",
+                    )
+
+                event_id: int = event["id"]
+                await resend_webhook_event(
+                    gitlab_token,
+                    GITLAB_TEST_REPO,
+                    hook_id,
+                    event_id,
+                )
+
+            await wait_for_webhook_processing(
+                session_queue,
+                attempt_redelivery=_attempt_gitlab_redelivery,
+            )
 
             notes = await fetch_mr_notes(
                 gitlab_token,

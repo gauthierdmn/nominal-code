@@ -3,10 +3,12 @@ import hmac
 import json
 import tempfile
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from aiohttp import web
+from aiohttp.pytest_plugin import AiohttpClient
 
 from nominal_code.agent.cli.session import SessionQueue, SessionStore
 from nominal_code.config import (
@@ -75,7 +77,7 @@ def _build_issue_comment_payload(
     pr_number: int,
     body: str,
     author: str = ALLOWED_USER,
-) -> dict:
+) -> dict[str, Any]:
     return {
         "action": "created",
         "issue": {
@@ -97,7 +99,7 @@ def _build_pull_request_payload(
     pr_number: int,
     branch: str,
     action: str = "opened",
-) -> dict:
+) -> dict[str, Any]:
     return {
         "action": action,
         "pull_request": {
@@ -135,7 +137,7 @@ def _create_test_app(
 async def test_webhook_reviewer_mention_posts_review(
     github_token: str,
     buggy_pr: PrInfo,
-    aiohttp_client,
+    aiohttp_client: AiohttpClient,
 ) -> None:
     config = _build_webhook_config()
     app, session_store, session_queue = _create_test_app(github_token, config)
@@ -177,7 +179,7 @@ async def test_webhook_reviewer_mention_posts_review(
 async def test_webhook_worker_mention_posts_reply(
     github_token: str,
     buggy_pr: PrInfo,
-    aiohttp_client,
+    aiohttp_client: AiohttpClient,
 ) -> None:
     config = _build_webhook_config()
     app, session_store, session_queue = _create_test_app(github_token, config)
@@ -228,7 +230,7 @@ async def test_webhook_worker_mention_posts_reply(
 async def test_webhook_lifecycle_auto_trigger(
     github_token: str,
     buggy_pr: PrInfo,
-    aiohttp_client,
+    aiohttp_client: AiohttpClient,
 ) -> None:
     config = _build_webhook_config(
         reviewer_triggers=frozenset({EventType.PR_OPENED}),
@@ -273,7 +275,7 @@ async def test_webhook_lifecycle_auto_trigger(
 async def test_webhook_invalid_signature_returns_401(
     github_token: str,
     buggy_pr: PrInfo,
-    aiohttp_client,
+    aiohttp_client: AiohttpClient,
 ) -> None:
     config = _build_webhook_config()
     app, _, _ = _create_test_app(github_token, config)
@@ -302,7 +304,7 @@ async def test_webhook_invalid_signature_returns_401(
 async def test_webhook_unauthorized_user_ignored(
     github_token: str,
     buggy_pr: PrInfo,
-    aiohttp_client,
+    aiohttp_client: AiohttpClient,
 ) -> None:
     config = _build_webhook_config()
     app, _, session_queue = _create_test_app(github_token, config)

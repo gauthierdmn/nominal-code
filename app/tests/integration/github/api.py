@@ -2,6 +2,7 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
 
 import httpx
 
@@ -77,8 +78,10 @@ async def create_pr(
 
             if response.status_code != 422:
                 response.raise_for_status()
+                data: dict[str, Any] = response.json()
+                pr_number: int = data["number"]
 
-                return response.json()["number"]
+                return pr_number
 
             logger.warning(
                 "PR creation returned 422 for %s (attempt %d/%d): %s",
@@ -92,8 +95,10 @@ async def create_pr(
                 await asyncio.sleep(CREATE_PR_RETRY_DELAY)
 
         response.raise_for_status()
+        fallback: dict[str, Any] = response.json()
+        fallback_number: int = fallback["number"]
 
-        return response.json()["number"]
+        return fallback_number
 
 
 async def close_pr(token: str, repo: str, pr_number: int) -> None:
@@ -124,7 +129,7 @@ async def fetch_pr_reviews(
     token: str,
     repo: str,
     pr_number: int,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     async with _github_client(token) as client:
         response = await request_with_retry(
             client,
@@ -133,14 +138,16 @@ async def fetch_pr_reviews(
         )
         response.raise_for_status()
 
-    return response.json()
+    reviews: list[dict[str, Any]] = response.json()
+
+    return reviews
 
 
 async def fetch_pr_review_comments(
     token: str,
     repo: str,
     pr_number: int,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     async with _github_client(token) as client:
         response = await request_with_retry(
             client,
@@ -149,14 +156,16 @@ async def fetch_pr_review_comments(
         )
         response.raise_for_status()
 
-    return response.json()
+    comments: list[dict[str, Any]] = response.json()
+
+    return comments
 
 
 async def fetch_pr_comments(
     token: str,
     repo: str,
     pr_number: int,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     async with _github_client(token) as client:
         response = await request_with_retry(
             client,
@@ -165,7 +174,9 @@ async def fetch_pr_comments(
         )
         response.raise_for_status()
 
-    return response.json()
+    comments: list[dict[str, Any]] = response.json()
+
+    return comments
 
 
 async def get_branch_sha(token: str, repo: str, branch: str) -> str:
@@ -188,9 +199,11 @@ async def get_branch_sha(token: str, repo: str, branch: str) -> str:
             f"/repos/{repo}/branches/{branch}",
         )
         response.raise_for_status()
-        data: dict = response.json()
+        branch_data: dict[str, Any] = response.json()
 
-    return data["commit"]["sha"]
+    sha: str = branch_data["commit"]["sha"]
+
+    return sha
 
 
 async def create_branch(
@@ -270,14 +283,14 @@ async def create_or_update_file(
             params={"ref": branch},
         )
 
-        payload: dict = {
+        payload: dict[str, str] = {
             "message": message,
             "content": content_b64,
             "branch": branch,
         }
 
         if get_response.status_code == 200:
-            existing: dict = get_response.json()
+            existing: dict[str, Any] = get_response.json()
             payload["sha"] = existing["sha"]
 
         response = await request_with_retry(
@@ -328,9 +341,11 @@ async def create_webhook(
             },
         )
         response.raise_for_status()
-        data: dict = response.json()
+        hook_data: dict[str, Any] = response.json()
 
-    return data["id"]
+    hook_id: int = hook_data["id"]
+
+    return hook_id
 
 
 async def delete_webhook(token: str, repo: str, hook_id: int) -> None:
@@ -352,12 +367,71 @@ async def delete_webhook(token: str, repo: str, hook_id: int) -> None:
         response.raise_for_status()
 
 
+async def fetch_latest_delivery(
+    token: str,
+    repo: str,
+    hook_id: int,
+) -> dict[str, Any] | None:
+    """
+    Fetch the most recent delivery for a webhook.
+
+    Args:
+        token (str): GitHub personal access token.
+        repo (str): Repository full name.
+        hook_id (int): Webhook ID.
+
+    Returns:
+        dict[str, Any] | None: The most recent delivery object, or ``None`` if
+            no deliveries exist.
+    """
+
+    async with _github_client(token) as client:
+        response = await request_with_retry(
+            client,
+            "GET",
+            f"/repos/{repo}/hooks/{hook_id}/deliveries",
+            params={"per_page": 1},
+        )
+        response.raise_for_status()
+        deliveries: list[dict[str, Any]] = response.json()
+
+    if not deliveries:
+        return None
+
+    return deliveries[0]
+
+
+async def redeliver_webhook(
+    token: str,
+    repo: str,
+    hook_id: int,
+    delivery_id: int,
+) -> None:
+    """
+    Request GitHub to redeliver a webhook payload.
+
+    Args:
+        token (str): GitHub personal access token.
+        repo (str): Repository full name.
+        hook_id (int): Webhook ID.
+        delivery_id (int): Delivery ID to redeliver.
+    """
+
+    async with _github_client(token) as client:
+        response = await request_with_retry(
+            client,
+            "POST",
+            f"/repos/{repo}/hooks/{hook_id}/deliveries/{delivery_id}/attempts",
+        )
+        response.raise_for_status()
+
+
 async def wait_for_workflow_run(
     token: str,
     repo: str,
     branch: str,
     timeout: float = 600.0,
-) -> dict:
+) -> dict[str, Any]:
     """
     Poll until a workflow run on the given branch completes.
 
@@ -368,7 +442,7 @@ async def wait_for_workflow_run(
         timeout (float): Maximum seconds to wait.
 
     Returns:
-        dict: The completed workflow run object.
+        dict[str, Any]: The completed workflow run object.
 
     Raises:
         TimeoutError: If no completed run is found within the timeout.
@@ -385,9 +459,9 @@ async def wait_for_workflow_run(
                 params={"branch": branch, "per_page": 5},
             )
             response.raise_for_status()
-            data: dict = response.json()
+            runs_data: dict[str, Any] = response.json()
 
-            runs: list[dict] = data.get("workflow_runs", [])
+            runs: list[dict[str, Any]] = runs_data.get("workflow_runs", [])
 
             for run in runs:
                 if run["status"] == "completed":
