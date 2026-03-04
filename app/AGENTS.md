@@ -65,6 +65,7 @@ The dispatcher in `agent/runner.py` routes based on `AgentConfig.use_api`. The A
 - `GITHUB_INSTALLATION_ID` — required for CLI mode with App auth; webhook mode extracts it from the payload.
 - `WORKSPACE_BASE_DIR` — workspace root (default: `/tmp/nominal-code`).
 - `AGENT_MODEL`, `AGENT_MAX_TURNS`, `AGENT_CLI_PATH` — agent configuration.
+- `ALLOWED_REPOS` — comma-separated repository full names to process (e.g. `owner/repo-a,owner/repo-b`). When unset, all repos are accepted.
 - `REVIEWER_TRIGGERS` — comma-separated lifecycle events that auto-trigger the reviewer (e.g. `pr_opened,pr_push`).
 - `CLEANUP_INTERVAL_HOURS` — workspace cleanup frequency (default: `6`; `0` disables).
 - `LOG_LEVEL` — logging verbosity (default: `INFO`).

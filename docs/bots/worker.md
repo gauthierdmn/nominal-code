@@ -1,4 +1,7 @@
-# Worker Bot
+# Worker Bot (Beta)
+
+!!! warning "Beta Feature"
+    The worker bot is currently in **beta**. It is functional but may change in future releases. For production use, the [Reviewer Bot](reviewer.md) is the recommended starting point.
 
 The worker bot receives a prompt from a PR comment, clones the repository, runs an AI agent with full tool access, and posts the result back as a comment.
 
@@ -34,6 +37,9 @@ The worker runs with `bypassPermissions` mode and all tools available. The agent
 - Run shell commands
 - Install packages
 - Commit and push changes to the PR branch
+
+!!! danger "Security considerations"
+    The worker bot runs with full tool access and can execute arbitrary commands. A successful prompt injection could result in unauthorized code changes. Only enable it in trusted, private repositories with a restricted set of allowed users. See [Security](../security.md#llm-security) for details.
 
 ## Session Continuity
 

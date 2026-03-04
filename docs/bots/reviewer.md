@@ -16,19 +16,7 @@ You can optionally include specific instructions:
 @my-reviewer focus on error handling
 ```
 
-## Auto-Trigger on PR Events
-
-The reviewer can also run automatically when a PR is opened, updated, or reopened — without anyone leaving a comment. Set the `REVIEWER_TRIGGERS` environment variable:
-
-```bash
-REVIEWER_TRIGGERS=pr_opened,pr_push
-```
-
-Supported event types: `pr_opened`, `pr_push`, `pr_reopened`, `pr_ready_for_review`.
-
-Auto-triggered reviews work the same as mention-triggered reviews, but with no user prompt (the reviewer uses the diff and its system prompt). Draft PRs (GitHub) and WIP merge requests (GitLab) are skipped. The `ALLOWED_USERS` check is also skipped since there is no comment author.
-
-See [Configuration](../configuration.md#auto-trigger) for the full event mapping.
+The reviewer can also run automatically on PR lifecycle events — see [Auto-Trigger](../reference/configuration.md#auto-trigger).
 
 ## What It Does
 
@@ -50,7 +38,7 @@ The reviewer runs with `bypassPermissions` mode but is limited to these tools:
 | `Grep` | Search file contents |
 | `Bash(git clone*)` | Clone private dependencies into `.deps/` |
 
-The reviewer cannot modify files, run arbitrary commands, or push commits.
+The reviewer cannot modify files, run arbitrary commands, or push commits. See [Security — Tool Restrictions](../security.md#tool-restrictions) for the full comparison with the worker bot.
 
 ## JSON Output and Retry Logic
 
@@ -91,34 +79,10 @@ Before running the agent, the reviewer fetches all existing comments on the PR t
 - On GitHub, both conversation comments and inline review comments are fetched.
 - On GitLab, all discussion notes are fetched (excluding system notes).
 
-## Read-Only Reviewer Token
+## Running in Different Modes
 
-By default, the reviewer clones using the main platform token (`GITHUB_TOKEN` / `GITLAB_TOKEN`). For tighter security, set `GITHUB_REVIEWER_TOKEN` or `GITLAB_REVIEWER_TOKEN` to provide a read-only token used exclusively for the reviewer's `git clone` operations.
+The reviewer is available in all three modes:
 
-## Session Continuity
-
-The reviewer maintains session continuity within the same PR. Subsequent review requests resume from the previous session, preserving context. Sessions are keyed by `(platform, repo, pr_number, "reviewer")`.
-
-## CLI Mode
-
-The reviewer can also be invoked directly from the command line without a webhook server:
-
-```bash
-export GITHUB_TOKEN=ghp_...
-uv run nominal-code review owner/repo#42
-```
-
-This uses the same review logic (diff fetch, agent execution, finding filtering) but skips session continuity and does not require bot usernames or `ALLOWED_USERS`. See [CLI Mode](../cli.md) for details.
-
-## CI Mode
-
-The reviewer runs automatically in CI pipelines (GitHub Actions or GitLab CI). CI mode uses the Anthropic API directly instead of the Claude Code CLI, so no CLI installation is needed:
-
-```yaml
-- uses: gauthierdmn/nominal-code@main
-  with:
-    anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-    github_token: ${{ secrets.GITHUB_TOKEN }}
-```
-
-The same review logic, JSON parsing, and finding filtering apply. See [CI Mode](../ci.md) for setup and options.
+- **[Webhook](../modes/webhook.md)** — real-time via `@mention` with session continuity
+- **[CLI](../modes/cli.md)** — one-shot from the command line
+- **[CI](../modes/ci.md)** — automated in GitHub Actions or GitLab CI

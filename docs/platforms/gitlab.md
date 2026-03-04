@@ -36,20 +36,11 @@ Optional. When set, the reviewer bot uses this token for `git clone` instead of 
 
 The reviewer still uses `GITLAB_TOKEN` for API calls (posting reviews, fetching diffs).
 
-## Differences from GitHub
-
-| Aspect | GitHub | GitLab |
-|---|---|---|
-| Comment webhook | `issue_comment`, `pull_request_review_comment`, `pull_request_review` | `Note Hook` (note on a merge request) |
-| Lifecycle webhook | `pull_request` (opened, synchronize, reopened, ready_for_review) | `Merge Request Hook` (open, update+oldrev, reopen) |
-| Signature verification | HMAC-SHA256 via `X-Hub-Signature-256` | Plain string comparison via `X-Gitlab-Token` |
-| PR open state | `state == "open"` | `state == "opened"` |
-| Clone URL format | `https://x-access-token:{token}@github.com/...` | `https://oauth2:{token}@{host}/...` |
-| Inline review | Single API call with all comments | One discussion per finding + version SHAs |
+For all authentication variables, see [Environment Variables](../reference/env-vars.md#gitlab).
 
 ## Lifecycle Events (Auto-Trigger)
 
-These events are only processed when `REVIEWER_TRIGGERS` includes the corresponding event type. See [Auto-Trigger](../configuration.md#auto-trigger).
+These events are only processed when `REVIEWER_TRIGGERS` includes the corresponding event type. See [Auto-Trigger](../reference/configuration.md#auto-trigger).
 
 | GitLab Event | Action | Event Type | Notes |
 |---|---|---|---|
@@ -61,4 +52,4 @@ WIP merge requests (`work_in_progress: true`) are skipped for all lifecycle even
 
 ## Webhook Verification
 
-When `GITLAB_WEBHOOK_SECRET` is set, the bot checks the `X-Gitlab-Token` header against the configured secret (plain string comparison, not HMAC). If the header does not match, the request is rejected. If the secret is not set, verification is skipped.
+When `GITLAB_WEBHOOK_SECRET` is set, the bot checks the `X-Gitlab-Token` header against the configured secret. See [Security — Webhook Verification](../security.md#webhook-verification) for implementation details.

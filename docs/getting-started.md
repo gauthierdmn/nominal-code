@@ -2,145 +2,82 @@
 
 Minimal steps to go from zero to a working review.
 
-## Option A: CI Job (fastest)
+## Prerequisites
 
-No server, no CLI installation — just add a workflow file to your repository.
+- **Python 3.13+** and **[uv](https://github.com/astral-sh/uv)** — required for CLI and webhook modes
+- **[Claude Code CLI](https://claude.ai/code)** installed and on `PATH` — required for CLI and webhook modes
+- CI mode needs **none of the above** — it runs inside a Docker container
 
-### GitHub Actions
+## Quick Start
 
-1. Add an `ANTHROPIC_API_KEY` secret to your repository (Settings > Secrets and variables > Actions).
-2. Create a workflow file:
+=== "CI (fastest)"
 
-```yaml
-# .github/workflows/review.yml
-name: Code Review
-on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    Add an `ANTHROPIC_API_KEY` secret to your repository, then create a workflow file:
 
-permissions:
-  contents: read
-  pull-requests: write
+    ```yaml
+    # .github/workflows/review.yml
+    name: Code Review
+    on:
+      pull_request:
+        types: [opened, synchronize, reopened, ready_for_review]
 
-jobs:
-  review:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: gauthierdmn/nominal-code@main
-        with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-```
+    permissions:
+      contents: read
+      pull-requests: write
 
-3. Open a pull request — the review runs automatically.
+    jobs:
+      review:
+        runs-on: ubuntu-latest
+        steps:
+          - uses: actions/checkout@v4
+          - uses: gauthierdmn/nominal-code@main
+            with:
+              anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+              github_token: ${{ secrets.GITHUB_TOKEN }}
+    ```
 
-CI mode calls the Anthropic API directly and does not require the Claude Code CLI. See [CI Mode](ci.md) for GitLab CI setup, inputs, and examples.
+    Open a pull request — the review runs automatically.
 
-## Option B: CLI Mode (quickest local setup)
+    **Next:** [CI Mode full guide](modes/ci.md) (GitLab CI setup, inputs, examples)
 
-No server, no webhooks — just a token and a PR reference.
+=== "CLI"
 
-### Prerequisites
+    ```bash
+    git clone https://github.com/gauthierdmn/nominal-code.git
+    cd nominal-code/app
+    uv sync
 
-- **Python 3.13+**
-- **[uv](https://github.com/astral-sh/uv)** for dependency management
-- **[Claude Code CLI](https://claude.ai/code)** installed and on `PATH`
-- A **GitHub** or **GitLab** account with API tokens
+    export GITHUB_TOKEN=ghp_...
 
-### Install
+    uv run nominal-code review owner/repo#42
+    ```
 
-```bash
-git clone https://github.com/gauthierdmn/nominal-code.git
-cd nominal-code/app
-uv sync
-```
+    The review prints to stdout and posts to the PR.
 
-### Run
+    **Next:** [CLI Mode full guide](modes/cli.md) (all options, platform examples)
 
-```bash
-export GITHUB_TOKEN=ghp_...
+=== "Webhook"
 
-# Review a PR (prints results and posts to the PR)
-uv run nominal-code review owner/repo#42
+    ```bash
+    git clone https://github.com/gauthierdmn/nominal-code.git
+    cd nominal-code/app
+    uv sync
 
-# Dry run (prints results without posting)
-uv run nominal-code review owner/repo#42 --dry-run
-```
+    export REVIEWER_BOT_USERNAME=my-reviewer
+    export ALLOWED_USERS=alice,bob
+    export GITHUB_TOKEN=ghp_...
+    export GITHUB_WEBHOOK_SECRET=your-secret
 
-See [CLI Mode](cli.md) for all options and examples.
+    uv run nominal-code
+    ```
 
-## Option C: Webhook Server
+    Set up a webhook on your repository pointing to `https://your-server:8080/webhooks/github`, then mention `@my-reviewer` in a PR comment.
 
-For automated reviews triggered by PR comments, deploy the webhook server.
-
-### Prerequisites
-
-- **Python 3.13+**
-- **[uv](https://github.com/astral-sh/uv)** for dependency management
-- **[Claude Code CLI](https://claude.ai/code)** installed and on `PATH`
-- A **GitHub** or **GitLab** account with API tokens
-
-### Install
-
-```bash
-git clone https://github.com/gauthierdmn/nominal-code.git
-cd nominal-code/app
-uv sync
-```
-
-### Configure
-
-Create a `.env` file (or export the variables directly). The simplest setup is a **reviewer-only bot on GitHub**.
-
-**Using a PAT:**
-
-```bash
-REVIEWER_BOT_USERNAME=my-reviewer
-ALLOWED_USERS=alice,bob
-GITHUB_TOKEN=ghp_...
-GITHUB_WEBHOOK_SECRET=your-secret
-```
-
-**Using a GitHub App:**
-
-```bash
-REVIEWER_BOT_USERNAME=my-reviewer
-ALLOWED_USERS=alice,bob
-GITHUB_APP_ID=12345
-GITHUB_APP_PRIVATE_KEY_PATH=/path/to/private-key.pem
-GITHUB_WEBHOOK_SECRET=your-secret
-```
-
-You will also need a publicly reachable server (or a tunnel like ngrok for development). Set up a webhook on your GitHub repository pointing to `https://your-server:8080/webhooks/github`. See [GitHub platform setup](platforms/github.md) for full instructions.
-
-### Run
-
-```bash
-cd app
-uv run nominal-code
-```
-
-You should see:
-
-```
-INFO     nominal_code.main Starting server on 0.0.0.0:8080 | platforms=['github'] | reviewer=@my-reviewer | allowed_users=...
-INFO     nominal_code.main Server is running, waiting for webhooks...
-```
-
-### Verify
-
-Open a pull request on your repository and leave a comment:
-
-```
-@my-reviewer please review this
-```
-
-The bot should react with an eyes emoji and then post a structured code review.
+    **Next:** [Webhook Mode full guide](modes/webhook.md) (platform setup, auto-trigger, multi-platform)
 
 ## Next Steps
 
-- Add a worker bot for code changes — see [Worker bot](bots/worker.md)
-- See [Configuration](configuration.md) for the full environment variable reference
-- Set up GitLab — see [GitLab platform setup](platforms/gitlab.md)
-- Try CI mode for zero-infrastructure reviews — see [CI Mode](ci.md)
+- **[Configuration](reference/configuration.md)** — prompts, guidelines, auto-trigger, per-repo overrides
+- **[Environment Variables](reference/env-vars.md)** — full variable reference grouped by feature
+- **Platforms:** [GitHub](platforms/github.md) | [GitLab](platforms/gitlab.md)
+- **Bots:** [Reviewer](bots/reviewer.md) | [Worker (Beta)](bots/worker.md)

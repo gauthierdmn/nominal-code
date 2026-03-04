@@ -16,6 +16,7 @@ GitHub/GitLab sends webhook             GitHub/GitLab sends webhook
                        │
                        ├─ verify_webhook()         ← signature/token check
                        ├─ parse_event()            ← normalize into PullRequestEvent
+                       ├─ [repo in ALLOWED_REPOS?] ← skip if not listed
                        │
                        ├─ [lifecycle event in REVIEWER_TRIGGERS?]
                        │       ▼

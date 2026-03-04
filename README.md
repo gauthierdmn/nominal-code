@@ -9,27 +9,23 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License: Apache 2.0"></a>
 </p>
 
-Nominal Code is an AI-powered code review and code fix agent for GitHub and GitLab pull requests. It uses Claude to read your diffs, post structured inline reviews, and optionally push fixes — all without leaving your PR.
+Nominal Code is an AI-powered code review agent for GitHub and GitLab pull requests. It uses Claude to read your diffs and post structured inline reviews — all without leaving your PR.
 
 It runs anywhere: as a **CI job** (GitHub Actions or GitLab CI), from the **command line**, or as a **self-hosted webhook server** for real-time interaction.
 
 ## What it does
 
-Nominal Code ships two bots, each with a distinct role:
+The **reviewer bot** fetches the PR diff, runs an AI agent with **read-only tools**, and posts structured inline code reviews anchored to specific diff lines.
 
-| | Reviewer | Worker |
-|---|---|---|
-| **Purpose** | Posts structured inline code reviews | Applies code changes and pushes commits |
-| **Tool access** | Read-only (safe to run on any PR) | Full (clones, edits, commits, pushes) |
-| **Output** | Review comments anchored to specific diff lines | Commits pushed to the PR branch |
+It accepts a **custom prompt** to steer the review (e.g. *"focus on security"* or *"check for SQL injection"*), and respects **per-repo coding guidelines** placed in `.nominal/` at the root of your repository.
 
-Both bots accept a **custom prompt** to steer the review (e.g. *"focus on security"* or *"check for SQL injection"*), and respect **per-repo coding guidelines** placed in `.nominal/` at the root of your repository.
+> **Beta:** A **worker bot** is also available — it can apply code changes and push commits directly to the PR branch. See [Worker Bot](https://gauthierdmn.github.io/nominal-code/bots/worker/) for details.
 
 ## How to run it
 
 ### CI job
 
-The fastest way to get started. The example below uses GitHub Actions — GitLab CI is also supported (see [Configuration](docs/configuration.md)).
+The fastest way to get started. The example below uses GitHub Actions — GitLab CI is also supported (see [CI Mode](https://gauthierdmn.github.io/nominal-code/modes/ci/)).
 
 ```yaml
 # .github/workflows/review.yml
@@ -88,7 +84,7 @@ export GITHUB_WEBHOOK_SECRET=your-secret
 uv run nominal-code
 ```
 
-The server supports **GitHub App authentication** as an alternative to PATs, **auto-triggering** reviews on PR lifecycle events, and **multi-turn conversations** that carry context across comments. See [Getting Started](docs/getting-started.md) for the full setup.
+The server supports **GitHub App authentication** as an alternative to PATs, **auto-triggering** reviews on PR lifecycle events, and **multi-turn conversations** that carry context across comments. See [Getting Started](https://gauthierdmn.github.io/nominal-code/getting-started/) for the full setup.
 
 ## Configuration highlights
 
@@ -101,17 +97,18 @@ The server supports **GitHub App authentication** as an alternative to PATs, **a
 | Auto-trigger | `REVIEWER_TRIGGERS=pr_opened,pr_push,pr_reopened,pr_ready_for_review` |
 | Allowed users | `ALLOWED_USERS=alice,bob` (webhook mode) |
 
-Full reference: [Configuration](docs/configuration.md)
+Full reference: [Configuration](https://gauthierdmn.github.io/nominal-code/reference/configuration/) | [Environment Variables](https://gauthierdmn.github.io/nominal-code/reference/env-vars/)
 
 ## Documentation
 
-- [Getting Started](docs/getting-started.md) — from zero to a working bot
-- [CLI Mode](docs/cli.md) — one-off reviews without a server
-- [Configuration](docs/configuration.md) — environment variables and options
-- [Architecture](docs/architecture.md) — request flow, agent runners, workspace layout
-- [Deployment](docs/deployment.md) — production setup, Docker, health checks
-- **Platforms:** [GitHub](docs/platforms/github.md) | [GitLab](docs/platforms/gitlab.md)
-- **Bots:** [Reviewer](docs/bots/reviewer.md) | [Worker](docs/bots/worker.md)
+- [Getting Started](https://gauthierdmn.github.io/nominal-code/getting-started/) — from zero to a working bot
+- **Modes:** [CI](https://gauthierdmn.github.io/nominal-code/modes/ci/) | [CLI](https://gauthierdmn.github.io/nominal-code/modes/cli/) | [Webhook](https://gauthierdmn.github.io/nominal-code/modes/webhook/)
+- **Platforms:** [GitHub](https://gauthierdmn.github.io/nominal-code/platforms/github/) | [GitLab](https://gauthierdmn.github.io/nominal-code/platforms/gitlab/)
+- **Bots:** [Reviewer](https://gauthierdmn.github.io/nominal-code/bots/reviewer/) | [Worker (Beta)](https://gauthierdmn.github.io/nominal-code/bots/worker/)
+- **Reference:** [Configuration](https://gauthierdmn.github.io/nominal-code/reference/configuration/) | [Environment Variables](https://gauthierdmn.github.io/nominal-code/reference/env-vars/)
+- [Architecture](https://gauthierdmn.github.io/nominal-code/architecture/) — request flow, agent runners, workspace layout
+- [Deployment](https://gauthierdmn.github.io/nominal-code/deployment/) — production setup, Docker, health checks
+- [Security](https://gauthierdmn.github.io/nominal-code/security/) — trust model, LLM risks, authentication
 
 ## Development
 
@@ -127,7 +124,4 @@ uv run pytest
 
 ## Security
 
-- Only users in `ALLOWED_USERS` can trigger the bots — other comments are silently ignored
-- Webhook signatures are verified when secrets are configured
-- GitHub App auth provides auto-rotating installation tokens
-- The reviewer bot is restricted to read-only tools; the worker bot has full access
+Nominal Code includes webhook signature verification, tool restrictions, token separation, and resource limits. See the **[Security](https://gauthierdmn.github.io/nominal-code/security/)** page for the full trust model, LLM prompt injection risks, and hardening recommendations.

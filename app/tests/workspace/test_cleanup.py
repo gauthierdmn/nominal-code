@@ -205,6 +205,29 @@ class TestOrphanedDepsCleanup:
         assert deps_dir.exists()
 
 
+class TestPurge:
+    def test_purge_deletes_all_directories(self, base_dir, cleaner):
+        _create_pr_dir(base_dir, "owner", "repo-a", 1)
+        _create_pr_dir(base_dir, "owner", "repo-b", 2)
+
+        cleaner.purge()
+
+        assert base_dir.exists()
+        assert not any(base_dir.iterdir())
+
+    def test_purge_noop_when_base_dir_missing(self, cleaner):
+        cleaner.purge()
+
+    def test_purge_skips_files(self, base_dir, cleaner):
+        base_dir.mkdir(parents=True, exist_ok=True)
+        stray_file = base_dir / "stray.txt"
+        stray_file.write_text("placeholder")
+
+        cleaner.purge()
+
+        assert stray_file.exists()
+
+
 class TestStartStop:
     @pytest.mark.asyncio
     async def test_start_stop_lifecycle(self, cleaner):
