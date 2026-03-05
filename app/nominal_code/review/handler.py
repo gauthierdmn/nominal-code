@@ -475,7 +475,36 @@ def _parse_finding(item: object) -> ReviewFinding:
 
     side: DiffSide = DiffSide(side_raw)
 
-    return ReviewFinding(file_path=path, line=line, body=body, side=side)
+    suggestion_raw: object = item.get("suggestion")
+
+    if suggestion_raw is not None:
+        if not isinstance(suggestion_raw, str) or not suggestion_raw:
+            raise ValueError("invalid suggestion")
+
+        if side == DiffSide.LEFT:
+            raise ValueError("suggestion not allowed on LEFT side")
+
+    suggestion: str | None = suggestion_raw if isinstance(suggestion_raw, str) else None
+
+    start_line_raw: object = item.get("start_line")
+
+    if start_line_raw is not None:
+        if not isinstance(start_line_raw, int) or start_line_raw <= 0:
+            raise ValueError("invalid start_line")
+
+        if start_line_raw > line:
+            raise ValueError("start_line must be <= line")
+
+    start_line: int | None = start_line_raw if isinstance(start_line_raw, int) else None
+
+    return ReviewFinding(
+        file_path=path,
+        line=line,
+        body=body,
+        side=side,
+        suggestion=suggestion,
+        start_line=start_line,
+    )
 
 
 def parse_review_output(output: str) -> AgentReview | None:
@@ -545,7 +574,14 @@ def _filter_findings(
 
         valid_lines: set[int] = file_sides.get(finding.side, set())
 
-        if finding.line in valid_lines:
+        if finding.start_line is not None:
+            required_lines: range = range(finding.start_line, finding.line + 1)
+
+            if all(ln in valid_lines for ln in required_lines):
+                valid.append(finding)
+            else:
+                rejected.append(finding)
+        elif finding.line in valid_lines:
             valid.append(finding)
         else:
             rejected.append(finding)
@@ -599,7 +635,9 @@ def _build_retry_prompt(previous_output: str) -> str:
         "Your previous output was not valid JSON. "
         "Please output ONLY valid JSON matching the required format:\n"
         '{"summary": "...", "comments": '
-        '[{"path": "...", "line": N, "body": "..."}]}\n\n'
+        '[{"path": "...", "line": N, "body": "...", '
+        '"suggestion": "optional replacement code", '
+        '"start_line": optional_int}]}\n\n'
         f"Your previous output was:\n{previous_output}"
     )
 

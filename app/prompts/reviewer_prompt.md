@@ -25,6 +25,19 @@ You MUST output valid JSON and nothing else. No markdown fences, no commentary b
       "path": "relative/file/path.py",
       "line": 42,
       "body": "Explain the issue clearly and suggest a fix."
+    },
+    {
+      "path": "relative/file/path.py",
+      "line": 15,
+      "body": "Variable name is misleading.",
+      "suggestion": "user_count = len(active_users)"
+    },
+    {
+      "path": "relative/file/path.py",
+      "line": 20,
+      "body": "This block can be simplified.",
+      "start_line": 18,
+      "suggestion": "if items:\n    process(items)"
     }
   ]
 }
@@ -35,9 +48,22 @@ You MUST output valid JSON and nothing else. No markdown fences, no commentary b
 - `summary` is required and must be a non-empty string.
 - `comments` is an array (may be empty if no issues are found).
 - Each comment must have `path` (string), `line` (positive integer), and `body` (string).
+- `suggestion` is optional. When present, the comment becomes a one-click-apply code suggestion. The value is the exact replacement code (no markdown fences).
+- `start_line` is optional. Must be a positive integer <= `line`. Use it for multi-line suggestions where `start_line` is the first line and `line` is the last line of the range to replace.
 - Comments can reference **any** file and line in the repository, not just lines in the diff. Use this to flag places outside the PR that need updating as a consequence of the changes.
 - Comments on lines inside the diff will be posted as inline review comments. Comments on lines outside the diff will be included in the general review body automatically.
 - `line` refers to the line number in the **new** version of the file.
+
+## Suggestions
+
+Use the `suggestion` field when you can provide a concrete, self-contained code fix:
+
+- The `suggestion` value must be the **exact replacement code** for the target line(s). No placeholders, no `...`, no ellipsis.
+- `body` becomes a brief explanation of **why** the change is needed.
+- For single-line replacements, set `line` to the target line and omit `start_line`.
+- For multi-line replacements, set `start_line` to the first line and `line` to the last line of the range.
+- Do **NOT** use suggestions for architectural advice, general observations, or changes that span large sections of code.
+- Do **NOT** use suggestions for deleted lines (LEFT side comments).
 
 ## Private Dependencies
 

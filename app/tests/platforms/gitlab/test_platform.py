@@ -13,7 +13,10 @@ from nominal_code.platforms.base import (
     PlatformName,
 )
 from nominal_code.platforms.gitlab import GitLabPlatform
-from nominal_code.platforms.gitlab.platform import _create_gitlab_platform
+from nominal_code.platforms.gitlab.platform import (
+    _create_gitlab_platform,
+    _format_suggestion_body,
+)
 
 
 @pytest.fixture
@@ -946,6 +949,39 @@ class TestFetchPrComments:
 
         assert result[0].author == "alice"
         assert result[1].author == "bob"
+
+
+class TestFormatSuggestionBody:
+    def test_format_suggestion_body_plain_comment(self):
+        finding = ReviewFinding(file_path="src/main.py", line=10, body="Bug here")
+
+        assert _format_suggestion_body(finding) == "Bug here"
+
+    def test_format_suggestion_body_single_line(self):
+        finding = ReviewFinding(
+            file_path="src/main.py",
+            line=10,
+            body="Use snake_case",
+            suggestion="user_count = len(users)",
+        )
+        result = _format_suggestion_body(finding)
+
+        assert "```suggestion:-0+0" in result
+        assert "user_count = len(users)" in result
+        assert result.endswith("```")
+
+    def test_format_suggestion_body_multiline(self):
+        finding = ReviewFinding(
+            file_path="src/main.py",
+            line=20,
+            body="Simplify",
+            suggestion="if items:\n    process(items)",
+            start_line=18,
+        )
+        result = _format_suggestion_body(finding)
+
+        assert "```suggestion:-2+0" in result
+        assert "if items:\n    process(items)" in result
 
 
 class TestFactory:

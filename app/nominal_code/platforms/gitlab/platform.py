@@ -34,6 +34,30 @@ DISCUSSIONS_PER_PAGE: int = 100
 logger: logging.Logger = logging.getLogger(__name__)
 
 
+def _format_suggestion_body(finding: ReviewFinding) -> str:
+    """
+    Format a finding body with a GitLab suggestion fence when applicable.
+
+    Args:
+        finding (ReviewFinding): The review finding to format.
+
+    Returns:
+        str: The formatted body, with a suggestion fence appended if
+            the finding has a suggestion.
+    """
+
+    if finding.suggestion is None:
+        return finding.body
+
+    if finding.start_line is not None:
+        lines_above: int = finding.line - finding.start_line
+        fence: str = f"```suggestion:-{lines_above}+0"
+    else:
+        fence = "```suggestion:-0+0"
+
+    return f"{finding.body}\n\n{fence}\n{finding.suggestion}\n```"
+
+
 class GitLabPlatform:
     """
     GitLab webhook handler and API client.
@@ -548,7 +572,7 @@ class GitLabPlatform:
                     "POST",
                     discussions_url,
                     json={
-                        "body": finding.body,
+                        "body": _format_suggestion_body(finding),
                         "position": position_payload,
                     },
                 )
