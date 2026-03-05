@@ -16,7 +16,11 @@ from nominal_code.config import (
 from nominal_code.models import EventType
 from nominal_code.platforms.gitlab import GitLabPlatform
 from nominal_code.webhooks.server import create_app
-from tests.integration.conftest import BranchInfo, wait_for_webhook_processing
+from tests.integration.conftest import (
+    BranchInfo,
+    install_enqueue_hook,
+    wait_for_webhook_processing,
+)
 from tests.integration.gitlab.api import (
     close_mr,
     create_mr,
@@ -152,7 +156,10 @@ async def test_webhook_server_posts_review(
                     event_id,
                 )
 
+            job_enqueued = install_enqueue_hook(session_queue)
+
             await wait_for_webhook_processing(
+                job_enqueued,
                 session_queue,
                 attempt_redelivery=_attempt_gitlab_redelivery,
             )
