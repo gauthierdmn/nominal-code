@@ -1,17 +1,19 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import re
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from json_repair import loads as json_repair_loads
+
 from nominal_code.agent.api.tools import SUBMIT_REVIEW_TOOL_NAME
 from nominal_code.agent.cli.tracking import run_and_track_session
 from nominal_code.agent.errors import handle_agent_errors
 from nominal_code.agent.prompts import resolve_system_prompt
+from nominal_code.agent.runner import run_agent
 from nominal_code.models import (
     AgentReview,
     BotType,
@@ -33,7 +35,6 @@ if TYPE_CHECKING:
     from nominal_code.platforms.base import ReviewerPlatform
     from nominal_code.workspace.git import GitWorkspace
 
-MAX_REVIEW_RETRIES: int = 2
 MAX_EXISTING_COMMENTS: int = 50
 REVIEWER_ALLOWED_TOOLS: list[str] = [
     "Read",
@@ -43,6 +44,37 @@ REVIEWER_ALLOWED_TOOLS: list[str] = [
 ]
 HUNK_HEADER_PATTERN: re.Pattern[str] = re.compile(
     r"^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@",
+)
+SUMMARY_PATTERN: re.Pattern[str] = re.compile(
+    r'"summary"\s*:\s*"((?:[^"\\]|\\.)*)"',
+)
+FALLBACK_MESSAGE: str = (
+    "I completed my analysis but failed to produce a structured review. "
+    "You can re-trigger the review by mentioning me again. "
+    "If the issue persists, contact your administrator."
+)
+JSON_FIX_SYSTEM_PROMPT: str = (
+    "You are a JSON repair tool. You receive malformed JSON and output "
+    "ONLY the corrected, valid JSON. Do not add commentary, markdown "
+    "fences, or explanations. Preserve all content and structure — fix "
+    "only syntax errors."
+)
+JSON_FIX_PROMPT: str = (
+    "The following text is malformed JSON. Common issues include "
+    "unescaped double quotes inside string values, trailing commas, "
+    "and missing commas. Fix the syntax errors and output ONLY the "
+    "corrected JSON.\n\n{broken_json}"
+)
+JSON_FIX_RETRY_PROMPT: str = (
+    "Your previous fix still produced invalid JSON. Pay special attention to:\n"
+    "- Double quotes inside string values MUST be escaped as \\\"\n"
+    "- The `suggestion` fields often contain code with double-quoted strings "
+    "that need escaping\n"
+    "- No trailing commas after the last element in arrays or objects\n\n"
+    "The expected structure is:\n"
+    '{{"summary": "...", "comments": [{{"path": "...", "line": N, '
+    '"body": "...", "suggestion": "optional code"}}]}}\n\n'
+    "Fix this JSON and output ONLY valid JSON:\n\n{broken_json}"
 )
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -212,49 +244,35 @@ async def review(
 
     review_result: AgentReview | None = parse_review_output(result.output)
 
-    retry_count: int = 0
-
-    while review_result is None and retry_count < MAX_REVIEW_RETRIES:
-        retry_count += 1
-        retry_prompt: str = _build_retry_prompt(result.output)
-
+    if review_result is None:
         logger.warning(
-            "Reviewer JSON parse failed for %s#%d, retry %d/%d",
+            "Reviewer JSON parse failed for %s#%d, attempting repair",
             event.repo_full_name,
             event.pr_number,
-            retry_count,
-            MAX_REVIEW_RETRIES,
         )
 
-        result = await run_and_track_session(
-            event=event,
-            bot_type=BotType.REVIEWER,
-            session_store=session_store,
-            system_prompt=combined_system_prompt,
-            prompt=retry_prompt,
-            cwd=repo_path,
+        review_result = await _repair_review_output(
+            broken_output=result.output,
             config=config,
-            allowed_tools=effective_allowed_tools,
-            session_id_override=result.session_id,
+            cwd=repo_path,
         )
-
-        review_result = parse_review_output(result.output)
 
     if review_result is None:
         logger.warning(
-            "Reviewer JSON still invalid after %d retries for %s#%d, "
+            "Reviewer JSON repair failed for %s#%d, "
             "falling back to plain comment",
-            MAX_REVIEW_RETRIES,
             event.repo_full_name,
             event.pr_number,
         )
+
+        fallback_comment: str = _build_fallback_comment(result.output)
 
         return ReviewResult(
             agent_review=None,
             valid_findings=[],
             rejected_findings=[],
             effective_summary="",
-            raw_output=result.output,
+            raw_output=fallback_comment,
         )
 
     valid_findings, rejected_findings = _filter_findings(
@@ -421,29 +439,6 @@ def _build_reviewer_prompt(
     return "\n\n".join(parts)
 
 
-def _strip_fences(text: str) -> str:
-    """
-    Remove markdown code fences from a string if present.
-
-    Args:
-        text (str): Text that may be wrapped in a code fence.
-
-    Returns:
-        str: The text with the opening fence line and closing fence removed.
-    """
-
-    # LLMs often wrap JSON in markdown code fences even when instructed not to.
-    if not text.startswith("```"):
-        return text
-
-    lines: list[str] = text.split("\n")[1:]
-
-    if lines and lines[-1].strip() == "```":
-        lines = lines[:-1]
-
-    return "\n".join(lines).strip()
-
-
 def _parse_finding(item: object) -> ReviewFinding:
     """
     Parse a single comment dict into a ReviewFinding.
@@ -524,8 +519,11 @@ def parse_review_output(output: str) -> AgentReview | None:
     """
     Parse the agent's JSON output into an AgentReview.
 
-    Returns None if the output is not valid JSON or does not match
-    the expected structure.
+    Extracts the JSON object from the output (stripping prose and code
+    fences), then uses ``json_repair.loads`` which both validates and
+    repairs common JSON syntax errors (unescaped quotes, trailing commas).
+
+    Returns None if the output cannot be parsed into the expected structure.
 
     Args:
         output (str): Raw text output from the agent.
@@ -535,7 +533,8 @@ def parse_review_output(output: str) -> AgentReview | None:
     """
 
     try:
-        data: object = json.loads(_strip_fences(output.strip()))
+        extracted: str = _extract_json_substring(output.strip())
+        data: object = json_repair_loads(extracted)
 
         if not isinstance(data, dict):
             return None
@@ -552,7 +551,7 @@ def parse_review_output(output: str) -> AgentReview | None:
 
         findings: list[ReviewFinding] = [_parse_finding(item) for item in raw_comments]
 
-    except (json.JSONDecodeError, ValueError):
+    except ValueError:
         return None
 
     return AgentReview(summary=summary, findings=findings)
@@ -633,26 +632,109 @@ def _build_effective_summary(
     return "\n".join(parts)
 
 
-def _build_retry_prompt(previous_output: str) -> str:
+def _extract_json_substring(text: str) -> str:
     """
-    Build a prompt asking the agent to fix its malformed JSON output.
+    Extract the outermost JSON object from text that may contain prose.
+
+    Finds the first ``{`` and last ``}`` and returns that substring.
+    Falls back to the original text if no braces are found.
 
     Args:
-        previous_output (str): The previous invalid output from the agent.
+        text (str): Raw text potentially containing a JSON object.
 
     Returns:
-        str: The retry prompt.
+        str: The extracted JSON substring, or the original text.
     """
 
-    return (
-        "Your previous output was not valid JSON. "
-        "Please output ONLY valid JSON matching the required format:\n"
-        '{"summary": "...", "comments": '
-        '[{"path": "...", "line": N, "body": "...", '
-        '"suggestion": "optional replacement code", '
-        '"start_line": optional_int}]}\n\n'
-        f"Your previous output was:\n{previous_output}"
-    )
+    first_brace: int = text.find("{")
+    last_brace: int = text.rfind("}")
+
+    if first_brace == -1 or last_brace == -1 or last_brace <= first_brace:
+        return text
+
+    return text[first_brace : last_brace + 1]
+
+
+def _build_fallback_comment(raw_output: str) -> str:
+    """
+    Build a user-facing comment when the review JSON cannot be parsed.
+
+    Attempts to extract the ``summary`` field from the broken JSON via
+    regex. If found, posts the summary with a note that inline comments
+    could not be produced. Otherwise, posts a generic retry message.
+
+    Args:
+        raw_output (str): The raw agent output that failed parsing.
+
+    Returns:
+        str: The fallback comment to post on the PR.
+    """
+
+    match: re.Match[str] | None = SUMMARY_PATTERN.search(raw_output)
+
+    if match:
+        summary: str = match.group(1).replace('\\"', '"')
+
+        return (
+            f"{summary}\n\n"
+            "_I was unable to produce inline review comments for this PR. "
+            "You can re-trigger the review by mentioning me again. "
+            "If the issue persists, contact your administrator._"
+        )
+
+    return FALLBACK_MESSAGE
+
+
+async def _repair_review_output(
+    broken_output: str,
+    config: Config,
+    cwd: Path,
+) -> AgentReview | None:
+    """
+    Attempt to repair malformed review JSON via LLM-based repair.
+
+    Since ``parse_review_output`` already applies extraction and
+    ``json_repair.loads``, each LLM attempt gets the full repair
+    pipeline for free. Tries two LLM prompts with increasing specificity.
+
+    Args:
+        broken_output (str): The raw agent output that failed JSON parsing.
+        config (Config): Application configuration (for agent settings).
+        cwd (Path): Working directory for the agent.
+
+    Returns:
+        AgentReview | None: The parsed review if any strategy succeeds,
+            or None if all fail.
+    """
+
+    extracted: str = _extract_json_substring(broken_output)
+
+    for attempt, prompt_template in enumerate(
+        [JSON_FIX_PROMPT, JSON_FIX_RETRY_PROMPT],
+        start=1,
+    ):
+        prompt: str = prompt_template.format(broken_json=extracted)
+
+        logger.info("Attempting LLM JSON repair (attempt %d/2)", attempt)
+
+        fix_result: AgentResult = await run_agent(
+            prompt=prompt,
+            cwd=cwd,
+            system_prompt=JSON_FIX_SYSTEM_PROMPT,
+            allowed_tools=[],
+            agent_config=config.agent,
+        )
+
+        parsed: AgentReview | None = parse_review_output(fix_result.output)
+
+        if parsed is not None:
+            logger.info("LLM JSON repair succeeded on attempt %d", attempt)
+
+            return parsed
+
+    logger.warning("All JSON repair strategies failed")
+
+    return None
 
 
 def _parse_diff_lines(patch: str) -> dict[DiffSide, set[int]]:
