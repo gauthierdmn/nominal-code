@@ -15,7 +15,9 @@ You have access to Read, Glob, and Grep tools on the repository checkout. Before
 
 ## Output Format
 
-You MUST output valid JSON and nothing else. No markdown fences, no commentary before or after the JSON.
+If you have a `submit_review` tool available, you MUST call it with your review instead of outputting raw JSON. The tool schema enforces the correct format.
+
+Otherwise, output valid JSON and nothing else. No markdown fences, no commentary before or after the JSON.
 
 ```json
 {

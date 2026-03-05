@@ -8,6 +8,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from nominal_code.agent.api.tools import SUBMIT_REVIEW_TOOL_NAME
 from nominal_code.agent.cli.tracking import run_and_track_session
 from nominal_code.agent.errors import handle_agent_errors
 from nominal_code.agent.prompts import resolve_system_prompt
@@ -193,6 +194,11 @@ async def review(
             file_paths=file_paths,
         )
 
+    effective_allowed_tools: list[str] = list(REVIEWER_ALLOWED_TOOLS)
+
+    if config.agent and config.agent.use_api:
+        effective_allowed_tools.append(SUBMIT_REVIEW_TOOL_NAME)
+
     result: AgentResult = await run_and_track_session(
         event=event,
         bot_type=BotType.REVIEWER,
@@ -201,7 +207,7 @@ async def review(
         prompt=full_prompt,
         cwd=repo_path,
         config=config,
-        allowed_tools=REVIEWER_ALLOWED_TOOLS,
+        allowed_tools=effective_allowed_tools,
     )
 
     review_result: AgentReview | None = parse_review_output(result.output)
@@ -228,7 +234,7 @@ async def review(
             prompt=retry_prompt,
             cwd=repo_path,
             config=config,
-            allowed_tools=REVIEWER_ALLOWED_TOOLS,
+            allowed_tools=effective_allowed_tools,
             session_id_override=result.session_id,
         )
 
