@@ -1509,6 +1509,19 @@ class TestParseFinding:
                 }
             )
 
+    def test_parse_finding_start_line_without_suggestion(self):
+        item = {
+            "path": "src/main.py",
+            "line": 24,
+            "body": "Hardcoded credentials",
+            "start_line": 20,
+        }
+
+        result = _parse_finding(item)
+
+        assert result.start_line == 20
+        assert result.suggestion is None
+
     def test_parse_finding_suggestion_on_left_side_raises(self):
         with pytest.raises(ValueError, match="suggestion not allowed on LEFT side"):
             _parse_finding(

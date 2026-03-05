@@ -36,6 +36,12 @@ Otherwise, output valid JSON and nothing else. No markdown fences, no commentary
     },
     {
       "path": "relative/file/path.py",
+      "line": 24,
+      "start_line": 20,
+      "body": "This block has hardcoded credentials that should be loaded from environment variables."
+    },
+    {
+      "path": "relative/file/path.py",
       "line": 20,
       "body": "This block can be simplified.",
       "start_line": 18,
@@ -51,7 +57,7 @@ Otherwise, output valid JSON and nothing else. No markdown fences, no commentary
 - `comments` is an array (may be empty if no issues are found).
 - Each comment must have `path` (string), `line` (positive integer), and `body` (string).
 - `suggestion` is optional. When present, the comment becomes a one-click-apply code suggestion. The value is the exact replacement code (no markdown fences).
-- `start_line` is optional. Must be a positive integer <= `line`. Use it for multi-line suggestions where `start_line` is the first line and `line` is the last line of the range to replace.
+- `start_line` is optional. Must be a positive integer <= `line`. Use it to mark a multi-line range where `start_line` is the first line and `line` is the last line. Works both with and without a `suggestion`.
 - Comments can reference **any** file and line in the repository, not just lines in the diff. Use this to flag places outside the PR that need updating as a consequence of the changes.
 - Comments on lines inside the diff will be posted as inline review comments. Comments on lines outside the diff will be included in the general review body automatically.
 - `line` refers to the line number in the **new** version of the file.
