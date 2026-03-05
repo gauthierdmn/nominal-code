@@ -18,18 +18,20 @@ from nominal_code.models import (
 )
 from nominal_code.platforms.base import CommentEvent, ExistingComment, PlatformName
 from nominal_code.review.handler import (
+    FALLBACK_MESSAGE,
     MAX_EXISTING_COMMENTS,
     REVIEWER_ALLOWED_TOOLS,
     ReviewResult,
     _build_diff_index,
     _build_effective_summary,
-    _build_retry_prompt,
+    _build_fallback_comment,
     _build_reviewer_prompt,
+    _extract_json_substring,
     _filter_findings,
     _format_existing_comments,
     _parse_diff_lines,
     _parse_finding,
-    _strip_fences,
+    _repair_review_output,
     parse_review_output,
     review,
     review_and_post,
@@ -318,7 +320,7 @@ class TestReviewerProcessComment:
             assert call_kwargs["findings"][0].file_path == "src/main.py"
 
     @pytest.mark.asyncio
-    async def test_reviewer_retry_on_invalid_json(self):
+    async def test_reviewer_repair_on_invalid_json(self):
         config = _make_config(allowed_users=["alice"])
         platform = _make_platform()
         comment = _make_comment(author="alice")
@@ -331,26 +333,29 @@ class TestReviewerProcessComment:
             }
         )
 
-        with patch(
-            "nominal_code.agent.cli.tracking.run_agent",
-            new_callable=AsyncMock,
-        ) as mock_run:
-            mock_run.side_effect = [
-                AgentResult(
-                    output="not valid json",
-                    is_error=False,
-                    num_turns=1,
-                    duration_ms=1000,
-                    session_id="sess-1",
-                ),
-                AgentResult(
-                    output=valid_json,
-                    is_error=False,
-                    num_turns=1,
-                    duration_ms=500,
-                    session_id="sess-1",
-                ),
-            ]
+        with (
+            patch(
+                "nominal_code.agent.cli.tracking.run_agent",
+                new_callable=AsyncMock,
+            ) as mock_tracking_run,
+            patch(
+                "nominal_code.review.handler.run_agent",
+                new_callable=AsyncMock,
+            ) as mock_repair_run,
+        ):
+            mock_tracking_run.return_value = AgentResult(
+                output="not valid json",
+                is_error=False,
+                num_turns=1,
+                duration_ms=1000,
+                session_id="sess-1",
+            )
+            mock_repair_run.return_value = AgentResult(
+                output=valid_json,
+                is_error=False,
+                num_turns=1,
+                duration_ms=200,
+            )
 
             with patch(
                 "nominal_code.workspace.setup.GitWorkspace",
@@ -368,12 +373,13 @@ class TestReviewerProcessComment:
                     session_store=session_store,
                 )
 
-            assert mock_run.call_count == 2
+            assert mock_tracking_run.call_count == 1
+            assert mock_repair_run.call_count == 1
             platform.submit_review.assert_not_called()
             platform.post_reply.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_reviewer_fallback_after_exhausted_retries(self):
+    async def test_reviewer_fallback_after_exhausted_repair(self):
         config = _make_config(allowed_users=["alice"])
         platform = _make_platform()
         comment = _make_comment(author="alice")
@@ -387,11 +393,18 @@ class TestReviewerProcessComment:
             session_id="sess-1",
         )
 
-        with patch(
-            "nominal_code.agent.cli.tracking.run_agent",
-            new_callable=AsyncMock,
-        ) as mock_run:
-            mock_run.return_value = bad_result
+        with (
+            patch(
+                "nominal_code.agent.cli.tracking.run_agent",
+                new_callable=AsyncMock,
+            ) as mock_tracking_run,
+            patch(
+                "nominal_code.review.handler.run_agent",
+                new_callable=AsyncMock,
+            ) as mock_repair_run,
+        ):
+            mock_tracking_run.return_value = bad_result
+            mock_repair_run.return_value = bad_result
 
             with patch(
                 "nominal_code.workspace.setup.GitWorkspace",
@@ -409,13 +422,14 @@ class TestReviewerProcessComment:
                     session_store=session_store,
                 )
 
-            assert mock_run.call_count == 3
+            assert mock_tracking_run.call_count == 1
+            assert mock_repair_run.call_count == 2
             platform.submit_review.assert_not_called()
             platform.post_reply.assert_called_once()
 
             reply_body = platform.post_reply.call_args.kwargs["reply"].body
 
-            assert reply_body == "still not json"
+            assert reply_body == FALLBACK_MESSAGE
 
 
 class TestBuildReviewerPrompt:
@@ -564,6 +578,55 @@ class TestParseReviewOutput:
         result = parse_review_output("[1, 2, 3]")
 
         assert result is None
+
+    def test_parse_review_output_repairs_unescaped_quotes(self):
+        broken = (
+            '{"summary": "ok", "comments": '
+            '[{"path": "f.py", "line": 1, "body": "use "foo" here"}]}'
+        )
+
+        result = parse_review_output(broken)
+
+        assert result is not None
+        assert result.summary == "ok"
+        assert result.findings[0].body == 'use "foo" here'
+
+    def test_parse_review_output_extracts_json_from_prose(self):
+        output = 'Here is my review:\n{"summary": "Looks good", "comments": []}\nDone!'
+
+        result = parse_review_output(output)
+
+        assert result is not None
+        assert result.summary == "Looks good"
+
+    def test_parse_review_output_repairs_trailing_comma(self):
+        broken = (
+            '{"summary": "ok", "comments": '
+            '[{"path": "a.py", "line": 1, "body": "fix",}],}'
+        )
+
+        result = parse_review_output(broken)
+
+        assert result is not None
+        assert result.summary == "ok"
+
+    def test_parse_review_output_empty_string(self):
+        result = parse_review_output("")
+
+        assert result is None
+
+    def test_parse_review_output_repairs_suggestion_with_quotes(self):
+        broken = (
+            '{"summary": "Fix SQL", "comments": [{"path": "db.py", "line": 10, '
+            '"body": "SQL injection", '
+            '"suggestion": "query = "SELECT * FROM users WHERE id = ?""}]}'
+        )
+
+        result = parse_review_output(broken)
+
+        assert result is not None
+        assert result.findings[0].suggestion is not None
+        assert "SELECT" in result.findings[0].suggestion
 
     def test_parse_review_output_left_side_finding(self):
         output = json.dumps(
@@ -1179,35 +1242,43 @@ class TestReview:
         platform = _make_platform()
         comment = _make_comment()
 
-        with patch(
-            "nominal_code.agent.cli.tracking.run_agent",
-            new_callable=AsyncMock,
-        ) as mock_run:
-            mock_run.return_value = AgentResult(
-                output="not json",
-                is_error=False,
-                num_turns=1,
-                duration_ms=500,
-                session_id="sess-1",
+        bad_result = AgentResult(
+            output="not json",
+            is_error=False,
+            num_turns=1,
+            duration_ms=500,
+            session_id="sess-1",
+        )
+
+        with (
+            patch(
+                "nominal_code.agent.cli.tracking.run_agent",
+                new_callable=AsyncMock,
+                return_value=bad_result,
+            ),
+            patch(
+                "nominal_code.review.handler.run_agent",
+                new_callable=AsyncMock,
+                return_value=bad_result,
+            ),
+            patch(
+                "nominal_code.workspace.setup.GitWorkspace",
+            ) as mock_ws_class,
+        ):
+            mock_ws = MagicMock()
+            mock_ws.ensure_ready = AsyncMock()
+            mock_ws.repo_path = Path("/tmp/workspaces/owner/repo/pr-42")
+            mock_ws_class.return_value = mock_ws
+
+            result = await review(
+                event=comment,
+                prompt="review",
+                config=config,
+                platform=platform,
             )
 
-            with patch(
-                "nominal_code.workspace.setup.GitWorkspace",
-            ) as mock_ws_class:
-                mock_ws = MagicMock()
-                mock_ws.ensure_ready = AsyncMock()
-                mock_ws.repo_path = Path("/tmp/workspaces/owner/repo/pr-42")
-                mock_ws_class.return_value = mock_ws
-
-                result = await review(
-                    event=comment,
-                    prompt="review",
-                    config=config,
-                    platform=platform,
-                )
-
         assert result.agent_review is None
-        assert result.raw_output == "not json"
+        assert result.raw_output == FALLBACK_MESSAGE
 
     @pytest.mark.asyncio
     async def test_review_without_session_store(self):
@@ -1308,41 +1379,6 @@ class TestReview:
             reply_body = platform.post_reply.call_args.kwargs["reply"].body
 
             assert reply_body == "Looks good"
-
-
-class TestStripFences:
-    def test_strip_fences_no_fence_unchanged(self):
-        result = _strip_fences('{"summary": "ok"}')
-
-        assert result == '{"summary": "ok"}'
-
-    def test_strip_fences_plain_code_fence(self):
-        text = '```\n{"summary": "ok"}\n```'
-
-        result = _strip_fences(text)
-
-        assert result == '{"summary": "ok"}'
-
-    def test_strip_fences_language_tagged_fence(self):
-        text = '```json\n{"summary": "ok"}\n```'
-
-        result = _strip_fences(text)
-
-        assert result == '{"summary": "ok"}'
-
-    def test_strip_fences_no_closing_fence(self):
-        text = '```json\n{"summary": "ok"}'
-
-        result = _strip_fences(text)
-
-        assert result == '{"summary": "ok"}'
-
-    def test_strip_fences_multiline_content(self):
-        text = "```\nline one\nline two\n```"
-
-        result = _strip_fences(text)
-
-        assert result == "line one\nline two"
 
 
 class TestParseFinding:
@@ -1519,21 +1555,174 @@ class TestParseReviewOutputWithSuggestions:
         assert result.findings[1].start_line == 18
 
 
-class TestBuildRetryPrompt:
-    def test_build_retry_prompt_contains_previous_output(self):
-        result = _build_retry_prompt("bad json output here")
+class TestExtractJsonSubstring:
+    def test_extracts_json_from_prose(self):
+        text = 'Here is the JSON: {"summary": "ok", "comments": []} done.'
 
-        assert "bad json output here" in result
+        result = _extract_json_substring(text)
 
-    def test_build_retry_prompt_mentions_valid_json(self):
-        result = _build_retry_prompt("bad output")
+        assert result == '{"summary": "ok", "comments": []}'
 
-        assert "JSON" in result
+    def test_returns_original_when_no_braces(self):
+        result = _extract_json_substring("no json here")
 
-    def test_build_retry_prompt_is_string(self):
-        result = _build_retry_prompt("")
+        assert result == "no json here"
 
-        assert isinstance(result, str)
+    def test_returns_original_when_only_open_brace(self):
+        result = _extract_json_substring("just { open")
+
+        assert result == "just { open"
+
+    def test_handles_nested_braces(self):
+        text = '{"outer": {"inner": 1}}'
+
+        result = _extract_json_substring(text)
+
+        assert result == '{"outer": {"inner": 1}}'
+
+    def test_strips_markdown_around_json(self):
+        text = 'Sure, here is the review:\n```json\n{"summary": "ok"}\n```'
+
+        result = _extract_json_substring(text)
+
+        assert result == '{"summary": "ok"}'
+
+    def test_returns_original_for_empty_string(self):
+        result = _extract_json_substring("")
+
+        assert result == ""
+
+    def test_returns_original_when_closing_before_opening(self):
+        result = _extract_json_substring("} before {")
+
+        assert result == "} before {"
+
+
+class TestRepairReviewOutput:
+    @pytest.mark.asyncio
+    async def test_repair_succeeds_on_first_llm_attempt(self):
+        config = _make_config()
+        valid_json = json.dumps({"summary": "Fixed", "comments": []})
+
+        with patch(
+            "nominal_code.review.handler.run_agent",
+            new_callable=AsyncMock,
+            return_value=AgentResult(
+                output=valid_json,
+                is_error=False,
+                num_turns=1,
+                duration_ms=100,
+            ),
+        ) as mock_run:
+            result = await _repair_review_output("bad json", config, Path("/tmp"))
+
+        assert result is not None
+        assert result.summary == "Fixed"
+        assert mock_run.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_repair_succeeds_on_second_llm_attempt(self):
+        config = _make_config()
+        valid_json = json.dumps({"summary": "Fixed", "comments": []})
+
+        with patch(
+            "nominal_code.review.handler.run_agent",
+            new_callable=AsyncMock,
+            side_effect=[
+                AgentResult(
+                    output="still broken",
+                    is_error=False,
+                    num_turns=1,
+                    duration_ms=100,
+                ),
+                AgentResult(
+                    output=valid_json,
+                    is_error=False,
+                    num_turns=1,
+                    duration_ms=100,
+                ),
+            ],
+        ) as mock_run:
+            result = await _repair_review_output("bad json", config, Path("/tmp"))
+
+        assert result is not None
+        assert result.summary == "Fixed"
+        assert mock_run.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_repair_extracts_json_before_sending_to_llm(self):
+        config = _make_config()
+        valid_json = json.dumps({"summary": "Fixed", "comments": []})
+        wrapped = 'Here is the review:\n{"summary": "broken}\nDone.'
+
+        with patch(
+            "nominal_code.review.handler.run_agent",
+            new_callable=AsyncMock,
+            return_value=AgentResult(
+                output=valid_json,
+                is_error=False,
+                num_turns=1,
+                duration_ms=100,
+            ),
+        ) as mock_run:
+            await _repair_review_output(wrapped, config, Path("/tmp"))
+
+        prompt_sent = mock_run.call_args.kwargs["prompt"]
+
+        assert "Here is the review" not in prompt_sent
+        assert "Done." not in prompt_sent
+
+    @pytest.mark.asyncio
+    async def test_repair_returns_none_when_all_strategies_fail(self):
+        config = _make_config()
+
+        with patch(
+            "nominal_code.review.handler.run_agent",
+            new_callable=AsyncMock,
+            return_value=AgentResult(
+                output="gibberish",
+                is_error=False,
+                num_turns=1,
+                duration_ms=100,
+            ),
+        ):
+            result = await _repair_review_output("total nonsense", config, Path("/tmp"))
+
+        assert result is None
+
+
+class TestBuildFallbackComment:
+    def test_extracts_summary_from_broken_json(self):
+        broken = '{"summary": "This PR has issues", "comments": [bad stuff}'
+
+        result = _build_fallback_comment(broken)
+
+        assert "This PR has issues" in result
+        assert "unable to produce inline review comments" in result
+
+    def test_handles_escaped_quotes_in_summary(self):
+        broken = '{"summary": "Found \\"critical\\" bugs", "comments": []bad'
+
+        result = _build_fallback_comment(broken)
+
+        assert 'Found "critical" bugs' in result
+
+    def test_summary_variant_includes_contact_admin(self):
+        broken = '{"summary": "Has bugs", "comments": [bad}'
+
+        result = _build_fallback_comment(broken)
+
+        assert "contact your administrator" in result
+
+    def test_returns_generic_message_when_no_summary(self):
+        result = _build_fallback_comment("total nonsense")
+
+        assert result == FALLBACK_MESSAGE
+
+    def test_returns_generic_message_for_empty_output(self):
+        result = _build_fallback_comment("")
+
+        assert result == FALLBACK_MESSAGE
 
 
 class TestParseDiffLines:

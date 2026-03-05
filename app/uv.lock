@@ -504,6 +504,15 @@ wheels = [
 ]
 
 [[package]]
+name = "json-repair"
+version = "0.58.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f5/e4/1a1925b4c1740bc8753f4bdfcec4528e85d89fb253af4cc8132d2f5d0f87/json_repair-0.58.3.tar.gz", hash = "sha256:bc1fad983e12b38cef066f73315765537b60b7e0544106b5c410de83aa2e1f4b", size = 59523, upload-time = "2026-03-03T06:04:05.928Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/96/16/c7cf6658004cf6b7e2df3848743bb9707bd805b309802362ac0c2dedd9ff/json_repair-0.58.3-py3-none-any.whl", hash = "sha256:0194cb1eb5c2126a47dbcc2dfcc2f27ffd55366b00fb1a21b7d5a5bc50f74ce5", size = 41101, upload-time = "2026-03-03T06:04:04.326Z" },
+]
+
+[[package]]
 name = "jsonschema"
 version = "4.26.0"
 source = { registry = "https://pypi.org/simple" }
@@ -738,6 +747,7 @@ dependencies = [
     { name = "claude-agent-sdk" },
     { name = "environs" },
     { name = "httpx" },
+    { name = "json-repair" },
     { name = "pyjwt", extra = ["crypto"] },
 ]
 
@@ -757,6 +767,7 @@ requires-dist = [
     { name = "claude-agent-sdk", specifier = "==0.1.39" },
     { name = "environs", specifier = ">=14.1,<15" },
     { name = "httpx", specifier = "==0.28.1" },
+    { name = "json-repair", specifier = "==0.58.3" },
     { name = "pyjwt", extras = ["crypto"], specifier = ">=2.9.0,<3" },
 ]
 

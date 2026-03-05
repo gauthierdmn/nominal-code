@@ -17,7 +17,11 @@ from nominal_code.models import EventType
 from nominal_code.platforms.github import GitHubPlatform
 from nominal_code.platforms.github.auth import GitHubPatAuth
 from nominal_code.webhooks.server import create_app
-from tests.integration.conftest import BranchInfo, wait_for_webhook_processing
+from tests.integration.conftest import (
+    BranchInfo,
+    install_enqueue_hook,
+    wait_for_webhook_processing,
+)
 from tests.integration.github.api import (
     close_pr,
     create_pr,
@@ -114,6 +118,8 @@ async def test_webhook_server_posts_review(
 
         await wait_for_tunnel_ready(tunnel.public_url)
 
+        job_enqueued = install_enqueue_hook(session_queue)
+
         with patch(
             "nominal_code.agent.cli.tracking.run_agent",
             new_callable=AsyncMock,
@@ -147,6 +153,7 @@ async def test_webhook_server_posts_review(
                 )
 
             await wait_for_webhook_processing(
+                job_enqueued,
                 session_queue,
                 attempt_redelivery=_attempt_github_redelivery,
             )

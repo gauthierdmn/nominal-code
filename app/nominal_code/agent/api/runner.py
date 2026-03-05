@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import time
 from pathlib import Path
@@ -15,7 +16,11 @@ from anthropic.types import (
     ToolUseBlockParam,
 )
 
-from nominal_code.agent.api.tools import execute_tool, get_tool_definitions
+from nominal_code.agent.api.tools import (
+    SUBMIT_REVIEW_TOOL_NAME,
+    execute_tool,
+    get_tool_definitions,
+)
 from nominal_code.agent.result import AgentResult
 
 MAX_RESPONSE_TOKENS: int = 16384
@@ -37,6 +42,12 @@ async def run_agent_api(
     Implements the agentic loop: sends a prompt, processes tool_use
     responses by executing tools locally, sends results back, and repeats
     until the model produces a final text answer or max_turns is reached.
+
+    When ``submit_review`` is in ``allowed_tools``, the corresponding
+    structured-output tool is included. If the model calls it, the tool
+    input is serialized as JSON and returned as the agent output. This
+    ensures correct JSON escaping via the API rather than relying on the
+    model to produce valid JSON text.
 
     Args:
         prompt (str): The user's prompt to pass to the agent.
@@ -90,6 +101,24 @@ async def run_agent_api(
                     num_turns=turns,
                     duration_ms=duration_ms,
                 )
+
+            for block in tool_use_blocks:
+                if block.name == SUBMIT_REVIEW_TOOL_NAME:
+                    if len(tool_use_blocks) > 1:
+                        logger.warning(
+                            "submit_review called alongside %d other tool(s); "
+                            "ignoring other calls",
+                            len(tool_use_blocks) - 1,
+                        )
+
+                    duration_ms = _now_ms() - start_time
+
+                    return AgentResult(
+                        output=json.dumps(block.input),
+                        is_error=False,
+                        num_turns=turns,
+                        duration_ms=duration_ms,
+                    )
 
             tool_results: list[ToolResultBlockParam] = []
 

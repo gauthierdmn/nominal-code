@@ -10,6 +10,7 @@ dependencies = [
     "httpx==0.28.1",
     "PyJWT[crypto]>=2.9.0,<3",
     "environs>=14.1,<15",
+    "json-repair==0.58.3",
 ]
 
 [project.scripts]

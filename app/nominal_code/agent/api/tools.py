@@ -16,6 +16,73 @@ MAX_GREP_OUTPUT_LENGTH: int = 30000
 MAX_READ_LINES: int = 2000
 MAX_LINE_LENGTH: int = 2000
 
+SUBMIT_REVIEW_TOOL_NAME: str = "submit_review"
+
+SUBMIT_REVIEW_TOOL: ToolParam = {
+    "name": SUBMIT_REVIEW_TOOL_NAME,
+    "description": (
+        "Submit your final code review. You MUST call this tool with your "
+        "review summary and inline comments when you have finished reviewing. "
+        "Do not output raw JSON — always use this tool."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "summary": {
+                "type": "string",
+                "description": "A brief overall assessment of the changes.",
+            },
+            "comments": {
+                "type": "array",
+                "description": "Inline review comments.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": ("File path relative to repository root."),
+                        },
+                        "line": {
+                            "type": "integer",
+                            "description": (
+                                "Line number in the new version of the file."
+                            ),
+                        },
+                        "body": {
+                            "type": "string",
+                            "description": ("The review comment explaining the issue."),
+                        },
+                        "side": {
+                            "type": "string",
+                            "enum": ["LEFT", "RIGHT"],
+                            "description": (
+                                "Which side of the diff. LEFT for deleted "
+                                "lines, RIGHT for additions and context."
+                            ),
+                        },
+                        "suggestion": {
+                            "type": "string",
+                            "description": (
+                                "Exact replacement code for a one-click-apply "
+                                "suggestion."
+                            ),
+                        },
+                        "start_line": {
+                            "type": "integer",
+                            "description": (
+                                "First line of a multi-line suggestion range. "
+                                "Must be <= line."
+                            ),
+                        },
+                    },
+                    "required": ["path", "line", "body"],
+                },
+            },
+        },
+        "required": ["summary", "comments"],
+    },
+}
+
 TOOL_DEFINITIONS: list[ToolParam] = [
     {
         "name": "Read",
@@ -143,6 +210,10 @@ def get_tool_definitions(
     Entries like ``"Bash(git clone*)"`` enable the Bash tool; the pattern
     is enforced at execution time by ``execute_tool``.
 
+    When ``submit_review`` appears in the allowed list, the structured-output
+    tool ``SUBMIT_REVIEW_TOOL`` is appended. The API runner intercepts calls
+    to this tool and returns the input as JSON output.
+
     Args:
         allowed_tools (list[str] | None): List of allowed tool names/patterns.
 
@@ -159,7 +230,14 @@ def get_tool_definitions(
         name: str = entry.split("(")[0]
         allowed_names.add(name)
 
-    return [tool for tool in TOOL_DEFINITIONS if tool["name"] in allowed_names]
+    tools: list[ToolParam] = [
+        tool for tool in TOOL_DEFINITIONS if tool["name"] in allowed_names
+    ]
+
+    if SUBMIT_REVIEW_TOOL_NAME in allowed_names:
+        tools.append(SUBMIT_REVIEW_TOOL)
+
+    return tools
 
 
 async def execute_tool(
