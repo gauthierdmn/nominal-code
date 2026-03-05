@@ -1385,6 +1385,10 @@ class TestParseFinding:
         with pytest.raises(ValueError, match="invalid path"):
             _parse_finding({"path": 123, "line": 5, "body": "text"})
 
+    def test_parse_finding_boolean_line_raises(self):
+        with pytest.raises(ValueError, match="invalid line"):
+            _parse_finding({"path": "src/main.py", "line": True, "body": "text"})
+
     def test_parse_finding_line_zero_raises(self):
         with pytest.raises(ValueError, match="invalid line"):
             _parse_finding({"path": "src/main.py", "line": 0, "body": "text"})
@@ -1442,6 +1446,18 @@ class TestParseFinding:
                     "line": 10,
                     "body": "Fix",
                     "suggestion": "",
+                }
+            )
+
+    def test_parse_finding_boolean_start_line_raises(self):
+        with pytest.raises(ValueError, match="invalid start_line"):
+            _parse_finding(
+                {
+                    "path": "src/main.py",
+                    "line": 10,
+                    "body": "Fix",
+                    "suggestion": "new code",
+                    "start_line": True,
                 }
             )
 

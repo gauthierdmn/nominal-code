@@ -462,7 +462,7 @@ def _parse_finding(item: object) -> ReviewFinding:
     if not isinstance(path, str) or not path:
         raise ValueError("invalid path")
 
-    if not isinstance(line, int) or line <= 0:
+    if isinstance(line, bool) or not isinstance(line, int) or line <= 0:
         raise ValueError("invalid line")
 
     if not isinstance(body, str) or not body:
@@ -489,7 +489,11 @@ def _parse_finding(item: object) -> ReviewFinding:
     start_line_raw: object = item.get("start_line")
 
     if start_line_raw is not None:
-        if not isinstance(start_line_raw, int) or start_line_raw <= 0:
+        if (
+            isinstance(start_line_raw, bool)
+            or not isinstance(start_line_raw, int)
+            or start_line_raw <= 0
+        ):
             raise ValueError("invalid start_line")
 
         if start_line_raw > line:
