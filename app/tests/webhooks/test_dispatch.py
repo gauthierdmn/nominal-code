@@ -115,7 +115,9 @@ class TestEnqueueJob:
         platform.post_pr_reaction.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_enqueue_job_auto_trigger_skips_comment_reaction_but_reacts_on_pr(self):
+    async def test_enqueue_job_auto_trigger_skips_comment_reaction_but_reacts_on_pr(
+        self,
+    ):
         config = _make_config(allowed_users=["alice"])
         platform = _make_platform()
         session_queue = SessionQueue()
