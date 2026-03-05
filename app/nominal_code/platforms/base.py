@@ -203,6 +203,23 @@ class Platform(Protocol):
 
         ...
 
+    async def post_pr_reaction(
+        self,
+        repo_full_name: str,
+        pr_number: int,
+        reaction: str,
+    ) -> None:
+        """
+        Add a reaction/emoji to a PR or MR itself.
+
+        Args:
+            repo_full_name (str): Full repository name (e.g. ``owner/repo``).
+            pr_number (int): Pull request or merge request number.
+            reaction (str): The reaction name (e.g. ``eyes``, ``+1``).
+        """
+
+        ...
+
     async def is_pr_open(self, repo_full_name: str, pr_number: int) -> bool:
         """
         Check whether a pull request or merge request is still open.

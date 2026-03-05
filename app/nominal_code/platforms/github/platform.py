@@ -332,6 +332,39 @@ class GitHubPlatform:
             event.repo_full_name,
         )
 
+    async def post_pr_reaction(
+        self,
+        repo_full_name: str,
+        pr_number: int,
+        reaction: str,
+    ) -> None:
+        """
+        Add a reaction to a GitHub pull request.
+
+        GitHub treats PRs as issues, so the issues reactions endpoint is used.
+
+        Args:
+            repo_full_name (str): Full repository name (e.g. ``owner/repo``).
+            pr_number (int): Pull request number.
+            reaction (str): The reaction content (e.g. ``eyes``, ``+1``).
+        """
+
+        url: str = f"/repos/{repo_full_name}/issues/{pr_number}/reactions"
+
+        try:
+            response: httpx.Response = await self._request(
+                "POST",
+                url,
+                json={"content": reaction},
+            )
+            response.raise_for_status()
+        except httpx.HTTPError:
+            logger.warning(
+                "Failed to add reaction to PR %s#%d",
+                repo_full_name,
+                pr_number,
+            )
+
     async def is_pr_open(self, repo_full_name: str, pr_number: int) -> bool:
         """
         Check whether a GitHub pull request is still open.

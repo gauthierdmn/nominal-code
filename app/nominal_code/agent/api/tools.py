@@ -70,8 +70,8 @@ SUBMIT_REVIEW_TOOL: ToolParam = {
                         "start_line": {
                             "type": "integer",
                             "description": (
-                                "First line of a multi-line suggestion range. "
-                                "Must be <= line."
+                                "First line of a multi-line range. "
+                                "Must be <= line. Works with or without a suggestion."
                             ),
                         },
                     },

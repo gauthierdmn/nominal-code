@@ -284,6 +284,38 @@ class GitLabPlatform:
                 event.repo_full_name,
             )
 
+    async def post_pr_reaction(
+        self,
+        repo_full_name: str,
+        pr_number: int,
+        reaction: str,
+    ) -> None:
+        """
+        Add an award emoji to a GitLab merge request.
+
+        Args:
+            repo_full_name (str): Project path (e.g. ``group/project``).
+            pr_number (int): Merge request IID.
+            reaction (str): The emoji name (e.g. ``eyes``, ``thumbsup``).
+        """
+
+        project_path: str = quote(repo_full_name, safe="")
+        url: str = f"/projects/{project_path}/merge_requests/{pr_number}/award_emoji"
+
+        try:
+            response: httpx.Response = await self._request(
+                "POST",
+                url,
+                json={"name": reaction},
+            )
+            response.raise_for_status()
+        except httpx.HTTPError:
+            logger.warning(
+                "Failed to add reaction to MR %s!%d",
+                repo_full_name,
+                pr_number,
+            )
+
     async def is_pr_open(self, repo_full_name: str, pr_number: int) -> bool:
         """
         Check whether a GitLab merge request is still open.

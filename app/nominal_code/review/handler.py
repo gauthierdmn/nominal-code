@@ -499,9 +499,6 @@ def _parse_finding(item: object) -> ReviewFinding:
         if start_line_raw > line:
             raise ValueError("start_line must be <= line")
 
-        if suggestion is None:
-            raise ValueError("start_line requires suggestion")
-
     start_line: int | None = start_line_raw if isinstance(start_line_raw, int) else None
 
     return ReviewFinding(

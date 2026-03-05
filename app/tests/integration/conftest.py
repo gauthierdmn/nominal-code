@@ -8,6 +8,8 @@ from dataclasses import dataclass
 import pytest
 
 from nominal_code.agent.cli.session import SessionQueue
+from nominal_code.models import BotType
+from nominal_code.platforms.base import PlatformName
 from tests.integration.github import api as github_api
 from tests.integration.gitlab import api as gitlab_api
 
@@ -115,11 +117,17 @@ def install_enqueue_hook(session_queue: SessionQueue) -> asyncio.Event:
     job_enqueued: asyncio.Event = asyncio.Event()
     original_enqueue = session_queue.enqueue
 
-    async def _hooked_enqueue(*args: object, **kwargs: object) -> None:
-        await original_enqueue(*args, **kwargs)
+    async def _hooked_enqueue(
+        platform: PlatformName,
+        repo: str,
+        pr_number: int,
+        bot_type: BotType,
+        job: Callable[[], Awaitable[None]],
+    ) -> None:
+        await original_enqueue(platform, repo, pr_number, bot_type, job)
         job_enqueued.set()
 
-    session_queue.enqueue = _hooked_enqueue  # type: ignore[assignment]
+    session_queue.enqueue = _hooked_enqueue  # type: ignore[method-assign]
 
     return job_enqueued
 
