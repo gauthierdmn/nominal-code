@@ -74,12 +74,19 @@ class ReviewFinding:
         line (int): Line number in the new version of the file.
         body (str): The review comment text.
         side (DiffSide): Which side of the diff the comment applies to.
+        suggestion (str | None): Replacement code for a suggestion comment.
+            When set, the finding is rendered as a one-click-apply suggestion.
+        start_line (int | None): First line of a multi-line replacement range.
+            ``line`` is the last line. When ``None``, the suggestion targets
+            only ``line``.
     """
 
     file_path: str
     line: int
     body: str
     side: DiffSide = DiffSide.RIGHT
+    suggestion: str | None = None
+    start_line: int | None = None
 
 
 @dataclass(frozen=True)

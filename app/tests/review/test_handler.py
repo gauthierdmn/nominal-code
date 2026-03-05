@@ -1038,6 +1038,50 @@ class TestFilterFindings:
         assert len(valid) == 0
         assert len(rejected) == 1
 
+    def test_filter_findings_multiline_suggestion_fully_in_diff(self):
+        changed_files = [
+            ChangedFile(
+                file_path="src/main.py",
+                status=FileStatus.MODIFIED,
+                patch="@@ -1,5 +1,5 @@\n context\n+line2\n+line3\n+line4\n context",
+            ),
+        ]
+        findings = [
+            ReviewFinding(
+                file_path="src/main.py",
+                line=4,
+                body="Simplify",
+                suggestion="simplified()",
+                start_line=2,
+            ),
+        ]
+        valid, rejected = _filter_findings(findings, changed_files)
+
+        assert len(valid) == 1
+        assert len(rejected) == 0
+
+    def test_filter_findings_multiline_suggestion_partially_outside_diff(self):
+        changed_files = [
+            ChangedFile(
+                file_path="src/main.py",
+                status=FileStatus.MODIFIED,
+                patch="@@ -10,3 +10,4 @@\n context\n+added\n context\n context",
+            ),
+        ]
+        findings = [
+            ReviewFinding(
+                file_path="src/main.py",
+                line=12,
+                body="Simplify",
+                suggestion="simplified()",
+                start_line=8,
+            ),
+        ]
+        valid, rejected = _filter_findings(findings, changed_files)
+
+        assert len(valid) == 0
+        assert len(rejected) == 1
+
 
 class TestBuildEffectiveSummary:
     def test_build_effective_summary_no_rejected(self):
@@ -1341,6 +1385,10 @@ class TestParseFinding:
         with pytest.raises(ValueError, match="invalid path"):
             _parse_finding({"path": 123, "line": 5, "body": "text"})
 
+    def test_parse_finding_boolean_line_raises(self):
+        with pytest.raises(ValueError, match="invalid line"):
+            _parse_finding({"path": "src/main.py", "line": True, "body": "text"})
+
     def test_parse_finding_line_zero_raises(self):
         with pytest.raises(ValueError, match="invalid line"):
             _parse_finding({"path": "src/main.py", "line": 0, "body": "text"})
@@ -1362,6 +1410,113 @@ class TestParseFinding:
             _parse_finding(
                 {"path": "src/main.py", "line": 5, "body": "text", "side": "MIDDLE"}
             )
+
+    def test_parse_finding_with_suggestion(self):
+        item = {
+            "path": "src/main.py",
+            "line": 10,
+            "body": "Use snake_case",
+            "suggestion": "user_count = len(users)",
+        }
+
+        result = _parse_finding(item)
+
+        assert result.suggestion == "user_count = len(users)"
+        assert result.start_line is None
+
+    def test_parse_finding_with_multiline_suggestion(self):
+        item = {
+            "path": "src/main.py",
+            "line": 20,
+            "body": "Simplify this",
+            "suggestion": "if items:\n    process(items)",
+            "start_line": 18,
+        }
+
+        result = _parse_finding(item)
+
+        assert result.suggestion == "if items:\n    process(items)"
+        assert result.start_line == 18
+
+    def test_parse_finding_suggestion_empty_string_raises(self):
+        with pytest.raises(ValueError, match="invalid suggestion"):
+            _parse_finding(
+                {
+                    "path": "src/main.py",
+                    "line": 10,
+                    "body": "Fix",
+                    "suggestion": "",
+                }
+            )
+
+    def test_parse_finding_boolean_start_line_raises(self):
+        with pytest.raises(ValueError, match="invalid start_line"):
+            _parse_finding(
+                {
+                    "path": "src/main.py",
+                    "line": 10,
+                    "body": "Fix",
+                    "suggestion": "new code",
+                    "start_line": True,
+                }
+            )
+
+    def test_parse_finding_suggestion_start_line_greater_than_line_raises(self):
+        with pytest.raises(ValueError, match="start_line must be <= line"):
+            _parse_finding(
+                {
+                    "path": "src/main.py",
+                    "line": 5,
+                    "body": "Fix",
+                    "suggestion": "new code",
+                    "start_line": 10,
+                }
+            )
+
+    def test_parse_finding_suggestion_on_left_side_raises(self):
+        with pytest.raises(ValueError, match="suggestion not allowed on LEFT side"):
+            _parse_finding(
+                {
+                    "path": "src/main.py",
+                    "line": 5,
+                    "body": "Fix",
+                    "side": "LEFT",
+                    "suggestion": "new code",
+                }
+            )
+
+
+class TestParseReviewOutputWithSuggestions:
+    def test_parse_review_output_with_suggestions(self):
+        output = json.dumps(
+            {
+                "summary": "Found issues",
+                "comments": [
+                    {
+                        "path": "src/main.py",
+                        "line": 10,
+                        "body": "Use snake_case",
+                        "suggestion": "user_count = len(users)",
+                    },
+                    {
+                        "path": "src/main.py",
+                        "line": 20,
+                        "body": "Simplify",
+                        "suggestion": "if items:\n    process(items)",
+                        "start_line": 18,
+                    },
+                ],
+            }
+        )
+
+        result = parse_review_output(output)
+
+        assert result is not None
+        assert len(result.findings) == 2
+        assert result.findings[0].suggestion == "user_count = len(users)"
+        assert result.findings[0].start_line is None
+        assert result.findings[1].suggestion == "if items:\n    process(items)"
+        assert result.findings[1].start_line == 18
 
 
 class TestBuildRetryPrompt:

@@ -18,7 +18,10 @@ from nominal_code.platforms.github import (
     GitHubPatAuth,
     GitHubPlatform,
 )
-from nominal_code.platforms.github.platform import _create_github_platform
+from nominal_code.platforms.github.platform import (
+    _create_github_platform,
+    _format_suggestion_body,
+)
 
 EXPECTED_AUTH_HEADERS = {
     "Authorization": "token ghp_test123",
@@ -743,6 +746,65 @@ class TestSubmitReview:
             )
 
             assert mock_request.call_count == 2
+
+
+class TestFormatSuggestionBody:
+    def test_format_suggestion_body_plain_comment(self):
+        finding = ReviewFinding(file_path="src/main.py", line=10, body="Bug here")
+
+        assert _format_suggestion_body(finding) == "Bug here"
+
+    def test_format_suggestion_body_with_suggestion(self):
+        finding = ReviewFinding(
+            file_path="src/main.py",
+            line=10,
+            body="Use snake_case",
+            suggestion="user_count = len(users)",
+        )
+        result = _format_suggestion_body(finding)
+
+        assert "```suggestion" in result
+        assert "user_count = len(users)" in result
+        assert result.endswith("```")
+
+
+class TestSubmitReviewSuggestion:
+    @pytest.mark.asyncio
+    async def test_submit_review_suggestion_includes_start_line(self, platform):
+        comment = _make_comment()
+        findings = [
+            ReviewFinding(
+                file_path="src/main.py",
+                line=20,
+                body="Simplify",
+                suggestion="simplified()",
+                start_line=18,
+            ),
+        ]
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+
+        with patch.object(
+            platform,
+            "_request",
+            new_callable=AsyncMock,
+        ) as mock_request:
+            mock_request.return_value = mock_response
+
+            await platform.submit_review(
+                "owner/repo",
+                42,
+                findings,
+                "Found issues",
+                comment,
+            )
+
+            call_kwargs = mock_request.call_args[1]
+            review_comment = call_kwargs["json"]["comments"][0]
+
+            assert review_comment["start_line"] == 18
+            assert review_comment["start_side"] == "RIGHT"
+            assert "```suggestion" in review_comment["body"]
 
 
 class TestFetchPrComments:

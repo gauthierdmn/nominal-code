@@ -41,6 +41,24 @@ PR_ACTION_TO_EVENT_TYPE: dict[str, EventType] = {
 logger: logging.Logger = logging.getLogger(__name__)
 
 
+def _format_suggestion_body(finding: ReviewFinding) -> str:
+    """
+    Format a finding body with a GitHub suggestion fence when applicable.
+
+    Args:
+        finding (ReviewFinding): The review finding to format.
+
+    Returns:
+        str: The formatted body, with a suggestion fence appended if
+            the finding has a suggestion.
+    """
+
+    if finding.suggestion is None:
+        return finding.body
+
+    return f"{finding.body}\n\n```suggestion\n{finding.suggestion}\n```"
+
+
 class GitHubPlatform:
     """
     GitHub webhook handler and API client.
@@ -493,15 +511,21 @@ class GitHubPlatform:
             event (PullRequestEvent): The original event that triggered the review.
         """
 
-        review_comments: list[dict[str, str | int]] = [
-            {
+        review_comments: list[dict[str, str | int]] = []
+
+        for finding in findings:
+            comment_dict: dict[str, str | int] = {
                 "path": finding.file_path,
                 "line": finding.line,
                 "side": finding.side,
-                "body": finding.body,
+                "body": _format_suggestion_body(finding),
             }
-            for finding in findings
-        ]
+
+            if finding.start_line is not None:
+                comment_dict["start_line"] = finding.start_line
+                comment_dict["start_side"] = finding.side
+
+            review_comments.append(comment_dict)
 
         url: str = f"/repos/{repo_full_name}/pulls/{pr_number}/reviews"
 
