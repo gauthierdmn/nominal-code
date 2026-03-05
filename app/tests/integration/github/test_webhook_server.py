@@ -118,6 +118,8 @@ async def test_webhook_server_posts_review(
 
         await wait_for_tunnel_ready(tunnel.public_url)
 
+        job_enqueued = install_enqueue_hook(session_queue)
+
         with patch(
             "nominal_code.agent.cli.tracking.run_agent",
             new_callable=AsyncMock,
@@ -149,8 +151,6 @@ async def test_webhook_server_posts_review(
                     hook_id,
                     delivery_id,
                 )
-
-            job_enqueued = install_enqueue_hook(session_queue)
 
             await wait_for_webhook_processing(
                 job_enqueued,
