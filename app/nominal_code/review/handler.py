@@ -66,8 +66,8 @@ JSON_FIX_PROMPT: str = (
     "corrected JSON.\n\n{broken_json}"
 )
 JSON_FIX_RETRY_PROMPT: str = (
-    "Your previous fix still produced invalid JSON. Pay special attention to:\n"
-    "- Double quotes inside string values MUST be escaped as \\\"\n"
+    "The following JSON has syntax errors. Pay special attention to:\n"
+    '- Double quotes inside string values MUST be escaped as \\"\n'
     "- The `suggestion` fields often contain code with double-quoted strings "
     "that need escaping\n"
     "- No trailing commas after the last element in arrays or objects\n\n"
@@ -259,8 +259,7 @@ async def review(
 
     if review_result is None:
         logger.warning(
-            "Reviewer JSON repair failed for %s#%d, "
-            "falling back to plain comment",
+            "Reviewer JSON repair failed for %s#%d, falling back to plain comment",
             event.repo_full_name,
             event.pr_number,
         )
@@ -707,13 +706,13 @@ async def _repair_review_output(
             or None if all fail.
     """
 
-    extracted: str = _extract_json_substring(broken_output)
+    current_json: str = _extract_json_substring(broken_output)
 
     for attempt, prompt_template in enumerate(
         [JSON_FIX_PROMPT, JSON_FIX_RETRY_PROMPT],
         start=1,
     ):
-        prompt: str = prompt_template.format(broken_json=extracted)
+        prompt: str = prompt_template.format(broken_json=current_json)
 
         logger.info("Attempting LLM JSON repair (attempt %d/2)", attempt)
 
@@ -731,6 +730,8 @@ async def _repair_review_output(
             logger.info("LLM JSON repair succeeded on attempt %d", attempt)
 
             return parsed
+
+        current_json = _extract_json_substring(fix_result.output)
 
     logger.warning("All JSON repair strategies failed")
 

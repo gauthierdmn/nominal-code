@@ -580,7 +580,10 @@ class TestParseReviewOutput:
         assert result is None
 
     def test_parse_review_output_repairs_unescaped_quotes(self):
-        broken = '{"summary": "ok", "comments": [{"path": "f.py", "line": 1, "body": "use "foo" here"}]}'
+        broken = (
+            '{"summary": "ok", "comments": '
+            '[{"path": "f.py", "line": 1, "body": "use "foo" here"}]}'
+        )
 
         result = parse_review_output(broken)
 
@@ -595,6 +598,22 @@ class TestParseReviewOutput:
 
         assert result is not None
         assert result.summary == "Looks good"
+
+    def test_parse_review_output_repairs_trailing_comma(self):
+        broken = (
+            '{"summary": "ok", "comments": '
+            '[{"path": "a.py", "line": 1, "body": "fix",}],}'
+        )
+
+        result = parse_review_output(broken)
+
+        assert result is not None
+        assert result.summary == "ok"
+
+    def test_parse_review_output_empty_string(self):
+        result = parse_review_output("")
+
+        assert result is None
 
     def test_parse_review_output_repairs_suggestion_with_quotes(self):
         broken = (
@@ -1568,6 +1587,16 @@ class TestExtractJsonSubstring:
 
         assert result == '{"summary": "ok"}'
 
+    def test_returns_original_for_empty_string(self):
+        result = _extract_json_substring("")
+
+        assert result == ""
+
+    def test_returns_original_when_closing_before_opening(self):
+        result = _extract_json_substring("} before {")
+
+        assert result == "} before {"
+
 
 class TestRepairReviewOutput:
     @pytest.mark.asyncio
@@ -1579,7 +1608,10 @@ class TestRepairReviewOutput:
             "nominal_code.review.handler.run_agent",
             new_callable=AsyncMock,
             return_value=AgentResult(
-                output=valid_json, is_error=False, num_turns=1, duration_ms=100,
+                output=valid_json,
+                is_error=False,
+                num_turns=1,
+                duration_ms=100,
             ),
         ) as mock_run:
             result = await _repair_review_output("bad json", config, Path("/tmp"))
@@ -1618,6 +1650,29 @@ class TestRepairReviewOutput:
         assert mock_run.call_count == 2
 
     @pytest.mark.asyncio
+    async def test_repair_extracts_json_before_sending_to_llm(self):
+        config = _make_config()
+        valid_json = json.dumps({"summary": "Fixed", "comments": []})
+        wrapped = 'Here is the review:\n{"summary": "broken}\nDone.'
+
+        with patch(
+            "nominal_code.review.handler.run_agent",
+            new_callable=AsyncMock,
+            return_value=AgentResult(
+                output=valid_json,
+                is_error=False,
+                num_turns=1,
+                duration_ms=100,
+            ),
+        ) as mock_run:
+            await _repair_review_output(wrapped, config, Path("/tmp"))
+
+        prompt_sent = mock_run.call_args.kwargs["prompt"]
+
+        assert "Here is the review" not in prompt_sent
+        assert "Done." not in prompt_sent
+
+    @pytest.mark.asyncio
     async def test_repair_returns_none_when_all_strategies_fail(self):
         config = _make_config()
 
@@ -1651,6 +1706,13 @@ class TestBuildFallbackComment:
         result = _build_fallback_comment(broken)
 
         assert 'Found "critical" bugs' in result
+
+    def test_summary_variant_includes_contact_admin(self):
+        broken = '{"summary": "Has bugs", "comments": [bad}'
+
+        result = _build_fallback_comment(broken)
+
+        assert "contact your administrator" in result
 
     def test_returns_generic_message_when_no_summary(self):
         result = _build_fallback_comment("total nonsense")

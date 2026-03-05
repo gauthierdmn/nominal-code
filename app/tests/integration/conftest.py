@@ -153,6 +153,7 @@ async def wait_for_webhook_processing(
     """
 
     phase_timeout: float = timeout / 2 if attempt_redelivery else timeout
+    start_time: float = asyncio.get_event_loop().time()
 
     try:
         await asyncio.wait_for(
@@ -179,7 +180,10 @@ async def wait_for_webhook_processing(
                 "No webhook job was enqueued within timeout",
             ) from None
 
-    await wait_for_queue_drain(session_queue, timeout=timeout)
+    elapsed: float = asyncio.get_event_loop().time() - start_time
+    drain_timeout: float = max(0.0, timeout - elapsed)
+
+    await wait_for_queue_drain(session_queue, timeout=drain_timeout)
 
 
 async def create_github_branch_with_file(

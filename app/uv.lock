@@ -767,7 +767,7 @@ requires-dist = [
     { name = "claude-agent-sdk", specifier = "==0.1.39" },
     { name = "environs", specifier = ">=14.1,<15" },
     { name = "httpx", specifier = "==0.28.1" },
-    { name = "json-repair", specifier = ">=0.58.3" },
+    { name = "json-repair", specifier = "==0.58.3" },
     { name = "pyjwt", extras = ["crypto"], specifier = ">=2.9.0,<3" },
 ]
 

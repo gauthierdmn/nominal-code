@@ -40,9 +40,7 @@ SUBMIT_REVIEW_TOOL: ToolParam = {
                     "properties": {
                         "path": {
                             "type": "string",
-                            "description": (
-                                "File path relative to repository root."
-                            ),
+                            "description": ("File path relative to repository root."),
                         },
                         "line": {
                             "type": "integer",
@@ -52,9 +50,7 @@ SUBMIT_REVIEW_TOOL: ToolParam = {
                         },
                         "body": {
                             "type": "string",
-                            "description": (
-                                "The review comment explaining the issue."
-                            ),
+                            "description": ("The review comment explaining the issue."),
                         },
                         "side": {
                             "type": "string",

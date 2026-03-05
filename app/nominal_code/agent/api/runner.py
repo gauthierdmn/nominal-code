@@ -104,6 +104,13 @@ async def run_agent_api(
 
             for block in tool_use_blocks:
                 if block.name == SUBMIT_REVIEW_TOOL_NAME:
+                    if len(tool_use_blocks) > 1:
+                        logger.warning(
+                            "submit_review called alongside %d other tool(s); "
+                            "ignoring other calls",
+                            len(tool_use_blocks) - 1,
+                        )
+
                     duration_ms = _now_ms() - start_time
 
                     return AgentResult(
