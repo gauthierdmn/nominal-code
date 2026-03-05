@@ -1,10 +1,12 @@
 import json
 import tempfile
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from aiohttp import web
+from aiohttp.pytest_plugin import AiohttpClient
 
 from nominal_code.agent.cli.session import SessionQueue, SessionStore
 from nominal_code.config import (
@@ -62,7 +64,7 @@ def _build_note_hook_payload(
     body: str,
     source_branch: str,
     author: str = ALLOWED_USER,
-) -> dict:
+) -> dict[str, Any]:
     return {
         "object_kind": "note",
         "user": {"username": author},
@@ -84,7 +86,7 @@ def _build_merge_request_hook_payload(
     mr_iid: int,
     branch: str,
     action: str = "open",
-) -> dict:
+) -> dict[str, Any]:
     return {
         "object_kind": "merge_request",
         "user": {"username": ALLOWED_USER},
@@ -123,7 +125,7 @@ def _create_test_app(
 async def test_webhook_reviewer_mention_posts_review(
     gitlab_token: str,
     buggy_mr: PrInfo,
-    aiohttp_client,
+    aiohttp_client: AiohttpClient,
 ) -> None:
     config = _build_webhook_config()
     app, session_store, session_queue = _create_test_app(gitlab_token, config)
@@ -165,7 +167,7 @@ async def test_webhook_reviewer_mention_posts_review(
 async def test_webhook_worker_mention_posts_reply(
     gitlab_token: str,
     buggy_mr: PrInfo,
-    aiohttp_client,
+    aiohttp_client: AiohttpClient,
 ) -> None:
     config = _build_webhook_config()
     app, session_store, session_queue = _create_test_app(gitlab_token, config)
@@ -212,7 +214,7 @@ async def test_webhook_worker_mention_posts_reply(
 async def test_webhook_lifecycle_auto_trigger(
     gitlab_token: str,
     buggy_mr: PrInfo,
-    aiohttp_client,
+    aiohttp_client: AiohttpClient,
 ) -> None:
     config = _build_webhook_config(
         reviewer_triggers=frozenset({EventType.PR_OPENED}),
@@ -256,7 +258,7 @@ async def test_webhook_lifecycle_auto_trigger(
 async def test_webhook_invalid_token_returns_401(
     gitlab_token: str,
     buggy_mr: PrInfo,
-    aiohttp_client,
+    aiohttp_client: AiohttpClient,
 ) -> None:
     config = _build_webhook_config()
     app, _, _ = _create_test_app(gitlab_token, config)
@@ -286,7 +288,7 @@ async def test_webhook_invalid_token_returns_401(
 async def test_webhook_unauthorized_user_ignored(
     gitlab_token: str,
     buggy_mr: PrInfo,
-    aiohttp_client,
+    aiohttp_client: AiohttpClient,
 ) -> None:
     config = _build_webhook_config()
     app, _, session_queue = _create_test_app(gitlab_token, config)

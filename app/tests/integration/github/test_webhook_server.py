@@ -1,3 +1,4 @@
+import asyncio
 import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -22,7 +23,9 @@ from tests.integration.github.api import (
     create_pr,
     create_webhook,
     delete_webhook,
+    fetch_latest_delivery,
     fetch_pr_reviews,
+    redeliver_webhook,
 )
 from tests.integration.helpers.fixtures import (
     BUGGY_AGENT_RESULT,
@@ -88,8 +91,10 @@ async def test_webhook_server_posts_review(
     site = web.TCPSite(runner, "0.0.0.0", 0)
     await site.start()
 
-    sockets = site._server.sockets
-    assert sockets, "No sockets bound"
+    server = site._server
+    assert isinstance(server, asyncio.Server), "Server not started"
+    assert server.sockets, "No sockets bound"
+    sockets = server.sockets
     port = sockets[0].getsockname()[1]
 
     tunnel = None
@@ -121,7 +126,30 @@ async def test_webhook_server_posts_review(
                 title=f"test: webhook server [nominalbot] [{pipeline_id}]",
             )
 
-            await wait_for_webhook_processing(session_queue)
+            async def _attempt_github_redelivery() -> None:
+                delivery = await fetch_latest_delivery(
+                    github_token,
+                    GITHUB_TEST_REPO,
+                    hook_id,
+                )
+
+                if delivery is None:
+                    raise TimeoutError(
+                        "No webhook job enqueued and GitHub never attempted delivery",
+                    )
+
+                delivery_id: int = delivery["id"]
+                await redeliver_webhook(
+                    github_token,
+                    GITHUB_TEST_REPO,
+                    hook_id,
+                    delivery_id,
+                )
+
+            await wait_for_webhook_processing(
+                session_queue,
+                attempt_redelivery=_attempt_github_redelivery,
+            )
 
             reviews = await fetch_pr_reviews(
                 github_token,

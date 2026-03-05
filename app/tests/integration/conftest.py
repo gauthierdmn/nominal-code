@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 import pytest
@@ -100,30 +101,48 @@ async def wait_for_queue_drain(
 async def wait_for_webhook_processing(
     session_queue: SessionQueue,
     timeout: float = 120.0,
+    attempt_redelivery: Callable[[], Awaitable[None]] | None = None,
 ) -> None:
     """
     Wait for at least one job to be enqueued and completed.
 
     First waits for a consumer to appear (webhook received), then waits
-    for all consumers to finish.
+    for all consumers to finish. When ``attempt_redelivery`` is provided,
+    the timeout is split into two equal phases: if no webhook arrives in
+    phase 1, the callback is invoked to request redelivery before waiting
+    again in phase 2.
 
     Args:
         session_queue (SessionQueue): The session queue to monitor.
         timeout (float): Maximum wait time in seconds.
+        attempt_redelivery (Callable[[], Awaitable[None]] | None): Optional
+            async callback that checks delivery status and requests
+            redelivery from the platform.
 
     Raises:
         TimeoutError: If no job is enqueued or consumers do not finish.
     """
 
-    elapsed = 0.0
+    phase_timeout = timeout / 2 if attempt_redelivery else timeout
     interval = 1.0
+    elapsed = 0.0
 
-    while elapsed < timeout:
+    while elapsed < phase_timeout:
         if session_queue._consumers:
             break
 
         await asyncio.sleep(interval)
         elapsed += interval
+
+    if not session_queue._consumers and attempt_redelivery:
+        await attempt_redelivery()
+
+        while elapsed < timeout:
+            if session_queue._consumers:
+                break
+
+            await asyncio.sleep(interval)
+            elapsed += interval
 
     if not session_queue._consumers:
         raise TimeoutError("No webhook job was enqueued within timeout")

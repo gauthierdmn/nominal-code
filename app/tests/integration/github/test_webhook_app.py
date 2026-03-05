@@ -4,9 +4,11 @@ import json
 import os
 import tempfile
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from aiohttp.pytest_plugin import AiohttpClient
 
 from nominal_code.agent.cli.session import SessionQueue, SessionStore
 from nominal_code.config import (
@@ -103,7 +105,7 @@ def _build_issue_comment_payload(
     body: str,
     installation_id: int,
     author: str = ALLOWED_USER,
-) -> dict:
+) -> dict[str, Any]:
     return {
         "action": "created",
         "installation": {"id": installation_id},
@@ -127,7 +129,7 @@ def _build_pull_request_payload(
     branch: str,
     installation_id: int,
     action: str = "opened",
-) -> dict:
+) -> dict[str, Any]:
     return {
         "action": action,
         "installation": {"id": installation_id},
@@ -147,7 +149,7 @@ async def test_app_auth_reviewer_mention_posts_review(
     github_token: str,
     github_app_credentials: tuple[str, str, int],
     buggy_pr: PrInfo,
-    aiohttp_client,
+    aiohttp_client: AiohttpClient,
 ) -> None:
     app_id, private_key, installation_id = github_app_credentials
 
@@ -209,7 +211,7 @@ async def test_app_auth_lifecycle_auto_trigger(
     github_token: str,
     github_app_credentials: tuple[str, str, int],
     buggy_pr: PrInfo,
-    aiohttp_client,
+    aiohttp_client: AiohttpClient,
 ) -> None:
     app_id, private_key, installation_id = github_app_credentials
 
