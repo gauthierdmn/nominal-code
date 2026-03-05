@@ -72,6 +72,14 @@ async def enqueue_job(
             event.pr_author,
         )
 
+        await platform.ensure_auth()
+
+    await platform.post_pr_reaction(
+        repo_full_name=event.repo_full_name,
+        pr_number=event.pr_number,
+        reaction=EYES_REACTION,
+    )
+
     await session_queue.enqueue(
         platform=event.platform,
         repo=event.repo_full_name,

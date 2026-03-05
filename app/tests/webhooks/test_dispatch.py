@@ -66,6 +66,7 @@ def _make_platform():
         return_value="https://ro-token@github.com/owner/repo.git",
     )
     platform.ensure_auth = AsyncMock()
+    platform.post_pr_reaction = AsyncMock()
 
     return platform
 
@@ -89,6 +90,8 @@ class TestEnqueueJob:
         )
 
         platform.post_reaction.assert_not_called()
+        platform.post_pr_reaction.assert_not_called()
+        platform.ensure_auth.assert_not_called()
         mock_job.assert_not_called()
 
     @pytest.mark.asyncio
@@ -109,9 +112,10 @@ class TestEnqueueJob:
         )
 
         platform.post_reaction.assert_called_once()
+        platform.post_pr_reaction.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_enqueue_job_auto_trigger_skips_auth_and_reaction(self):
+    async def test_enqueue_job_auto_trigger_skips_comment_reaction_but_reacts_on_pr(self):
         config = _make_config(allowed_users=["alice"])
         platform = _make_platform()
         session_queue = SessionQueue()
@@ -137,3 +141,5 @@ class TestEnqueueJob:
         )
 
         platform.post_reaction.assert_not_called()
+        platform.post_pr_reaction.assert_called_once()
+        platform.ensure_auth.assert_called_once()
