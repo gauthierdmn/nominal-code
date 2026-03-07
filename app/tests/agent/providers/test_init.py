@@ -9,9 +9,17 @@ import pytest
 from nominal_code.agent.providers.base import MissingProviderError
 from nominal_code.agent.providers.registry import DEFAULT_MODELS, create_provider
 
-_has_anthropic = importlib.util.find_spec("anthropic") is not None
-_has_openai = importlib.util.find_spec("openai") is not None
-_has_google = importlib.util.find_spec("google.genai") is not None
+
+def _spec_exists(module: str) -> bool:
+    try:
+        return importlib.util.find_spec(module) is not None
+    except (ModuleNotFoundError, ValueError):
+        return False
+
+
+_has_anthropic = _spec_exists("anthropic")
+_has_openai = _spec_exists("openai")
+_has_google = _spec_exists("google.genai")
 
 
 class TestCreateProvider:
