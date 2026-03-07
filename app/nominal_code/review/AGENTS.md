@@ -1,6 +1,6 @@
 # review/
 
-Reviewer bot handler — runs a Claude agent to produce structured code reviews with inline comments.
+Reviewer bot handler — runs an LLM agent to produce structured code reviews with inline comments.
 
 ## Key concepts
 
@@ -28,4 +28,4 @@ review/
 - `_filter_findings()` returns a `(valid, rejected)` tuple — rejected findings are those on files or lines not in the diff.
 - `_build_effective_summary()` appends rejected findings under an "Additional notes" heading.
 - The prompt includes the full diff, changed file list, deps path, and (optionally) existing comments formatted as markdown.
-- `review()` is called by all three modes (webhook via `review_and_post()`, CLI via `_run_review()`, CI via `run_ci_review()`). The agent runner used depends on `AgentConfig.use_api`.
+- `review()` is called by all three modes (webhook via `review_and_post()`, CLI via `_run_review()`, CI via `run_ci_review()`). The agent runner used depends on the agent config type (`CliAgentConfig` or `ApiAgentConfig`).

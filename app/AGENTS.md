@@ -1,31 +1,31 @@
 # nominal-code
 
-AI-powered code review bot that monitors GitHub PRs and GitLab MRs. When a user @mentions a bot in a comment, or when a lifecycle event fires (PR opened, pushed, etc.), the bot spins up a Claude agent to review code or apply fixes and posts the results back to the platform.
+AI-powered code review bot that monitors GitHub PRs and GitLab MRs. When a user @mentions a bot in a comment, or when a lifecycle event fires (PR opened, pushed, etc.), the bot spins up an LLM agent to review code or apply fixes and posts the results back to the platform.
 
 ## Architecture
 
 - **Async-first** — built on aiohttp + asyncio; all I/O (HTTP, git, agent) is non-blocking.
 - **Protocol-based platforms** — GitHub and GitLab implement the same `Platform` / `ReviewerPlatform` protocols, making it easy to add new providers.
 - **Per-PR job serialisation** — `SessionQueue` guarantees only one agent job runs per PR at a time, preventing race conditions on the same workspace.
-- **Multi-turn sessions** — `SessionStore` maps (platform, repo, PR, bot) to a Claude session ID so conversations resume across comments. Only applies to webhook mode (CLI runner).
+- **Multi-turn sessions** — `SessionStore` maps (platform, repo, PR, bot) to a session ID so conversations resume across comments. Only applies to webhook mode (CLI runner).
 - **Workspace isolation** — each PR gets its own shallow clone; a shared `.deps/` directory is available for cross-PR dependencies.
-- **Dual agent runners** — CLI and webhook modes use the Claude Code CLI (supports subscriptions); CI mode calls the Anthropic API directly (requires `ANTHROPIC_API_KEY`).
+- **Dual agent runners** — CLI and webhook modes use the Claude Code CLI (supports subscriptions); CI mode calls the LLM provider API directly (requires a provider API key).
 
 ## Entry points
 
 - `nominal-code` (no args) — starts the webhook server.
 - `nominal-code review owner/repo#42` — one-shot CLI review (supports `--dry-run`, `--platform`, `--prompt`).
-- `nominal-code ci {platform}` — CI mode review (GitHub Actions / GitLab CI). Uses the Anthropic API runner.
+- `nominal-code ci {platform}` — CI mode review (GitHub Actions / GitLab CI). Uses the LLM provider API runner.
 
 ## Agent runner selection
 
 | Mode | Runner | Config flag |
 |------|--------|-------------|
-| Webhook server | Claude Code CLI (`agent/cli/runner.py`) | `AgentConfig(use_api=False)` |
-| CLI review | Claude Code CLI (`agent/cli/runner.py`) | `AgentConfig(use_api=False)` |
-| CI (`ci.py`) | Anthropic API (`agent/api/runner.py`) | `AgentConfig(use_api=True)` |
+| Webhook server | Claude Code CLI (`agent/cli/runner.py`) | `CliAgentConfig` |
+| CLI review | Claude Code CLI (`agent/cli/runner.py`) | `CliAgentConfig` |
+| CI (`ci.py`) | LLM provider API (`agent/api/runner.py`) | `ApiAgentConfig` |
 
-The dispatcher in `agent/runner.py` routes based on `AgentConfig.use_api`. The API runner implements its own tool execution (Read, Glob, Grep, Bash with allowlist) so it does not depend on the Claude Code CLI.
+The dispatcher in `agent/runner.py` routes based on the agent config type (`CliAgentConfig` or `ApiAgentConfig`). The API runner implements its own tool execution (Read, Glob, Grep, Bash with allowlist) and supports multiple providers (Anthropic, OpenAI, DeepSeek, Groq, Together, Fireworks).
 
 ## Bot types
 
@@ -54,7 +54,7 @@ The dispatcher in `agent/runner.py` routes based on `AgentConfig.use_api`. The A
 
 ### Required (CI mode)
 
-- `ANTHROPIC_API_KEY` — used by the API runner directly.
+- A provider API key (e.g. `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) — used by the API runner directly.
 - `GITHUB_TOKEN` or `GITLAB_TOKEN` — for posting review comments.
 - CI-provided variables (`GITHUB_EVENT_PATH`, `CI_PROJECT_PATH`, etc.) are read automatically.
 

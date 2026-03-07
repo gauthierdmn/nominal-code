@@ -8,7 +8,7 @@ import pytest
 
 from nominal_code.agent.cli.session import SessionStore
 from nominal_code.agent.runner import AgentResult
-from nominal_code.config import AgentConfig, ReviewerConfig
+from nominal_code.config import CliAgentConfig, ReviewerConfig
 from nominal_code.models import (
     ChangedFile,
     DiffSide,
@@ -42,7 +42,7 @@ def _make_config(allowed_users=None):
     config = MagicMock()
     config.allowed_users = frozenset(allowed_users or ["alice"])
     config.workspace_base_dir = "/tmp/workspaces"
-    config.agent = AgentConfig()
+    config.agent = CliAgentConfig()
     config.coding_guidelines = "Use snake_case."
     config.language_guidelines = {"python": "Python style rules."}
     config.worker = None

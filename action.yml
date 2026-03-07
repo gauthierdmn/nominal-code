@@ -8,13 +8,22 @@ branding:
 
 inputs:
   anthropic_api_key:
-    description: "Anthropic API key for Claude"
-    required: true
+    description: "Anthropic API key (required when provider is 'anthropic')"
+    required: false
+    default: ""
+  openai_api_key:
+    description: "OpenAI-compatible API key (required when provider is 'openai', 'deepseek', 'groq', 'together', or 'fireworks')"
+    required: false
+    default: ""
   github_token:
     description: "GitHub token for posting review comments (defaults to github.token)"
     required: true
+  provider:
+    description: "LLM provider to use (anthropic, openai, deepseek, groq, together, fireworks)"
+    required: false
+    default: "anthropic"
   model:
-    description: "Claude model to use (e.g. claude-sonnet-4-20250514)"
+    description: "Model to use (e.g. claude-sonnet-4-20250514, gpt-4.1). Defaults to the provider's default model."
     required: false
     default: ""
   max_turns:
@@ -31,12 +40,33 @@ inputs:
     default: ""
 
 runs:
-  using: "docker"
-  image: "docker://ghcr.io/gauthierdmn/nominal-code:latest"
-  env:
-    ANTHROPIC_API_KEY: ${{ inputs.anthropic_api_key }}
-    GITHUB_TOKEN: ${{ inputs.github_token }}
-    INPUT_MODEL: ${{ inputs.model }}
-    INPUT_MAX_TURNS: ${{ inputs.max_turns }}
-    INPUT_PROMPT: ${{ inputs.prompt }}
-    INPUT_CODING_GUIDELINES: ${{ inputs.coding_guidelines }}
+  using: "composite"
+  steps:
+    - shell: bash
+      env:
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic_api_key }}
+        OPENAI_API_KEY: ${{ inputs.openai_api_key }}
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+        AGENT_PROVIDER: ${{ inputs.provider }}
+        INPUT_MODEL: ${{ inputs.model }}
+        INPUT_MAX_TURNS: ${{ inputs.max_turns }}
+        INPUT_PROMPT: ${{ inputs.prompt }}
+        INPUT_CODING_GUIDELINES: ${{ inputs.coding_guidelines }}
+      run: |
+        IMAGE="ghcr.io/gauthierdmn/nominal-code:latest"
+
+        docker run --rm \
+          -e GITHUB_ACTIONS=true \
+          -e GITHUB_EVENT_PATH=/github/event.json \
+          -e GITHUB_WORKSPACE=/github/workspace \
+          -e ANTHROPIC_API_KEY \
+          -e OPENAI_API_KEY \
+          -e GITHUB_TOKEN \
+          -e AGENT_PROVIDER \
+          -e INPUT_MODEL \
+          -e INPUT_MAX_TURNS \
+          -e INPUT_PROMPT \
+          -e INPUT_CODING_GUIDELINES \
+          -v "${GITHUB_EVENT_PATH}:/github/event.json:ro" \
+          -v "${GITHUB_WORKSPACE}:/github/workspace" \
+          "$IMAGE"

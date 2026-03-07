@@ -5,7 +5,9 @@ import os
 from pathlib import Path
 from types import ModuleType
 
+from nominal_code.agent.providers.registry import PROVIDERS
 from nominal_code.config import Config
+from nominal_code.models import ProviderName
 from nominal_code.platforms.base import (
     CommentReply,
     PlatformName,
@@ -52,8 +54,10 @@ async def run_ci_review(platform_name_str: str) -> int:
     except ValueError:
         max_turns = 0
 
+    provider = PROVIDERS[ProviderName(os.environ.get("AGENT_PROVIDER", "anthropic"))]
     guidelines_raw: str = os.environ.get("INPUT_CODING_GUIDELINES", "")
     config: Config = Config.for_ci(
+        provider=provider,
         model=model,
         max_turns=max_turns,
         guidelines_path=Path(guidelines_raw) if guidelines_raw else Path(),

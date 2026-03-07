@@ -7,7 +7,7 @@ from pathlib import Path
 
 from environs import Env, EnvError
 
-from nominal_code.models import EventType
+from nominal_code.models import EventType, ProviderName
 
 logger: logging.Logger = logging.getLogger(__name__)
 env: Env = Env()
@@ -22,23 +22,79 @@ DEFAULT_CLEANUP_INTERVAL_HOURS: int = 6
 
 
 @dataclass(frozen=True)
-class AgentConfig:
+class ProviderConfig:
     """
-    Agent runner configuration.
+    LLM provider configuration.
 
     Attributes:
-        model (str): Optional model override (empty string uses default).
+        name (ProviderName): Provider identifier.
+        model (str): Model name (e.g. ``"claude-sonnet-4-20250514"``).
+        base_url (str | None): Base URL for OpenAI-compatible providers.
+            ``None`` for native providers and OpenAI itself (uses SDK default).
+    """
+
+    name: ProviderName
+    model: str
+    base_url: str | None = None
+
+    @property
+    def api_key_env(self) -> str:
+        """
+        Environment variable name for the provider's API key.
+
+        Derived from the provider name: ``{NAME}_API_KEY``
+        (e.g. ``"ANTHROPIC_API_KEY"``).
+
+        Returns:
+            str: The environment variable name.
+        """
+
+        return f"{self.name.upper()}_API_KEY"
+
+
+@dataclass(frozen=True)
+class CliAgentConfig:
+    """
+    Agent configuration for CLI and webhook modes.
+
+    Uses the Claude Code CLI subprocess. Supports session resumption
+    and Claude Pro/Max subscriptions.
+
+    Attributes:
+        model (str): Optional model override (empty string uses CLI default).
         max_turns (int): Maximum agentic turns (0 for unlimited).
-        use_api (bool): If True, use the Anthropic API directly; if False,
-            use the Claude Code CLI subprocess.
-        cli_path (str): Path to the Claude Code CLI binary. Only used when
-            use_api is False.
+        cli_path (str): Path to the Claude Code CLI binary (empty to use
+            bundled).
     """
 
     model: str = ""
     max_turns: int = 0
-    use_api: bool = False
     cli_path: str = ""
+
+
+@dataclass(frozen=True)
+class ApiAgentConfig:
+    """
+    Agent configuration for CI mode.
+
+    Calls the LLM provider API directly. Requires a provider API key.
+    Stateless (no session continuity).
+
+    The effective model is always ``provider.model``. To override the
+    default, pass a ``ProviderConfig`` with the desired model set (see
+    ``Config.for_ci``).
+
+    Attributes:
+        provider (ProviderConfig): The LLM provider configuration. Determines
+            which SDK, API key, and model to use.
+        max_turns (int): Maximum agentic turns (0 for unlimited).
+    """
+
+    provider: ProviderConfig
+    max_turns: int = 0
+
+
+AgentConfig = CliAgentConfig | ApiAgentConfig
 
 
 @dataclass(frozen=True)
@@ -81,7 +137,9 @@ class Config:
         webhook_port (int): Port to bind the webhook server.
         allowed_users (frozenset[str]): Usernames permitted to trigger the bots.
         workspace_base_dir (Path): Directory for cloning repositories.
-        agent (AgentConfig): Agent runner configuration.
+        agent (AgentConfig): Agent runner configuration. Either a
+            ``CliAgentConfig`` (CLI/webhook mode) or ``ApiAgentConfig``
+            (CI mode with direct API calls).
         coding_guidelines (str): Coding guidelines text appended to the
             system prompt.
         language_guidelines (dict[str, str]): Language-specific guidelines
@@ -162,10 +220,9 @@ class Config:
             webhook_port=0,
             allowed_users=frozenset(),
             workspace_base_dir=workspace_base_dir,
-            agent=AgentConfig(
+            agent=CliAgentConfig(
                 model=model or env.str("AGENT_MODEL", ""),
                 max_turns=max_turns or env.int("AGENT_MAX_TURNS", 0),
-                use_api=False,
                 cli_path=env.str("AGENT_CLI_PATH", ""),
             ),
             coding_guidelines=coding_guidelines,
@@ -176,6 +233,7 @@ class Config:
     @classmethod
     def for_ci(
         cls,
+        provider: ProviderConfig,
         model: str = "",
         max_turns: int = 0,
         guidelines_path: Path = Path(),
@@ -183,17 +241,30 @@ class Config:
         """
         Build a Config for CI mode (GitHub Actions / GitLab CI).
 
-        Similar to ``for_cli`` but uses the Anthropic API directly and
-        optionally accepts a custom coding guidelines path.
+        Similar to ``for_cli`` but calls the LLM provider API directly
+        and optionally accepts a custom coding guidelines path.
 
         Args:
-            model (str): Optional agent model override.
+            provider (ProviderConfig): The resolved provider configuration
+                (from ``PROVIDERS`` registry). When ``model`` is given,
+                a copy with the overridden model is stored.
+            model (str): Optional model override. When set, replaces the
+                provider's default model.
             max_turns (int): Optional agent max turns override.
             guidelines_path (Path): Optional path to a coding guidelines file.
 
         Returns:
             Config: A configuration suitable for CI-triggered reviews.
         """
+
+        model_override: str = model or env.str("AGENT_MODEL", "")
+
+        if model_override:
+            provider = ProviderConfig(
+                name=provider.name,
+                model=model_override,
+                base_url=provider.base_url,
+            )
 
         reviewer_system_prompt: str = _load_file_content(
             env.path("REVIEWER_SYSTEM_PROMPT", DEFAULT_REVIEWER_PROMPT_PATH),
@@ -228,11 +299,9 @@ class Config:
             webhook_port=0,
             allowed_users=frozenset(),
             workspace_base_dir=workspace_base_dir,
-            agent=AgentConfig(
-                model=model or env.str("AGENT_MODEL", ""),
+            agent=ApiAgentConfig(
+                provider=provider,
                 max_turns=max_turns or env.int("AGENT_MAX_TURNS", 0),
-                use_api=True,
-                cli_path="",
             ),
             coding_guidelines=coding_guidelines,
             language_guidelines=language_guidelines,
@@ -342,10 +411,9 @@ class Config:
             webhook_port=webhook_port,
             allowed_users=allowed_users,
             workspace_base_dir=workspace_base_dir,
-            agent=AgentConfig(
+            agent=CliAgentConfig(
                 model=env.str("AGENT_MODEL", ""),
                 max_turns=env.int("AGENT_MAX_TURNS", 0),
-                use_api=False,
                 cli_path=env.str("AGENT_CLI_PATH", ""),
             ),
             coding_guidelines=coding_guidelines,

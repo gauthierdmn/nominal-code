@@ -7,7 +7,7 @@ import pytest
 from nominal_code.agent.cli.session import SessionStore
 from nominal_code.agent.cli.tracking import run_and_track_session
 from nominal_code.agent.runner import AgentResult
-from nominal_code.config import AgentConfig
+from nominal_code.config import CliAgentConfig
 from nominal_code.models import BotType, EventType
 from nominal_code.platforms.base import CommentEvent, PlatformName
 
@@ -27,7 +27,7 @@ def _make_event():
 
 def _make_config():
     config = MagicMock()
-    config.agent = AgentConfig()
+    config.agent = CliAgentConfig()
 
     return config
 

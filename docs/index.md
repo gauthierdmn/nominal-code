@@ -1,6 +1,6 @@
 # Nominal Code
 
-An AI-powered code review agent for GitHub and GitLab pull requests. It uses Claude to read your diffs and post structured inline reviews — all without leaving your PR.
+An AI-powered code review agent for GitHub and GitLab pull requests. It uses an LLM to read your diffs and post structured inline reviews — all without leaving your PR.
 
 It runs anywhere: as a **CI job** (GitHub Actions or GitLab CI), from the **command line**, or as a **self-hosted webhook server** for real-time interaction.
 
@@ -8,9 +8,9 @@ It runs anywhere: as a **CI job** (GitHub Actions or GitLab CI), from the **comm
 
 | Mode | Best For | Setup | Details |
 |---|---|---|---|
-| **[CI](modes/ci.md)** | Teams wanting zero-infrastructure automated reviews on every PR | Add a workflow file — no server, no CLI | Uses the Anthropic API directly |
-| **[CLI](modes/cli.md)** | Developers running one-off reviews from their terminal | Install the Claude Code CLI and run a command | Supports Pro/Max subscriptions |
-| **[Webhook](modes/webhook.md)** | Teams wanting real-time, interactive reviews via `@mention` | Deploy a webhook server | Session continuity, auto-trigger, multi-turn, supports Pro/Max subscriptions |
+| **[CI](modes/ci.md)** | Teams wanting zero-infrastructure automated reviews on every PR | Add a workflow file — no server, no CLI | Uses the LLM provider API directly |
+| **[CLI](modes/cli.md)** | Developers running one-off reviews from their terminal | Install the Claude Code CLI and run a command | Uses the Claude Code CLI as agent runner |
+| **[Webhook](modes/webhook.md)** | Teams wanting real-time, interactive reviews via `@mention` | Deploy a webhook server | Session continuity, auto-trigger, multi-turn |
 
 New here? Start with the **[Getting Started](getting-started.md)** guide.
 

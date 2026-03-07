@@ -1,12 +1,10 @@
 # CI Mode
 
-Run automated code reviews on every pull request directly from your CI pipeline. CI mode calls the Anthropic API directly — it does not require the Claude Code CLI.
+Run automated code reviews on every pull request directly from your CI pipeline. CI mode calls the LLM provider API directly — it does not require the Claude Code CLI.
 
 ## GitHub Actions
 
-=== "Minimal Setup"
-
-    Add a workflow file to your repository:
+=== "Anthropic (default)"
 
     ```yaml
     # .github/workflows/review.yml
@@ -30,7 +28,28 @@ Run automated code reviews on every pull request directly from your CI pipeline.
               github_token: ${{ secrets.GITHUB_TOKEN }}
     ```
 
-    The action runs inside a Docker container (`ghcr.io/gauthierdmn/nominal-code`), reads the pull request event payload from `$GITHUB_EVENT_PATH`, reviews the diff using the Anthropic API, and posts structured inline comments back to the PR.
+=== "OpenAI"
+
+    ```yaml
+    - uses: gauthierdmn/nominal-code@main
+      with:
+        openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        provider: openai
+        model: gpt-4.1
+    ```
+
+=== "OpenAI-compatible (DeepSeek, Groq, ...)"
+
+    ```yaml
+    - uses: gauthierdmn/nominal-code@main
+      with:
+        openai_api_key: ${{ secrets.DEEPSEEK_API_KEY }}
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        provider: deepseek
+    ```
+
+    The `openai_api_key` input is used for all OpenAI-compatible providers. Set the appropriate API key for your provider.
 
 === "With Custom Options"
 
@@ -39,7 +58,7 @@ Run automated code reviews on every pull request directly from your CI pipeline.
       with:
         anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
         github_token: ${{ secrets.GITHUB_TOKEN }}
-        model: claude-sonnet-4-20250514
+        model: your-preferred-model
         prompt: "focus on security vulnerabilities and SQL injection"
     ```
 
@@ -52,6 +71,8 @@ Run automated code reviews on every pull request directly from your CI pipeline.
         github_token: ${{ secrets.GITHUB_TOKEN }}
         coding_guidelines: ".nominal/guidelines.md"
     ```
+
+The action uses the all-in-one `ghcr.io/gauthierdmn/nominal-code` image, which works with any provider.
 
 ### Versioning
 
@@ -71,32 +92,18 @@ Or track the latest changes on `main` (may include breaking changes):
 
 | Input | Required | Default | Description |
 |---|---|---|---|
-| `anthropic_api_key` | Yes | — | Anthropic API key for Claude |
+| `anthropic_api_key` | When provider is `anthropic` | — | Anthropic API key |
+| `openai_api_key` | When provider is `openai`, `deepseek`, `groq`, `together`, or `fireworks` | — | OpenAI-compatible API key |
 | `github_token` | Yes | — | GitHub token for posting review comments |
-| `model` | No | `claude-sonnet-4-20250514` | Claude model to use |
+| `provider` | No | `anthropic` | LLM provider to use |
+| `model` | No | Provider default | Model to use |
 | `max_turns` | No | `0` (unlimited) | Maximum agentic turns |
 | `prompt` | No | — | Custom review instructions appended to the default prompt |
 | `coding_guidelines` | No | — | Path to a coding guidelines file (relative to repo root) |
 
 ## GitLab CI
 
-=== "Direct Job"
-
-    Add a job to your `.gitlab-ci.yml`:
-
-    ```yaml
-    nominal-code-review:
-      image: ghcr.io/gauthierdmn/nominal-code:0.1.0
-      variables:
-        ANTHROPIC_API_KEY: $ANTHROPIC_API_KEY
-        GITLAB_TOKEN: $GITLAB_TOKEN
-      script:
-        - cd "$CI_PROJECT_DIR" && uv run nominal-code ci gitlab
-      rules:
-        - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-    ```
-
-=== "CI Component Template"
+=== "Anthropic (default)"
 
     ```yaml
     include:
@@ -108,7 +115,59 @@ Or track the latest changes on `main` (may include breaking changes):
         GITLAB_TOKEN: $GITLAB_TOKEN
     ```
 
+=== "OpenAI"
+
+    ```yaml
+    include:
+      - component: ghcr.io/gauthierdmn/nominal-code/ci/templates/gitlab-ci.yml
+        inputs:
+          provider: openai
+
+    nominal-code-review:
+      variables:
+        OPENAI_API_KEY: $OPENAI_API_KEY
+        GITLAB_TOKEN: $GITLAB_TOKEN
+    ```
+
+=== "OpenAI-compatible (DeepSeek, Groq, ...)"
+
+    ```yaml
+    include:
+      - component: ghcr.io/gauthierdmn/nominal-code/ci/templates/gitlab-ci.yml
+        inputs:
+          provider: deepseek
+
+    nominal-code-review:
+      variables:
+        OPENAI_API_KEY: $DEEPSEEK_API_KEY
+        GITLAB_TOKEN: $GITLAB_TOKEN
+    ```
+
+=== "Direct Job"
+
+    Add a job directly to your `.gitlab-ci.yml`:
+
+    ```yaml
+    nominal-code-review:
+      image: ghcr.io/gauthierdmn/nominal-code:latest
+      variables:
+        ANTHROPIC_API_KEY: $ANTHROPIC_API_KEY
+        GITLAB_TOKEN: $GITLAB_TOKEN
+      script:
+        - /entrypoint.sh
+      rules:
+        - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    ```
+
 The job runs on merge request pipelines. It reads `$CI_PROJECT_PATH`, `$CI_MERGE_REQUEST_IID`, and `$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME` from the GitLab CI environment. For self-hosted instances, `$CI_SERVER_URL` is used automatically as the API base.
+
+### Docker Images
+
+| Provider | Image |
+|---|---|
+| All providers (default) | `ghcr.io/gauthierdmn/nominal-code` |
+| Anthropic only | `ghcr.io/gauthierdmn/nominal-code-anthropic` |
+| OpenAI-compatible only | `ghcr.io/gauthierdmn/nominal-code-openai` |
 
 ### Versioning
 
@@ -124,13 +183,13 @@ Or use `latest` to track the `main` branch:
 image: ghcr.io/gauthierdmn/nominal-code:latest
 ```
 
-The CI component template always uses `:latest`.
-
 ### Template Inputs
 
 | Input | Default | Description |
 |---|---|---|
-| `model` | — | Claude model to use |
+| `provider` | `anthropic` | LLM provider to use |
+| `image` | `ghcr.io/gauthierdmn/nominal-code:latest` | Docker image variant (all-in-one; provider-specific images available for smaller footprint) |
+| `model` | — | Model to use |
 | `max_turns` | `0` (unlimited) | Maximum agentic turns |
 | `prompt` | — | Custom review instructions |
 | `coding_guidelines` | — | Path to a coding guidelines file |
@@ -138,10 +197,11 @@ The CI component template always uses `:latest`.
 
 ### Required Variables
 
-| Variable | Description |
-|---|---|
-| `ANTHROPIC_API_KEY` | Anthropic API key for Claude |
-| `GITLAB_TOKEN` | GitLab token for posting review comments and fetching MR data |
+| Variable | When | Description |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | Provider is `anthropic` | Anthropic API key |
+| `OPENAI_API_KEY` | Provider is `openai`, `deepseek`, `groq`, `together`, or `fireworks` | OpenAI-compatible API key |
+| `GITLAB_TOKEN` | Always | GitLab token for posting review comments and fetching MR data |
 
 ### Example with Overrides
 
@@ -149,7 +209,7 @@ The CI component template always uses `:latest`.
 include:
   - component: ghcr.io/gauthierdmn/nominal-code/ci/templates/gitlab-ci.yml
     inputs:
-      model: claude-sonnet-4-20250514
+      model: your-preferred-model
       prompt: "focus on error handling"
       stage: review
 ```
@@ -159,14 +219,14 @@ include:
 1. The CI runner checks out the repository (the workspace is reused as-is).
 2. `nominal-code ci {platform}` loads the platform-specific CI module (`platforms/github/ci.py` or `platforms/gitlab/ci.py`).
 3. The platform module builds the event, platform client, and workspace path from CI environment variables.
-4. The review runs using the **Anthropic API** directly (tool use loop with Read, Glob, Grep, and Bash).
+4. The review runs using the configured LLM provider API directly (tool use loop with Read, Glob, Grep, and Bash).
 5. Structured findings are posted as native inline comments on the PR/MR.
 
-CI mode uses the same review logic as CLI and webhook modes — the same diff fetching, prompt composition, JSON parsing, and finding filtering. The only difference is the agent runner: CI uses the Anthropic API directly, while CLI and webhook modes use the Claude Code CLI.
+CI mode uses the same review logic as CLI and webhook modes — the same diff fetching, prompt composition, JSON parsing, and finding filtering. The only difference is the agent runner: CI uses the LLM provider API directly, while CLI and webhook modes use the Claude Code CLI.
 
 ## What's Different
 
-CI mode calls the Anthropic API directly and always requires an `ANTHROPIC_API_KEY` (per-token billing). It does not support session continuity. The workspace is the CI runner's checkout directory — no cloning is needed.
+CI mode calls the LLM provider API directly and requires a provider API key (per-token billing). It supports multiple providers (Anthropic, OpenAI, DeepSeek, Groq, Together, Fireworks). It does not support session continuity. The workspace is the CI runner's checkout directory — no cloning is needed.
 
 CLI and webhook modes use the Claude Code CLI, supporting Claude Pro and Max subscriptions as an alternative to per-token billing. See the [mode comparison](../reference/configuration.md#mode-comparison) for a full breakdown.
 

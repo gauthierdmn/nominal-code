@@ -9,7 +9,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License: Apache 2.0"></a>
 </p>
 
-Nominal Code is an AI-powered code review agent for GitHub and GitLab pull requests. It uses Claude to read your diffs and post structured inline reviews — all without leaving your PR.
+Nominal Code is an AI-powered code review agent for GitHub and GitLab pull requests. It uses an LLM to read your diffs and post structured inline reviews — all without leaving your PR.
 
 It runs anywhere: as a **CI job** (GitHub Actions or GitLab CI), from the **command line**, or as a **self-hosted webhook server** for real-time interaction.
 
@@ -49,9 +49,11 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
+Multiple LLM providers are supported (Anthropic, OpenAI, DeepSeek, Groq, Together, Fireworks). Pass `provider` and the matching API key input. See [CI Mode](https://gauthierdmn.github.io/nominal-code/modes/ci/) for all provider examples.
+
 Pin to a specific release tag (e.g. `@0.1.0`) for stability, or use `@main` to track the latest changes. You can also pass `model`, `max_turns`, `prompt`, and `coding_guidelines` as inputs.
 
-> CI mode calls the Anthropic API directly and does not require the Claude Code CLI.
+> CI mode calls the LLM provider API directly and does not require the Claude Code CLI.
 
 ### CLI
 
@@ -90,7 +92,7 @@ The server supports **GitHub App authentication** as an alternative to PATs, **a
 
 | What | How |
 |---|---|
-| Claude model | `AGENT_MODEL` env var, `--model` flag, or `model` Action input |
+| Model | `AGENT_MODEL` env var, `--model` flag, or `model` Action input |
 | Review prompt | `--prompt` flag, `INPUT_PROMPT` env var, or `prompt` Action input |
 | Coding guidelines | Global via `CODING_GUIDELINES`, per-repo via `.nominal/guidelines.md` |
 | Language-specific rules | `prompts/languages/` or `.nominal/languages/{lang}.md` per repo |

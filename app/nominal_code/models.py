@@ -32,6 +32,19 @@ COMMENT_EVENT_TYPES: frozenset[EventType] = frozenset(
 )
 
 
+class ProviderName(StrEnum):
+    """
+    Supported LLM provider identifiers.
+    """
+
+    ANTHROPIC = "anthropic"
+    OPENAI = "openai"
+    DEEPSEEK = "deepseek"
+    GROQ = "groq"
+    TOGETHER = "together"
+    FIREWORKS = "fireworks"
+
+
 class BotType(StrEnum):
     """
     Identifiers for the two bot personalities.

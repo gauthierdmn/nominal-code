@@ -12,7 +12,7 @@ from aiohttp.pytest_plugin import AiohttpClient
 
 from nominal_code.agent.cli.session import SessionQueue, SessionStore
 from nominal_code.config import (
-    AgentConfig,
+    CliAgentConfig,
     Config,
     ReviewerConfig,
     WorkerConfig,
@@ -92,7 +92,7 @@ def _build_webhook_config(
         webhook_port=0,
         allowed_users=frozenset({ALLOWED_USER}),
         workspace_base_dir=Path(tempfile.mkdtemp()),
-        agent=AgentConfig(use_api=False),
+        agent=CliAgentConfig(),
         coding_guidelines="",
         language_guidelines={},
         cleanup_interval_hours=0,

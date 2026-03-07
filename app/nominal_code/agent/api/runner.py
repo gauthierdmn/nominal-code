@@ -4,22 +4,21 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Any
-
-import anthropic
-from anthropic.types import (
-    CacheControlEphemeralParam,
-    MessageParam,
-    TextBlockParam,
-    ToolParam,
-    ToolResultBlockParam,
-    ToolUseBlockParam,
-)
 
 from nominal_code.agent.api.tools import (
     SUBMIT_REVIEW_TOOL_NAME,
     execute_tool,
     get_tool_definitions,
+)
+from nominal_code.agent.providers.base import LLMProvider, ProviderError
+from nominal_code.agent.providers.types import (
+    ContentBlock,
+    LLMResponse,
+    Message,
+    TextBlock,
+    ToolDefinition,
+    ToolResultBlock,
+    ToolUseBlock,
 )
 from nominal_code.agent.result import AgentResult
 
@@ -32,12 +31,13 @@ async def run_agent_api(
     prompt: str,
     cwd: Path,
     model: str,
+    provider: LLMProvider,
     max_turns: int = 0,
     system_prompt: str = "",
     allowed_tools: list[str] | None = None,
 ) -> AgentResult:
     """
-    Run the agent using the Anthropic Messages API with tool use.
+    Run the agent using an LLM provider with tool use.
 
     Implements the agentic loop: sends a prompt, processes tool_use
     responses by executing tools locally, sends results back, and repeats
@@ -45,14 +45,13 @@ async def run_agent_api(
 
     When ``submit_review`` is in ``allowed_tools``, the corresponding
     structured-output tool is included. If the model calls it, the tool
-    input is serialized as JSON and returned as the agent output. This
-    ensures correct JSON escaping via the API rather than relying on the
-    model to produce valid JSON text.
+    input is serialized as JSON and returned as the agent output.
 
     Args:
         prompt (str): The user's prompt to pass to the agent.
         cwd (Path): Working directory for tool execution.
-        model (str): The Claude model to use.
+        model (str): The model to use.
+        provider (LLMProvider): The LLM provider to use for API calls.
         max_turns (int): Maximum agentic turns (0 for unlimited).
         system_prompt (str): Optional system prompt for the agent.
         allowed_tools (list[str] | None): Restrict which tools the agent may use.
@@ -61,12 +60,10 @@ async def run_agent_api(
         AgentResult: The parsed result from the agent.
     """
 
-    client: anthropic.AsyncAnthropic = anthropic.AsyncAnthropic()
-    tool_definitions: list[ToolParam] = get_tool_definitions(allowed_tools)
-    cache: CacheControlEphemeralParam = {"type": "ephemeral"}
+    tool_definitions: list[ToolDefinition] = get_tool_definitions(allowed_tools)
 
-    messages: list[MessageParam] = [
-        {"role": "user", "content": prompt},
+    messages: list[Message] = [
+        Message(role="user", content=[TextBlock(text=prompt)]),
     ]
 
     turns: int = 0
@@ -74,21 +71,20 @@ async def run_agent_api(
 
     try:
         while True:
-            response: anthropic.types.Message = await client.messages.create(
+            response: LLMResponse = await provider.send(
+                messages=messages,
+                system_prompt=system_prompt,
+                tools=tool_definitions,
                 model=model,
                 max_tokens=MAX_RESPONSE_TOKENS,
-                messages=messages,
-                cache_control=cache,
-                system=system_prompt,
-                tools=tool_definitions,
             )
 
             messages.append(
-                {"role": "assistant", "content": _serialize_content(response)},
+                Message(role="assistant", content=list(response.content)),
             )
 
-            tool_use_blocks: list[anthropic.types.ToolUseBlock] = [
-                block for block in response.content if block.type == "tool_use"
+            tool_use_blocks: list[ToolUseBlock] = [
+                block for block in response.content if isinstance(block, ToolUseBlock)
             ]
 
             if not tool_use_blocks:
@@ -120,7 +116,7 @@ async def run_agent_api(
                         duration_ms=duration_ms,
                     )
 
-            tool_results: list[ToolResultBlockParam] = []
+            tool_results: list[ContentBlock] = []
 
             for block in tool_use_blocks:
                 logger.debug(
@@ -129,7 +125,9 @@ async def run_agent_api(
                     block.input,
                 )
 
-                output, is_error = await execute_tool(
+                tool_output: str
+                is_error: bool
+                tool_output, is_error = await execute_tool(
                     name=block.name,
                     tool_input=block.input,
                     cwd=cwd,
@@ -140,19 +138,18 @@ async def run_agent_api(
                     "[tool_result] %s error=%s %.500s",
                     block.id,
                     is_error,
-                    output,
+                    tool_output,
                 )
 
                 tool_results.append(
-                    ToolResultBlockParam(
-                        type="tool_result",
+                    ToolResultBlock(
                         tool_use_id=block.id,
-                        content=output,
+                        content=tool_output,
                         is_error=is_error,
                     ),
                 )
 
-            messages.append({"role": "user", "content": tool_results})
+            messages.append(Message(role="user", content=tool_results))
 
             turns += 1
 
@@ -172,13 +169,13 @@ async def run_agent_api(
                     duration_ms=duration_ms,
                 )
 
-    except anthropic.APIError as exc:
+    except ProviderError as exc:
         duration_ms = _now_ms() - start_time
 
-        logger.exception("Anthropic API error")
+        logger.exception("LLM provider error")
 
         return AgentResult(
-            output=f"API error: {exc.message}",
+            output=f"API error: {exc}",
             is_error=True,
             num_turns=turns,
             duration_ms=duration_ms,
@@ -196,81 +193,49 @@ async def run_agent_api(
         )
 
 
-def _serialize_content(
-    response: anthropic.types.Message,
-) -> list[TextBlockParam | ToolUseBlockParam]:
+def _extract_text(response: LLMResponse) -> str:
     """
-    Serialize response content blocks to dicts for message history.
+    Extract all text blocks from an LLM response.
 
     Args:
-        response (anthropic.types.Message): The Anthropic API response.
-
-    Returns:
-        list[TextBlockParam | ToolUseBlockParam]: Serialized content blocks.
-    """
-
-    blocks: list[TextBlockParam | ToolUseBlockParam] = []
-
-    for block in response.content:
-        if block.type == "text":
-            blocks.append(TextBlockParam(type="text", text=block.text))
-        elif block.type == "tool_use":
-            blocks.append(
-                ToolUseBlockParam(
-                    type="tool_use",
-                    id=block.id,
-                    name=block.name,
-                    input=block.input,
-                ),
-            )
-
-    return blocks
-
-
-def _extract_text(response: anthropic.types.Message) -> str:
-    """
-    Extract all text blocks from an API response.
-
-    Args:
-        response (anthropic.types.Message): The Anthropic API response.
+        response (LLMResponse): The LLM response.
 
     Returns:
         str: Concatenated text from all text blocks.
     """
 
     parts: list[str] = [
-        block.text for block in response.content if block.type == "text" and block.text
+        block.text
+        for block in response.content
+        if isinstance(block, TextBlock) and block.text
     ]
 
     return "\n".join(parts)
 
 
-def _extract_last_text(messages: list[MessageParam]) -> str:
+def _extract_last_text(messages: list[Message]) -> str:
     """
     Extract text from the last assistant message in the history.
 
     Args:
-        messages (list[MessageParam]): The full message history.
+        messages (list[Message]): The full message history.
 
     Returns:
         str: Text from the last assistant message, or empty string.
     """
 
     for message in reversed(messages):
-        if message.get("role") != "assistant":
+        if message.role != "assistant":
             continue
 
-        content: Any = message.get("content", [])
+        parts: list[str] = [
+            block.text
+            for block in message.content
+            if isinstance(block, TextBlock) and block.text
+        ]
 
-        if isinstance(content, list):
-            parts: list[str] = [
-                block["text"]
-                for block in content
-                if isinstance(block, dict) and block.get("type") == "text"
-            ]
-
-            if parts:
-                return "\n".join(parts)
+        if parts:
+            return "\n".join(parts)
 
     return ""
 

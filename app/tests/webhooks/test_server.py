@@ -6,7 +6,7 @@ import pytest
 import pytest_asyncio
 
 from nominal_code.agent.cli.session import SessionQueue, SessionStore
-from nominal_code.config import AgentConfig, ReviewerConfig, WorkerConfig
+from nominal_code.config import CliAgentConfig, ReviewerConfig, WorkerConfig
 from nominal_code.models import BotType, EventType
 from nominal_code.platforms.base import CommentEvent, LifecycleEvent, PlatformName
 from nominal_code.webhooks.server import _should_process_event, create_app
@@ -33,7 +33,7 @@ def _make_config(
     )
     config.allowed_users = frozenset(["alice"])
     config.workspace_base_dir = "/tmp/workspaces"
-    config.agent = AgentConfig()
+    config.agent = CliAgentConfig()
     config.reviewer_triggers = frozenset(reviewer_triggers or [])
     config.allowed_repos = frozenset(allowed_repos or [])
     config.pr_title_include_tags = frozenset(pr_title_include_tags or [])

@@ -14,6 +14,7 @@ from nominal_code.agent.cli.tracking import run_and_track_session
 from nominal_code.agent.errors import handle_agent_errors
 from nominal_code.agent.prompts import resolve_system_prompt
 from nominal_code.agent.runner import run_agent
+from nominal_code.config import ApiAgentConfig
 from nominal_code.models import (
     AgentReview,
     BotType,
@@ -228,7 +229,7 @@ async def review(
 
     effective_allowed_tools: list[str] = list(REVIEWER_ALLOWED_TOOLS)
 
-    if config.agent and config.agent.use_api:
+    if isinstance(config.agent, ApiAgentConfig):
         effective_allowed_tools.append(SUBMIT_REVIEW_TOOL_NAME)
 
     result: AgentResult = await run_and_track_session(

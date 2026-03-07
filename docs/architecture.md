@@ -92,13 +92,13 @@ _load_platform_ci()                 ← import platform-specific CI module
         ├─ resolve_workspace()      ← use CI runner checkout
         │
         ▼
-Config.for_ci()                     ← build config with use_api=True
+Config.for_ci()                     ← build config with ApiAgentConfig
         │
         ▼
 review()
         │
         ├─ diff + comments (parallel fetch)
-        ├─ build prompt + run agent (Anthropic API)
+        ├─ build prompt + run agent (LLM provider API)
         ├─ parse JSON + filter findings
         │
         ▼
@@ -122,24 +122,24 @@ Used by **CLI mode** and **webhook server mode**. Wraps the [Claude Code SDK](ht
 - Requires the Claude Code CLI to be installed and on `PATH` (or set via `AGENT_CLI_PATH`).
 - Uses the CLI's configured login method — supports Claude Pro and Claude Max subscriptions as an alternative to per-token API billing.
 
-### Anthropic API Runner
+### LLM Provider API Runner
 
-Used by **CI mode**. Calls the Anthropic Messages API directly with tool use.
+Used by **CI mode**. Calls the LLM provider API directly with tool use. Supports multiple providers (Anthropic, OpenAI, DeepSeek, Groq, Together, Fireworks).
 
 - Implements an agentic loop: sends a prompt, processes `tool_use` blocks by executing tools locally, sends results back, and repeats until the model produces a final text answer or `max_turns` is reached.
 - Provides four tools: `Read` (file contents), `Glob` (file search), `Grep` (content search), and `Bash` (shell commands with allowlist validation).
-- Does not require the Claude Code CLI — only an `ANTHROPIC_API_KEY` (per-token billing).
+- Does not require the Claude Code CLI — only a provider API key (per-token billing).
 - Does not support session continuity (each run is stateless).
 
 ### Runner Selection
 
 | Execution Mode | Agent Runner | Selected By |
 |---|---|---|
-| CI (`nominal-code ci`) | Anthropic API | `AgentConfig(use_api=True)` |
-| CLI (`nominal-code review`) | Claude Code CLI | `AgentConfig(use_api=False)` |
-| Webhook server | Claude Code CLI | `AgentConfig(use_api=False)` |
+| CI (`nominal-code ci`) | LLM provider API | `ApiAgentConfig` |
+| CLI (`nominal-code review`) | Claude Code CLI | `CliAgentConfig` |
+| Webhook server | Claude Code CLI | `CliAgentConfig` |
 
-The dispatcher in `agent/runner.py` routes to the appropriate backend based on the `use_api` flag in `AgentConfig`.
+The dispatcher in `agent/runner.py` routes to the appropriate backend based on whether the config is a `CliAgentConfig` or `ApiAgentConfig`.
 
 ## Components
 
@@ -187,11 +187,11 @@ Each platform provides a `ci.py` module with three functions:
 
 ### Agent Runner (`agent/runner.py`)
 
-Dispatcher that routes to the API or CLI runner based on `AgentConfig.use_api`. See [Agent Runners](#agent-runners) above.
+Dispatcher that routes to the API or CLI runner based on the agent config type (`CliAgentConfig` or `ApiAgentConfig`). See [Agent Runners](#agent-runners) above.
 
 ### API Runner (`agent/api/runner.py`)
 
-Implements the Anthropic API agentic loop with local tool execution. See [Anthropic API Runner](#anthropic-api-runner) above.
+Implements the LLM provider API agentic loop with local tool execution. See [LLM Provider API Runner](#llm-provider-api-runner) above.
 
 ### API Tools (`agent/api/tools.py`)
 
@@ -282,7 +282,7 @@ nominal_code/
 │   ├── prompts.py       # Guideline loading, language detection, system prompt composition
 │   ├── errors.py        # Async context manager for handler error handling
 │   ├── api/
-│   │   ├── runner.py    # Anthropic API agentic loop (tool use)
+│   │   ├── runner.py    # LLM provider API agentic loop (tool use)
 │   │   └── tools.py     # Tool definitions and execution (Read, Glob, Grep, Bash)
 │   └── cli/
 │       ├── runner.py    # Claude Code CLI subprocess wrapper (SDK integration)

@@ -12,7 +12,7 @@ Minimal steps to go from zero to a working review.
 
 === "CI (fastest)"
 
-    Add an `ANTHROPIC_API_KEY` secret to your repository, then create a workflow file:
+    Add your LLM provider API key as a repository secret, then create a workflow file. The example below uses Anthropic — see [CI Mode](modes/ci.md) for other providers (OpenAI, DeepSeek, Groq, etc.).
 
     ```yaml
     # .github/workflows/review.yml
@@ -38,7 +38,7 @@ Minimal steps to go from zero to a working review.
 
     Open a pull request — the review runs automatically.
 
-    **Next:** [CI Mode full guide](modes/ci.md) (GitLab CI setup, inputs, examples)
+    **Next:** [CI Mode full guide](modes/ci.md) (all providers, GitLab CI setup, inputs, examples)
 
 === "CLI"
 

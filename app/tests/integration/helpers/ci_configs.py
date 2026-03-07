@@ -1,9 +1,18 @@
 import base64
 import os
 
-DEFAULT_MODEL = "claude-haiku-4-5-20251001"
+from nominal_code.agent.providers.registry import PROVIDERS
+from nominal_code.config import ProviderConfig
+from nominal_code.models import ProviderName
+
 DEFAULT_MAX_TURNS = 2
 DEFAULT_DOCKER_IMAGE = "ghcr.io/gauthierdmn/nominal-code:latest"
+DEFAULT_PROVIDER = "anthropic"
+
+TEST_MODEL_OVERRIDES: dict[ProviderName, str] = {
+    ProviderName.ANTHROPIC: "claude-haiku-4-5-20251001",
+    ProviderName.OPENAI: "gpt-4.1-mini",
+}
 
 
 def _docker_image() -> str:
@@ -20,15 +29,61 @@ def _docker_image() -> str:
     return os.environ.get("TEST_DOCKER_IMAGE", DEFAULT_DOCKER_IMAGE)
 
 
+def _provider() -> str:
+    """
+    Return the provider to use in generated CI configs.
+
+    Reads from ``TEST_PROVIDER`` if set, otherwise falls back to
+    ``anthropic``.
+
+    Returns:
+        str: The provider name.
+    """
+
+    return os.environ.get("TEST_PROVIDER", DEFAULT_PROVIDER)
+
+
+def _provider_defaults(provider: str) -> ProviderConfig:
+    """
+    Return the provider config for a given provider name.
+
+    Uses a cheaper test model when available, falling back to the
+    production default.
+
+    Args:
+        provider (str): The provider name (e.g. ``anthropic``, ``openai``).
+
+    Returns:
+        ProviderConfig: The provider-specific configuration.
+
+    Raises:
+        ValueError: If the provider is not recognized.
+    """
+
+    provider_name = ProviderName(provider)
+    defaults = PROVIDERS[provider_name]
+    test_model = TEST_MODEL_OVERRIDES.get(provider_name)
+
+    if test_model:
+        return ProviderConfig(
+            name=defaults.name,
+            model=test_model,
+            base_url=defaults.base_url,
+        )
+
+    return defaults
+
+
 def github_actions_workflow_yaml(
-    model: str = DEFAULT_MODEL,
     max_turns: int = DEFAULT_MAX_TURNS,
 ) -> str:
     """
     Generate a GitHub Actions workflow YAML for the review action.
 
+    Uses ``TEST_PROVIDER`` and ``TEST_DOCKER_IMAGE`` env vars to select
+    the provider and image. Defaults to anthropic with the all-in-one image.
+
     Args:
-        model (str): The Anthropic model to use.
         max_turns (int): Maximum agent turns.
 
     Returns:
@@ -36,6 +91,13 @@ def github_actions_workflow_yaml(
     """
 
     image = _docker_image()
+    provider = _provider()
+    defaults = _provider_defaults(provider)
+
+    provider_line = ""
+
+    if provider != DEFAULT_PROVIDER:
+        provider_line = f"\n        AGENT_PROVIDER: {provider}"
 
     return f"""\
 name: nominal-code-review
@@ -49,8 +111,8 @@ jobs:
     container:
       image: {image}
       env:
-        ANTHROPIC_API_KEY: ${{{{ secrets.ANTHROPIC_API_KEY }}}}
-        AGENT_MODEL: {model}
+        {defaults.api_key_env}: ${{{{ secrets.{defaults.api_key_env} }}}}{provider_line}
+        AGENT_MODEL: {defaults.model}
         AGENT_MAX_TURNS: "{max_turns}"
     permissions:
       contents: read
@@ -67,7 +129,6 @@ jobs:
 
 
 def github_actions_workflow_base64(
-    model: str = DEFAULT_MODEL,
     max_turns: int = DEFAULT_MAX_TURNS,
 ) -> str:
     """
@@ -76,27 +137,27 @@ def github_actions_workflow_base64(
     Suitable for use with the GitHub Contents API.
 
     Args:
-        model (str): The Anthropic model to use.
         max_turns (int): Maximum agent turns.
 
     Returns:
         str: Base64-encoded workflow YAML.
     """
 
-    yaml_content = github_actions_workflow_yaml(model=model, max_turns=max_turns)
+    yaml_content = github_actions_workflow_yaml(max_turns=max_turns)
 
     return base64.b64encode(yaml_content.encode()).decode()
 
 
 def gitlab_ci_yaml(
-    model: str = DEFAULT_MODEL,
     max_turns: int = DEFAULT_MAX_TURNS,
 ) -> str:
     """
     Generate a ``.gitlab-ci.yml`` for the review job.
 
+    Uses ``TEST_PROVIDER`` and ``TEST_DOCKER_IMAGE`` env vars to select
+    the provider and image. Defaults to anthropic with the all-in-one image.
+
     Args:
-        model (str): The Anthropic model to use.
         max_turns (int): Maximum agent turns.
 
     Returns:
@@ -104,13 +165,20 @@ def gitlab_ci_yaml(
     """
 
     image = _docker_image()
+    provider = _provider()
+    defaults = _provider_defaults(provider)
+
+    provider_line = ""
+
+    if provider != DEFAULT_PROVIDER:
+        provider_line = f'\n    AGENT_PROVIDER: "{provider}"'
 
     return f"""\
 review:
   image: {image}
   variables:
-    AGENT_MODEL: "{model}"
-    AGENT_MAX_TURNS: "{max_turns}"
+    AGENT_MODEL: "{defaults.model}"
+    AGENT_MAX_TURNS: "{max_turns}"{provider_line}
     GIT_CHECKOUT: "false"
   script:
     - cd "${{CI_PROJECT_DIR}}"
