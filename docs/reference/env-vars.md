@@ -48,7 +48,7 @@ At least one of `WORKER_BOT_USERNAME` or `REVIEWER_BOT_USERNAME` must be set in 
 
 | Variable | Modes | Default | Description |
 |---|---|---|---|
-| `AGENT_PROVIDER` | `webhook` `cli` `ci` | — | LLM provider name (`anthropic`, `openai`, `deepseek`, `groq`, `together`, `fireworks`). When set in webhook/CLI mode, uses the API runner instead of the Claude Code CLI |
+| `AGENT_PROVIDER` | `webhook` `cli` `ci` | — | LLM provider name (`anthropic`, `openai`, `google`, `deepseek`, `groq`, `together`, `fireworks`). When set in webhook/CLI mode, uses the API runner instead of the Claude Code CLI |
 | `AGENT_MODEL` | `webhook` `cli` `ci` | SDK/provider default | Model override (e.g. `claude-sonnet-4-6`, `gpt-4.1`) |
 | `AGENT_MAX_TURNS` | `webhook` `cli` `ci` | `0` (unlimited) | Maximum agentic turns per invocation |
 | `AGENT_CLI_PATH` | `webhook` `cli` | Bundled | Path to the `claude` CLI binary (ignored when `AGENT_PROVIDER` is set) |
@@ -89,6 +89,7 @@ CI mode reads its configuration from action inputs (mapped to `INPUT_*` environm
 | `GROQ_API_KEY` | `ci` | Secret | API key for the Groq provider |
 | `TOGETHER_API_KEY` | `ci` | Secret | API key for the Together provider |
 | `FIREWORKS_API_KEY` | `ci` | Secret | API key for the Fireworks provider |
+| `GOOGLE_API_KEY` | `ci` | Secret | API key for the Google provider |
 | `INPUT_MODEL` | `ci` | Action/template input | Model override |
 | `INPUT_MAX_TURNS` | `ci` | Action/template input | Maximum agentic turns |
 | `INPUT_PROMPT` | `ci` | Action/template input | Custom review instructions |

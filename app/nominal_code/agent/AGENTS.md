@@ -19,6 +19,7 @@ The API runner's default model is resolved from `providers.DEFAULT_MODELS` based
 - **`base.py`** — `LLMProvider` Protocol with a single `send()` method, plus error hierarchy (`ProviderError`, `RateLimitError`, `ContextLengthError`).
 - **`anthropic.py`** — `AnthropicProvider` wrapping the `anthropic` SDK. Preserves `cache_control={"type": "ephemeral"}`.
 - **`openai.py`** — `OpenAIProvider` for any OpenAI-compatible API (OpenAI, DeepSeek, Groq, Together, Fireworks) via `base_url`.
+- **`google.py`** — `GoogleProvider` wrapping the `google-genai` SDK. Uses synthetic tool call IDs (`call_{index}`) since Gemini doesn't provide them.
 - **`registry.py`** — `create_provider()` factory, `DEFAULT_MODELS` registry, provider-to-base-URL/API-key-env-var mappings.
 
 Provider selection: `ApiAgentConfig.provider` field (env var `AGENT_PROVIDER`). Defaults to `"anthropic"`.
@@ -58,7 +59,8 @@ agent/
 │   ├── base.py          # LLMProvider Protocol, ProviderError, RateLimitError, ContextLengthError
 │   ├── types.py         # Canonical types: Message, ContentBlock, ToolDefinition, LLMResponse, StopReason
 │   ├── anthropic.py     # AnthropicProvider (wraps anthropic SDK)
-│   └── openai.py        # OpenAIProvider (OpenAI, DeepSeek, Groq, Together, Fireworks)
+│   ├── openai.py        # OpenAIProvider (OpenAI, DeepSeek, Groq, Together, Fireworks)
+│   └── google.py        # GoogleProvider (wraps google-genai SDK)
 ├── api/
 │   ├── runner.py    # Provider-agnostic agentic loop
 │   └── tools.py     # Tool definitions and local execution (Read, Glob, Grep, Bash)
@@ -76,4 +78,4 @@ agent/
 - Language detection currently supports Python only (`.py`, `.pyi`); extend via `EXTENSION_TO_LANGUAGE` in `prompts.py`.
 - Guideline priority: repo `.nominal/guidelines.md` replaces (not appends to) built-in defaults.
 - The API runner's `_extract_last_text()` walks the canonical message history in reverse to find the last assistant text — used as fallback output when `max_turns` is reached mid-tool-use.
-- Both `anthropic` and `openai` are optional dependencies — install the one matching your chosen provider (or both via the `all` extra).
+- `anthropic`, `openai`, and `google-genai` are optional dependencies — install the one matching your chosen provider (or all via the `all` extra).

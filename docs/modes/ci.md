@@ -39,6 +39,16 @@ Run automated code reviews on every pull request directly from your CI pipeline.
         model: gpt-4.1
     ```
 
+=== "Google Gemini"
+
+    ```yaml
+    - uses: gauthierdmn/nominal-code@main
+      with:
+        google_api_key: ${{ secrets.GOOGLE_API_KEY }}
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        provider: google
+    ```
+
 === "OpenAI-compatible (DeepSeek, Groq, ...)"
 
     ```yaml
@@ -94,6 +104,7 @@ Or track the latest changes on `main` (may include breaking changes):
 |---|---|---|---|
 | `anthropic_api_key` | When provider is `anthropic` | — | Anthropic API key |
 | `openai_api_key` | When provider is `openai`, `deepseek`, `groq`, `together`, or `fireworks` | — | OpenAI-compatible API key |
+| `google_api_key` | When provider is `google` | — | Google API key |
 | `github_token` | Yes | — | GitHub token for posting review comments |
 | `provider` | No | `anthropic` | LLM provider to use |
 | `model` | No | Provider default | Model to use |
@@ -126,6 +137,20 @@ Or track the latest changes on `main` (may include breaking changes):
     nominal-code-review:
       variables:
         OPENAI_API_KEY: $OPENAI_API_KEY
+        GITLAB_TOKEN: $GITLAB_TOKEN
+    ```
+
+=== "Google Gemini"
+
+    ```yaml
+    include:
+      - component: ghcr.io/gauthierdmn/nominal-code/ci/templates/gitlab-ci.yml
+        inputs:
+          provider: google
+
+    nominal-code-review:
+      variables:
+        GOOGLE_API_KEY: $GOOGLE_API_KEY
         GITLAB_TOKEN: $GITLAB_TOKEN
     ```
 
@@ -168,6 +193,7 @@ The job runs on merge request pipelines. It reads `$CI_PROJECT_PATH`, `$CI_MERGE
 | All providers (default) | `ghcr.io/gauthierdmn/nominal-code` |
 | Anthropic only | `ghcr.io/gauthierdmn/nominal-code-anthropic` |
 | OpenAI-compatible only | `ghcr.io/gauthierdmn/nominal-code-openai` |
+| Google only | `ghcr.io/gauthierdmn/nominal-code-google` |
 
 ### Versioning
 
@@ -201,6 +227,7 @@ image: ghcr.io/gauthierdmn/nominal-code:latest
 |---|---|---|
 | `ANTHROPIC_API_KEY` | Provider is `anthropic` | Anthropic API key |
 | `OPENAI_API_KEY` | Provider is `openai`, `deepseek`, `groq`, `together`, or `fireworks` | OpenAI-compatible API key |
+| `GOOGLE_API_KEY` | Provider is `google` | Google API key |
 | `GITLAB_TOKEN` | Always | GitLab token for posting review comments and fetching MR data |
 
 ### Example with Overrides
@@ -226,7 +253,7 @@ CI mode uses the same review logic as CLI and webhook modes — the same diff fe
 
 ## What's Different
 
-CI mode calls the LLM provider API directly and requires a provider API key (per-token billing). It supports multiple providers (Anthropic, OpenAI, DeepSeek, Groq, Together, Fireworks). It does not support conversation continuity. The workspace is the CI runner's checkout directory — no cloning is needed.
+CI mode calls the LLM provider API directly and requires a provider API key (per-token billing). It supports multiple providers (Anthropic, OpenAI, Google Gemini, DeepSeek, Groq, Together, Fireworks). It does not support conversation continuity. The workspace is the CI runner's checkout directory — no cloning is needed.
 
 CLI and webhook modes use the Claude Code CLI, supporting Claude Pro and Max subscriptions as an alternative to per-token billing. See the [mode comparison](../reference/configuration.md#mode-comparison) for a full breakdown.
 

@@ -25,7 +25,7 @@ AI-powered code review bot that monitors GitHub PRs and GitLab MRs. When a user 
 | CLI review | Claude Code CLI (`agent/cli/runner.py`) | `CliAgentConfig` |
 | CI (`ci.py`) | LLM provider API (`agent/api/runner.py`) | `ApiAgentConfig` |
 
-The dispatcher in `agent/runner.py` routes based on the agent config type (`CliAgentConfig` or `ApiAgentConfig`). The API runner implements its own tool execution (Read, Glob, Grep, Bash with allowlist) and supports multiple providers (Anthropic, OpenAI, DeepSeek, Groq, Together, Fireworks).
+The dispatcher in `agent/runner.py` routes based on the agent config type (`CliAgentConfig` or `ApiAgentConfig`). The API runner implements its own tool execution (Read, Glob, Grep, Bash with allowlist) and supports multiple providers (Anthropic, OpenAI, Google Gemini, DeepSeek, Groq, Together, Fireworks).
 
 ## Bot types
 
@@ -54,7 +54,7 @@ The dispatcher in `agent/runner.py` routes based on the agent config type (`CliA
 
 ### Required (CI mode)
 
-- A provider API key (e.g. `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) — used by the API runner directly.
+- A provider API key (e.g. `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`) — used by the API runner directly.
 - `GITHUB_TOKEN` or `GITLAB_TOKEN` — for posting review comments.
 - CI-provided variables (`GITHUB_EVENT_PATH`, `CI_PROJECT_PATH`, etc.) are read automatically.
 

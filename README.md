@@ -49,7 +49,7 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-Multiple LLM providers are supported (Anthropic, OpenAI, DeepSeek, Groq, Together, Fireworks). Pass `provider` and the matching API key input. See [CI Mode](https://gauthierdmn.github.io/nominal-code/modes/ci/) for all provider examples.
+Multiple LLM providers are supported (Anthropic, OpenAI, Google Gemini, DeepSeek, Groq, Together, Fireworks). Pass `provider` and the matching API key input. See [CI Mode](https://gauthierdmn.github.io/nominal-code/modes/ci/) for all provider examples.
 
 Pin to a specific release tag (e.g. `@0.1.0`) for stability, or use `@main` to track the latest changes. You can also pass `model`, `max_turns`, `prompt`, and `coding_guidelines` as inputs.
 
