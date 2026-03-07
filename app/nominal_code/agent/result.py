@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from nominal_code.agent.providers.types import Message
+
 
 @dataclass(frozen=True)
 class AgentResult:
@@ -13,11 +15,15 @@ class AgentResult:
         is_error (bool): Whether the invocation ended in error.
         num_turns (int): Number of agentic turns taken.
         duration_ms (int): Wall-clock duration in milliseconds.
-        session_id (str): The agent session ID for resumption (CLI only).
+        conversation_id (str | None): Continuation token for the conversation.
+            Maps to a CLI conversation ID or a provider response ID.
+        messages (tuple[Message, ...]): Full message history from the API
+            runner. Empty for CLI runner.
     """
 
     output: str
     is_error: bool
     num_turns: int
     duration_ms: int
-    session_id: str = ""
+    conversation_id: str | None = None
+    messages: tuple[Message, ...] = ()

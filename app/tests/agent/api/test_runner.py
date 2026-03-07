@@ -7,6 +7,7 @@ import pytest
 from nominal_code.agent.api.runner import run_agent_api
 from nominal_code.agent.providers.types import (
     LLMResponse,
+    Message,
     StopReason,
     TextBlock,
     ToolUseBlock,
@@ -188,3 +189,71 @@ class TestRunAgentApi:
 
         assert result.is_error is True
         assert "Unexpected error" in result.output
+
+    @pytest.mark.asyncio
+    async def test_prior_messages_prepended(self, tmp_path):
+        captured_messages = []
+
+        async def capture_send(**kwargs):
+            captured_messages.extend(list(kwargs["messages"]))
+
+            return _make_text_response("second reply")
+
+        mock_provider = AsyncMock()
+        mock_provider.send = AsyncMock(side_effect=capture_send)
+
+        prior = [
+            Message(role="user", content=[TextBlock(text="first question")]),
+            Message(role="assistant", content=[TextBlock(text="first reply")]),
+        ]
+
+        result = await run_agent_api(
+            prompt="follow up",
+            cwd=tmp_path,
+            model="test-model",
+            provider=mock_provider,
+            prior_messages=prior,
+        )
+
+        assert result.output == "second reply"
+        assert len(captured_messages) == 3
+        assert captured_messages[0].content[0].text == "first question"
+        assert captured_messages[1].content[0].text == "first reply"
+        assert captured_messages[2].content[0].text == "follow up"
+
+    @pytest.mark.asyncio
+    async def test_result_includes_messages(self, tmp_path):
+        mock_provider = AsyncMock()
+        mock_provider.send = AsyncMock(
+            return_value=_make_text_response("done"),
+        )
+
+        result = await run_agent_api(
+            prompt="hello",
+            cwd=tmp_path,
+            model="test-model",
+            provider=mock_provider,
+        )
+
+        assert len(result.messages) == 2
+        assert result.messages[0].role == "user"
+        assert result.messages[1].role == "assistant"
+
+    @pytest.mark.asyncio
+    async def test_error_result_has_no_messages(self, tmp_path):
+        from nominal_code.agent.providers.base import ProviderError
+
+        mock_provider = AsyncMock()
+        mock_provider.send = AsyncMock(
+            side_effect=ProviderError("fail"),
+        )
+
+        result = await run_agent_api(
+            prompt="test",
+            cwd=tmp_path,
+            model="test-model",
+            provider=mock_provider,
+        )
+
+        assert result.is_error is True
+        assert result.messages == ()

@@ -6,7 +6,7 @@ from pathlib import Path
 from types import ModuleType
 
 from nominal_code.agent.providers.registry import PROVIDERS
-from nominal_code.config import Config
+from nominal_code.config import Config, ProviderConfig
 from nominal_code.models import ProviderName
 from nominal_code.platforms.base import (
     CommentReply,
@@ -19,28 +19,28 @@ from nominal_code.review.handler import ReviewResult, review
 logger: logging.Logger = logging.getLogger(__name__)
 
 
-async def run_ci_review(platform_name_str: str) -> int:
+async def run_ci_review(platform_name: str) -> int:
     """
     Run a CI-triggered review for the given platform.
 
     Reads environment variables, builds the event and platform client,
-    runs the review using the Anthropic API, and posts results.
+    runs the review using an LLM API, and posts results.
 
     Args:
-        platform_name_str (str): Platform identifier ("github" or "gitlab").
+        platform_name (str): Platform identifier ("github" or "gitlab").
 
     Returns:
         int: Exit code (0 on success, 1 on failure).
     """
 
     try:
-        platform_name: PlatformName = PlatformName(platform_name_str)
+        resolved_platform_name: PlatformName = PlatformName(platform_name)
     except ValueError:
-        logger.error("Unknown platform: %s", platform_name_str)
+        logger.error("Unknown platform: %s", platform_name)
 
         return 1
 
-    platform_ci: ModuleType = _load_platform_ci(platform_name)
+    platform_ci: ModuleType = _load_platform_ci(resolved_platform_name)
     event: PullRequestEvent = platform_ci.build_event()
     platform: ReviewerPlatform = platform_ci.build_platform()
     workspace_path: str = platform_ci.resolve_workspace()
@@ -54,13 +54,27 @@ async def run_ci_review(platform_name_str: str) -> int:
     except ValueError:
         max_turns = 0
 
-    provider = PROVIDERS[ProviderName(os.environ.get("AGENT_PROVIDER", "anthropic"))]
-    guidelines_raw: str = os.environ.get("INPUT_CODING_GUIDELINES", "")
+    provider: str = os.environ.get("AGENT_PROVIDER", "anthropic")
+
+    try:
+        provider_name: ProviderName = ProviderName(provider)
+    except ValueError:
+        available: str = ", ".join(p.value for p in ProviderName)
+        logger.error(
+            "Unknown AGENT_PROVIDER: %r. Available: %s",
+            provider,
+            available,
+        )
+
+        return 1
+
+    provider_config: ProviderConfig = PROVIDERS[provider_name]
+    guidelines: str = os.environ.get("INPUT_CODING_GUIDELINES", "")
     config: Config = Config.for_ci(
-        provider=provider,
+        provider=provider_config,
         model=model,
         max_turns=max_turns,
-        guidelines_path=Path(guidelines_raw) if guidelines_raw else Path(),
+        guidelines_path=Path(guidelines) if guidelines else Path(),
     )
 
     logger.info(

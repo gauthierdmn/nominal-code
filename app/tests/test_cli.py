@@ -98,6 +98,18 @@ class TestBuildCliParser:
         assert args.max_turns == 5
         assert args.dry_run is True
 
+    def test_parser_provider_default_empty(self):
+        parser = _build_cli_parser()
+        args = parser.parse_args(["review", "owner/repo#42"])
+
+        assert args.provider == ""
+
+    def test_parser_provider_flag(self):
+        parser = _build_cli_parser()
+        args = parser.parse_args(["review", "owner/repo#42", "--provider", "openai"])
+
+        assert args.provider == "openai"
+
     def test_parser_prompt_short_flag(self):
         parser = _build_cli_parser()
         args = parser.parse_args(["review", "o/r#1", "-p", "check types"])
@@ -195,6 +207,7 @@ class TestRunReview:
             model="",
             max_turns=0,
             prompt="",
+            provider="",
             dry_run=True,
         )
         exit_code = await _run_review(args)
@@ -209,6 +222,7 @@ class TestRunReview:
             model="",
             max_turns=0,
             prompt="review please",
+            provider="",
             dry_run=True,
         )
 
@@ -249,6 +263,7 @@ class TestRunReview:
             model="",
             max_turns=0,
             prompt="",
+            provider="",
             dry_run=False,
         )
 
@@ -295,6 +310,7 @@ class TestRunReview:
             model="",
             max_turns=0,
             prompt="",
+            provider="",
             dry_run=True,
         )
 
@@ -318,6 +334,7 @@ class TestRunReview:
             model="",
             max_turns=0,
             prompt="",
+            provider="",
             dry_run=False,
         )
 

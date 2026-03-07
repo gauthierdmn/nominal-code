@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nominal_code.agent.cli.session import SessionStore
+from nominal_code.agent.memory import ConversationStore
 from nominal_code.agent.runner import AgentResult
 from nominal_code.config import CliAgentConfig, WorkerConfig
 from nominal_code.models import EventType
@@ -68,7 +68,7 @@ class TestWorkerProcessComment:
         config = _make_config(allowed_users=["alice"])
         platform = _make_platform()
         comment = _make_comment(author="alice")
-        session_store = SessionStore()
+        conversation_store = ConversationStore()
 
         with patch(
             "nominal_code.agent.cli.tracking.run_agent",
@@ -79,7 +79,7 @@ class TestWorkerProcessComment:
                 is_error=False,
                 num_turns=1,
                 duration_ms=1000,
-                session_id="sess-1",
+                conversation_id="sess-1",
             )
 
             with patch(
@@ -95,7 +95,7 @@ class TestWorkerProcessComment:
                     prompt="fix this",
                     config=config,
                     platform=platform,
-                    session_store=session_store,
+                    conversation_store=conversation_store,
                 )
 
             mock_run.assert_called_once()
@@ -109,7 +109,7 @@ class TestWorkerProcessComment:
         config = _make_config(allowed_users=["alice"])
         platform = _make_platform()
         comment = _make_comment(author="alice")
-        session_store = SessionStore()
+        conversation_store = ConversationStore()
 
         with patch(
             "nominal_code.agent.cli.tracking.run_agent",
@@ -120,7 +120,7 @@ class TestWorkerProcessComment:
                 is_error=False,
                 num_turns=1,
                 duration_ms=1000,
-                session_id="sess-1",
+                conversation_id="sess-1",
             )
 
             with patch(
@@ -140,7 +140,7 @@ class TestWorkerProcessComment:
                         prompt="fix this",
                         config=config,
                         platform=platform,
-                        session_store=session_store,
+                        conversation_store=conversation_store,
                     )
 
                     mock_resolve.assert_called_once_with(

@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+PRKey = tuple[str, str, int, str]
+
 
 class EventType(StrEnum):
     """

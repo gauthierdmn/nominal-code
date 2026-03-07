@@ -43,14 +43,20 @@ class OpenAIProvider:
     Works with OpenAI, DeepSeek, Groq, Together, Fireworks, and any other
     provider that implements the OpenAI chat completions API.
 
+    For native OpenAI (``provider_name == OPENAI``), uses the Responses API
+    when ``previous_response_id`` is provided, enabling server-side
+    conversation chaining.
+
     Attributes:
         _client (openai.AsyncOpenAI): The async OpenAI client.
+        _provider_name (ProviderName): The logical provider name.
     """
 
     def __init__(
         self,
         api_key: str = "",
         base_url: str | None = None,
+        provider_name: ProviderName = ProviderName.OPENAI,
     ) -> None:
         """
         Initialize the OpenAI-compatible provider.
@@ -60,6 +66,9 @@ class OpenAIProvider:
                 (``OPENAI_API_KEY`` env var).
             base_url (str | None): Optional base URL for the API endpoint.
                 None uses the default OpenAI endpoint.
+            provider_name (ProviderName): The logical provider name.
+                Native OpenAI uses the Responses API for conversation
+                continuity; others use chat completions only.
 
         Raises:
             MissingProviderError: If the ``openai`` package is not installed.
@@ -69,7 +78,7 @@ class OpenAIProvider:
             import openai as _openai
         except ImportError as exc:
             raise MissingProviderError(
-                ProviderName.OPENAI,
+                provider_name,
                 "openai",
                 INSTALL_INSTRUCTIONS[ProviderName.OPENAI],
             ) from exc
@@ -78,6 +87,7 @@ class OpenAIProvider:
             api_key=api_key or None,
             base_url=base_url,
         )
+        self._provider_name: ProviderName = provider_name
 
     async def send(
         self,
@@ -86,9 +96,64 @@ class OpenAIProvider:
         tools: list[ToolDefinition],
         model: str,
         max_tokens: int,
+        previous_response_id: str | None = None,
     ) -> LLMResponse:
         """
-        Send a request to an OpenAI-compatible chat completions API.
+        Send a request to an OpenAI-compatible API.
+
+        For native OpenAI (``provider_name == OPENAI``), uses the Responses
+        API which supports server-side conversation chaining via
+        ``previous_response_id``. For all other OpenAI-compatible providers,
+        uses the standard chat completions API (the parameter is ignored).
+
+        Args:
+            messages (list[Message]): The conversation history.
+            system_prompt (str): The system prompt.
+            tools (list[ToolDefinition]): Available tool definitions.
+            model (str): The model identifier.
+            max_tokens (int): Maximum tokens in the response.
+            previous_response_id (str | None): Response ID from the previous
+                turn for server-side continuity. Only used by native
+                OpenAI; ignored by other providers.
+
+        Returns:
+            LLMResponse: The model's response in canonical format. For
+                native OpenAI, ``response_id`` is populated.
+
+        Raises:
+            ProviderError: On API failures.
+            RateLimitError: On rate limit errors.
+            ContextLengthError: On context window exceeded.
+        """
+
+        if self._provider_name == ProviderName.OPENAI:
+            return await self._send_responses_api(
+                messages=messages,
+                system_prompt=system_prompt,
+                tools=tools,
+                model=model,
+                max_tokens=max_tokens,
+                previous_response_id=previous_response_id,
+            )
+
+        return await self._send_chat_completions(
+            messages=messages,
+            system_prompt=system_prompt,
+            tools=tools,
+            model=model,
+            max_tokens=max_tokens,
+        )
+
+    async def _send_chat_completions(
+        self,
+        messages: list[Message],
+        system_prompt: str,
+        tools: list[ToolDefinition],
+        model: str,
+        max_tokens: int,
+    ) -> LLMResponse:
+        """
+        Send via the standard chat completions API.
 
         Args:
             messages (list[Message]): The conversation history.
@@ -99,11 +164,6 @@ class OpenAIProvider:
 
         Returns:
             LLMResponse: The model's response in canonical format.
-
-        Raises:
-            ProviderError: On API failures.
-            RateLimitError: On rate limit errors.
-            ContextLengthError: On context window exceeded.
         """
 
         import openai
@@ -139,6 +199,84 @@ class OpenAIProvider:
             raise ProviderError(error_message) from exc
 
         return _to_llm_response(response)
+
+    async def _send_responses_api(
+        self,
+        messages: list[Message],
+        system_prompt: str,
+        tools: list[ToolDefinition],
+        model: str,
+        max_tokens: int,
+        previous_response_id: str | None = None,
+    ) -> LLMResponse:
+        """
+        Send via the OpenAI Responses API for server-side continuity.
+
+        Args:
+            messages (list[Message]): The conversation history.
+            system_prompt (str): The system prompt.
+            tools (list[ToolDefinition]): Available tool definitions.
+            model (str): The model identifier.
+            max_tokens (int): Maximum tokens in the response.
+            previous_response_id (str | None): The previous response ID
+                for conversation chaining. ``None`` for the first turn.
+
+        Returns:
+            LLMResponse: The model's response with ``response_id`` set.
+        """
+
+        import openai
+
+        api_messages: list[ChatCompletionMessageParam] = _to_api_messages(
+            messages,
+            system_prompt,
+        )
+        api_tools: list[ChatCompletionToolParam] = _to_api_tools(tools)
+
+        input_items: list[dict[str, Any]] = [dict(msg) for msg in api_messages]
+
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "input": input_items,
+            "max_output_tokens": max_tokens,
+        }
+
+        if system_prompt:
+            kwargs["instructions"] = system_prompt
+
+        if api_tools:
+            kwargs["tools"] = [
+                {
+                    "type": "function",
+                    "name": tool["function"]["name"],
+                    "description": tool["function"]["description"],
+                    "parameters": tool["function"]["parameters"],
+                }
+                for tool in api_tools
+            ]
+
+        if previous_response_id:
+            kwargs["previous_response_id"] = previous_response_id
+
+        try:
+            response = await self._client.responses.create(**kwargs)
+        except openai.RateLimitError as exc:
+            raise RateLimitError(str(exc)) from exc
+        except openai.APIError as exc:
+            error_message: str = str(exc)
+
+            if "context length" in error_message.lower():
+                raise ContextLengthError(error_message) from exc
+
+            raise ProviderError(error_message) from exc
+
+        llm_response: LLMResponse = _responses_to_llm_response(response)
+
+        return LLMResponse(
+            content=llm_response.content,
+            stop_reason=llm_response.stop_reason,
+            response_id=response.id,
+        )
 
 
 def _to_api_messages(
@@ -263,6 +401,9 @@ def _to_llm_response(response: ChatCompletion) -> LLMResponse:
         LLMResponse: Canonical response.
     """
 
+    if not response.choices:
+        return LLMResponse(content=[], stop_reason=StopReason.END_TURN)
+
     choice: Choice = response.choices[0]
     response_message: ChatCompletionMessage = choice.message
     content: list[TextBlock | ToolUseBlock] = []
@@ -302,6 +443,67 @@ def _to_llm_response(response: ChatCompletion) -> LLMResponse:
         stop_reason = StopReason.TOOL_USE
     elif finish_reason == "length":
         stop_reason = StopReason.MAX_TOKENS
+    else:
+        stop_reason = StopReason.END_TURN
+
+    return LLMResponse(content=content, stop_reason=stop_reason)
+
+
+def _responses_to_llm_response(response: object) -> LLMResponse:
+    """
+    Convert an OpenAI Responses API response to canonical LLMResponse.
+
+    The Responses API returns a different structure than chat completions.
+    Output items contain message content and function calls.
+
+    Args:
+        response (object): The OpenAI Responses API response object.
+
+    Returns:
+        LLMResponse: Canonical response.
+    """
+
+    content: list[TextBlock | ToolUseBlock] = []
+    has_tool_calls: bool = False
+
+    output_items: list[object] = getattr(response, "output", [])
+
+    for item in output_items:
+        item_type: str = getattr(item, "type", "")
+
+        if item_type == "message":
+            message_content: list[object] = getattr(item, "content", [])
+
+            for part in message_content:
+                part_type: str = getattr(part, "type", "")
+
+                if part_type == "output_text":
+                    text: str = getattr(part, "text", "")
+
+                    if text:
+                        content.append(TextBlock(text=text))
+
+        elif item_type == "function_call":
+            call_id: str = getattr(item, "call_id", "")
+            name: str = getattr(item, "name", "")
+            arguments_raw: str = getattr(item, "arguments", "{}")
+            arguments: dict[str, Any] = {}
+
+            try:
+                arguments = json.loads(arguments_raw)
+            except (json.JSONDecodeError, TypeError):
+                logger.warning(
+                    "Failed to parse Responses API tool call arguments for %s",
+                    name,
+                )
+
+            content.append(
+                ToolUseBlock(id=call_id, name=name, input=arguments),
+            )
+            has_tool_calls = True
+
+    if has_tool_calls:
+        stop_reason: StopReason = StopReason.TOOL_USE
     else:
         stop_reason = StopReason.END_TURN
 

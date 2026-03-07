@@ -6,7 +6,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from aiohttp import web
 
-from nominal_code.agent.cli.session import SessionQueue, SessionStore
+from nominal_code.agent.cli.job import JobQueue
+from nominal_code.agent.memory import ConversationStore
 from nominal_code.config import (
     CliAgentConfig,
     Config,
@@ -80,14 +81,14 @@ async def test_webhook_server_posts_review(
         auth=GitHubPatAuth(token=github_token),
         webhook_secret=WEBHOOK_SECRET,
     )
-    session_store = SessionStore()
-    session_queue = SessionQueue()
+    conversation_store = ConversationStore()
+    job_queue = JobQueue()
 
     app = create_app(
         config=config,
         platforms={"github": platform},
-        session_store=session_store,
-        session_queue=session_queue,
+        conversation_store=conversation_store,
+        job_queue=job_queue,
     )
 
     runner = web.AppRunner(app)
@@ -118,7 +119,7 @@ async def test_webhook_server_posts_review(
 
         await wait_for_tunnel_ready(tunnel.public_url)
 
-        job_enqueued = install_enqueue_hook(session_queue)
+        job_enqueued = install_enqueue_hook(job_queue)
 
         with patch(
             "nominal_code.agent.cli.tracking.run_agent",
@@ -154,7 +155,7 @@ async def test_webhook_server_posts_review(
 
             await wait_for_webhook_processing(
                 job_enqueued,
-                session_queue,
+                job_queue,
                 attempt_redelivery=_attempt_github_redelivery,
             )
 

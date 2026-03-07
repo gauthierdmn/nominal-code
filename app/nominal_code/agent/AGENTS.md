@@ -1,13 +1,13 @@
 # agent/
 
-Handles LLM agent invocation via two backends, session persistence, prompt composition, and error handling.
+Handles LLM agent invocation via two backends, conversation persistence, prompt composition, and error handling.
 
 ## Dual runner architecture
 
 `runner.py` dispatches to one of two backends based on the agent config type (`CliAgentConfig` or `ApiAgentConfig`):
 
-- **`api/runner.py`** — provider-agnostic agentic loop. Uses the `LLMProvider` protocol from `providers/base.py` to call any LLM API. Implements the loop locally: send prompt → process tool_use blocks → execute tools via `api/tools.py` → send results back → repeat. Used in CI mode. Stateless (no session continuity).
-- **`cli/runner.py`** — spawns the Claude Code CLI via `claude_agent_sdk.query()`. Streams messages, captures session IDs. Used in webhook and CLI modes. Supports session resumption.
+- **`api/runner.py`** — provider-agnostic agentic loop. Uses the `LLMProvider` protocol from `providers/base.py` to call any LLM API. Implements the loop locally: send prompt → process tool_use blocks → execute tools via `api/tools.py` → send results back → repeat. Used in CI mode. Stateless (no conversation continuity).
+- **`cli/runner.py`** — spawns the Claude Code CLI via `claude_agent_sdk.query()`. Streams messages, captures conversation IDs. Used in webhook and CLI modes. Supports conversation resumption.
 
 The API runner's default model is resolved from `providers.DEFAULT_MODELS` based on the provider name. The dispatcher in `runner.py` creates the provider via `create_provider()` and resolves the default model. The CLI runner defers to the Claude Code CLI's configured model unless overridden.
 
@@ -38,18 +38,18 @@ Provider selection: `ApiAgentConfig.provider` field (env var `AGENT_PROVIDER`). 
 
 Tool definitions use canonical `ToolDefinition` (TypedDict with `name`, `description`, `input_schema`) — provider-agnostic.
 
-## Session management (CLI runner only)
+## Conversation management
 
-- **`SessionStore`** — in-memory dict mapping `(platform, repo, PR, bot_type)` → session ID. No locking; relies on single-threaded asyncio event loop.
-- **`SessionQueue`** — per-PR async job queue. Auto-spawns a consumer task per key, self-cleans when drained.
-- **`tracking.py`** — `run_and_track_session()` looks up/stores session IDs around `run_agent()` calls.
+- **`ConversationStore`** — unified in-memory store with two parallel dicts keyed by `(platform, repo, PR, bot_type)`: lightweight conversation IDs and full message histories (API mode only).
+- **`JobQueue`** — per-PR async job queue. Auto-spawns a consumer task per key, self-cleans when drained.
+- **`tracking.py`** — `run_and_track_conversation()` looks up/stores conversation IDs and messages around `run_agent()` calls.
 
 ## File tree
 
 ```
 agent/
 ├── runner.py        # Dispatcher: routes to api/ or cli/ runner based on agent config type
-├── result.py        # AgentResult dataclass (output, is_error, num_turns, duration_ms, session_id)
+├── result.py        # AgentResult dataclass (output, is_error, num_turns, duration_ms, conversation_id)
 ├── prompts.py       # Guideline loading (.nominal/ overrides), language detection, system prompt composition
 ├── errors.py        # handle_agent_errors(): async context manager that catches and posts error replies
 ├── providers/
@@ -63,14 +63,14 @@ agent/
 │   └── tools.py     # Tool definitions and local execution (Read, Glob, Grep, Bash)
 └── cli/
     ├── runner.py    # Claude Code CLI wrapper (claude_agent_sdk.query + SDK monkey-patch)
-    ├── session.py   # SessionStore (in-memory dict) and SessionQueue (per-PR async queue)
-    └── tracking.py  # run_and_track_session(): session lookup/store around agent runs
+    ├── job.py   # PRKey type alias and JobQueue (per-PR async queue)
+    └── tracking.py  # run_and_track_conversation(): conversation lookup/store around agent runs
 ```
 
 ## Non-obvious details
 
-- `AgentResult.session_id` is always empty for the API runner (no session continuity in CI mode).
-- The CLI runner captures session ID from both the `init` system message and the `ResultMessage` — whichever is available. The `ResultMessage` takes precedence if it has one.
+- `AgentResult.conversation_id` carries a CLI conversation ID or a provider response ID. Either can be `None` when the runner/provider does not support continuity.
+- The CLI runner captures the conversation ID from both the `init` system message and the `ResultMessage` — whichever is available. The `ResultMessage` takes precedence if it has one.
 - `resolve_system_prompt()` in `prompts.py` is the single composition entry point: resolves repo guidelines, detects languages, builds the full prompt.
 - Language detection currently supports Python only (`.py`, `.pyi`); extend via `EXTENSION_TO_LANGUAGE` in `prompts.py`.
 - Guideline priority: repo `.nominal/guidelines.md` replaces (not appends to) built-in defaults.

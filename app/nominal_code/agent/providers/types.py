@@ -104,7 +104,11 @@ class LLMResponse:
     Attributes:
         content (list[TextBlock | ToolUseBlock]): Response content blocks.
         stop_reason (StopReason): Why the model stopped generating.
+        response_id (str | None): Provider-assigned response ID for
+            conversation continuity (e.g. OpenAI Responses API). ``None``
+            when the provider does not support server-side chaining.
     """
 
     content: list[TextBlock | ToolUseBlock]
     stop_reason: StopReason
+    response_id: str | None = None

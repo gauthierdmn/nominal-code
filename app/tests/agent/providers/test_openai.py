@@ -25,6 +25,7 @@ from nominal_code.agent.providers.types import (
     ToolResultBlock,
     ToolUseBlock,
 )
+from nominal_code.models import ProviderName
 
 
 class TestToApiMessages:
@@ -227,7 +228,10 @@ class TestToLlmResponse:
 class TestOpenAIProviderSend:
     @pytest.mark.asyncio
     async def test_send_returns_llm_response(self):
-        provider = OpenAIProvider(api_key="test-key")
+        provider = OpenAIProvider(
+            api_key="test-key",
+            provider_name=ProviderName.DEEPSEEK,
+        )
 
         choice = MagicMock()
         choice.message.content = "result"
@@ -257,7 +261,10 @@ class TestOpenAIProviderSend:
 
     @pytest.mark.asyncio
     async def test_send_passes_tools_when_present(self):
-        provider = OpenAIProvider(api_key="test-key")
+        provider = OpenAIProvider(
+            api_key="test-key",
+            provider_name=ProviderName.DEEPSEEK,
+        )
 
         choice = MagicMock()
         choice.message.content = "ok"
@@ -295,7 +302,10 @@ class TestOpenAIProviderSend:
 
     @pytest.mark.asyncio
     async def test_send_omits_tools_when_empty(self):
-        provider = OpenAIProvider(api_key="test-key")
+        provider = OpenAIProvider(
+            api_key="test-key",
+            provider_name=ProviderName.DEEPSEEK,
+        )
 
         choice = MagicMock()
         choice.message.content = "ok"

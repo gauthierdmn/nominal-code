@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nominal_code.agent.cli.session import SessionStore
+from nominal_code.agent.memory import ConversationStore
 from nominal_code.agent.runner import AgentResult
 from nominal_code.config import CliAgentConfig, ReviewerConfig
 from nominal_code.models import (
@@ -109,7 +109,7 @@ class TestReviewerProcessComment:
             ],
         )
         comment = _make_comment(author="alice")
-        session_store = SessionStore()
+        conversation_store = ConversationStore()
 
         review_json = json.dumps(
             {
@@ -127,7 +127,7 @@ class TestReviewerProcessComment:
                 is_error=False,
                 num_turns=1,
                 duration_ms=1000,
-                session_id="sess-1",
+                conversation_id="sess-1",
             )
 
             with patch(
@@ -143,7 +143,7 @@ class TestReviewerProcessComment:
                     prompt="review this",
                     config=config,
                     platform=platform,
-                    session_store=session_store,
+                    conversation_store=conversation_store,
                 )
 
             platform.fetch_pr_diff.assert_called_once_with(
@@ -156,7 +156,7 @@ class TestReviewerProcessComment:
         config = _make_config(allowed_users=["alice"])
         platform = _make_platform()
         comment = _make_comment(author="alice")
-        session_store = SessionStore()
+        conversation_store = ConversationStore()
 
         review_json = json.dumps(
             {
@@ -174,7 +174,7 @@ class TestReviewerProcessComment:
                 is_error=False,
                 num_turns=1,
                 duration_ms=1000,
-                session_id="sess-1",
+                conversation_id="sess-1",
             )
 
             with patch(
@@ -190,7 +190,7 @@ class TestReviewerProcessComment:
                     prompt="review",
                     config=config,
                     platform=platform,
-                    session_store=session_store,
+                    conversation_store=conversation_store,
                 )
 
             mock_run.assert_called_once()
@@ -204,7 +204,7 @@ class TestReviewerProcessComment:
         config = _make_config(allowed_users=["alice"])
         platform = _make_platform()
         comment = _make_comment(author="alice")
-        session_store = SessionStore()
+        conversation_store = ConversationStore()
 
         review_json = json.dumps(
             {
@@ -222,7 +222,7 @@ class TestReviewerProcessComment:
                 is_error=False,
                 num_turns=1,
                 duration_ms=1000,
-                session_id="sess-1",
+                conversation_id="sess-1",
             )
 
             with patch(
@@ -242,7 +242,7 @@ class TestReviewerProcessComment:
                         prompt="review",
                         config=config,
                         platform=platform,
-                        session_store=session_store,
+                        conversation_store=conversation_store,
                     )
 
                     mock_resolve.assert_called_once_with(
@@ -273,7 +273,7 @@ class TestReviewerProcessComment:
             ],
         )
         comment = _make_comment(author="alice")
-        session_store = SessionStore()
+        conversation_store = ConversationStore()
 
         review_json = json.dumps(
             {
@@ -293,7 +293,7 @@ class TestReviewerProcessComment:
                 is_error=False,
                 num_turns=1,
                 duration_ms=1000,
-                session_id="sess-1",
+                conversation_id="sess-1",
             )
 
             with patch(
@@ -309,7 +309,7 @@ class TestReviewerProcessComment:
                     prompt="review",
                     config=config,
                     platform=platform,
-                    session_store=session_store,
+                    conversation_store=conversation_store,
                 )
 
             platform.submit_review.assert_called_once()
@@ -324,7 +324,7 @@ class TestReviewerProcessComment:
         config = _make_config(allowed_users=["alice"])
         platform = _make_platform()
         comment = _make_comment(author="alice")
-        session_store = SessionStore()
+        conversation_store = ConversationStore()
 
         valid_json = json.dumps(
             {
@@ -348,7 +348,7 @@ class TestReviewerProcessComment:
                 is_error=False,
                 num_turns=1,
                 duration_ms=1000,
-                session_id="sess-1",
+                conversation_id="sess-1",
             )
             mock_repair_run.return_value = AgentResult(
                 output=valid_json,
@@ -370,7 +370,7 @@ class TestReviewerProcessComment:
                     prompt="review",
                     config=config,
                     platform=platform,
-                    session_store=session_store,
+                    conversation_store=conversation_store,
                 )
 
             assert mock_tracking_run.call_count == 1
@@ -383,14 +383,14 @@ class TestReviewerProcessComment:
         config = _make_config(allowed_users=["alice"])
         platform = _make_platform()
         comment = _make_comment(author="alice")
-        session_store = SessionStore()
+        conversation_store = ConversationStore()
 
         bad_result = AgentResult(
             output="still not json",
             is_error=False,
             num_turns=1,
             duration_ms=500,
-            session_id="sess-1",
+            conversation_id="sess-1",
         )
 
         with (
@@ -419,7 +419,7 @@ class TestReviewerProcessComment:
                     prompt="review",
                     config=config,
                     platform=platform,
-                    session_store=session_store,
+                    conversation_store=conversation_store,
                 )
 
             assert mock_tracking_run.call_count == 1
@@ -776,7 +776,7 @@ class TestBotCommentFiltering:
             ],
         )
         comment = _make_comment(author="alice")
-        session_store = SessionStore()
+        conversation_store = ConversationStore()
 
         review_json = json.dumps(
             {
@@ -794,7 +794,7 @@ class TestBotCommentFiltering:
                 is_error=False,
                 num_turns=1,
                 duration_ms=1000,
-                session_id="sess-1",
+                conversation_id="sess-1",
             )
 
             with patch(
@@ -810,7 +810,7 @@ class TestBotCommentFiltering:
                     prompt="review",
                     config=config,
                     platform=platform,
-                    session_store=session_store,
+                    conversation_store=conversation_store,
                 )
 
             call_kwargs = mock_run.call_args.kwargs
@@ -834,7 +834,7 @@ class TestBotCommentFiltering:
             ],
         )
         comment = _make_comment(author="alice")
-        session_store = SessionStore()
+        conversation_store = ConversationStore()
 
         review_json = json.dumps(
             {
@@ -852,7 +852,7 @@ class TestBotCommentFiltering:
                 is_error=False,
                 num_turns=1,
                 duration_ms=1000,
-                session_id="sess-1",
+                conversation_id="sess-1",
             )
 
             with patch(
@@ -868,7 +868,7 @@ class TestBotCommentFiltering:
                     prompt="review",
                     config=config,
                     platform=platform,
-                    session_store=session_store,
+                    conversation_store=conversation_store,
                 )
 
             call_kwargs = mock_run.call_args.kwargs
@@ -882,7 +882,7 @@ class TestBotCommentFiltering:
         config = _make_config(allowed_users=["alice"])
         platform = _make_platform()
         comment = _make_comment(author="alice")
-        session_store = SessionStore()
+        conversation_store = ConversationStore()
 
         review_json = json.dumps(
             {
@@ -916,7 +916,7 @@ class TestBotCommentFiltering:
                 is_error=False,
                 num_turns=1,
                 duration_ms=1000,
-                session_id="sess-1",
+                conversation_id="sess-1",
             )
 
             with patch(
@@ -936,7 +936,7 @@ class TestBotCommentFiltering:
                         prompt="review",
                         config=config,
                         platform=platform,
-                        session_store=session_store,
+                        conversation_store=conversation_store,
                     )
 
                     mock_gather.assert_called_once()
@@ -1211,7 +1211,7 @@ class TestReview:
                 is_error=False,
                 num_turns=1,
                 duration_ms=1000,
-                session_id="sess-1",
+                conversation_id="sess-1",
             )
 
             with patch(
@@ -1247,7 +1247,7 @@ class TestReview:
             is_error=False,
             num_turns=1,
             duration_ms=500,
-            session_id="sess-1",
+            conversation_id="sess-1",
         )
 
         with (
@@ -1281,7 +1281,7 @@ class TestReview:
         assert result.raw_output == FALLBACK_MESSAGE
 
     @pytest.mark.asyncio
-    async def test_review_without_session_store(self):
+    async def test_review_without_conversation_store(self):
         config = _make_config()
         platform = _make_platform()
         comment = _make_comment()
@@ -1302,7 +1302,7 @@ class TestReview:
                 is_error=False,
                 num_turns=1,
                 duration_ms=500,
-                session_id="sess-1",
+                conversation_id="sess-1",
             )
 
             with patch(
@@ -1318,7 +1318,7 @@ class TestReview:
                     prompt="review",
                     config=config,
                     platform=platform,
-                    session_store=None,
+                    conversation_store=None,
                 )
 
         assert result.agent_review is not None
@@ -1338,7 +1338,7 @@ class TestReview:
             ],
         )
         comment = _make_comment(author="alice")
-        session_store = SessionStore()
+        conversation_store = ConversationStore()
 
         review_json = json.dumps(
             {
@@ -1356,7 +1356,7 @@ class TestReview:
                 is_error=False,
                 num_turns=1,
                 duration_ms=1000,
-                session_id="sess-1",
+                conversation_id="sess-1",
             )
 
             with patch(
@@ -1372,7 +1372,7 @@ class TestReview:
                     prompt="review",
                     config=config,
                     platform=platform,
-                    session_store=session_store,
+                    conversation_store=conversation_store,
                 )
 
             platform.post_reply.assert_called_once()

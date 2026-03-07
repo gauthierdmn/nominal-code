@@ -10,7 +10,7 @@ from environs import Env
 
 from nominal_code.config import Config
 from nominal_code.main import setup_logging
-from nominal_code.models import EventType
+from nominal_code.models import EventType, ProviderName
 from nominal_code.platforms.base import (
     CommentReply,
     PlatformName,
@@ -122,6 +122,12 @@ def _build_cli_parser() -> argparse.ArgumentParser:
         type=int,
         default=0,
         help="Agent max turns.",
+    )
+
+    review_parser.add_argument(
+        "--provider",
+        default="",
+        help="LLM provider (e.g. openai, anthropic) for API runner.",
     )
 
     review_parser.add_argument(
@@ -262,9 +268,14 @@ async def _run_review(args: argparse.Namespace) -> int:
 
         return 1
 
+    provider: ProviderName | None = (
+        ProviderName(args.provider) if args.provider else None
+    )
+
     config: Config = Config.for_cli(
         model=args.model,
         max_turns=args.max_turns,
+        provider=provider,
     )
 
     platform_name: PlatformName = PlatformName(args.platform)

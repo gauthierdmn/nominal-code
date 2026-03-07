@@ -63,9 +63,16 @@ class LLMProvider(Protocol):
         tools: list[ToolDefinition],
         model: str,
         max_tokens: int,
+        previous_response_id: str | None = None,
     ) -> LLMResponse:
         """
         Send a request to the LLM and return the response.
+
+        Providers that support server-side conversation chaining (e.g.
+        OpenAI Responses API) use ``previous_response_id`` to resume a
+        conversation and return the new ID in ``LLMResponse.response_id``.
+        Providers that don't support this simply ignore the parameter and
+        return ``None`` for ``response_id``.
 
         Args:
             messages (list[Message]): The conversation history.
@@ -73,6 +80,9 @@ class LLMProvider(Protocol):
             tools (list[ToolDefinition]): Available tool definitions.
             model (str): The model identifier.
             max_tokens (int): Maximum tokens in the response.
+            previous_response_id (str | None): Provider response ID from
+                the previous turn for server-side continuity. ``None``
+                when not applicable.
 
         Returns:
             LLMResponse: The model's response.

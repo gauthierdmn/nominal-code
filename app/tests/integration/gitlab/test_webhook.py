@@ -8,7 +8,8 @@ import pytest
 from aiohttp import web
 from aiohttp.pytest_plugin import AiohttpClient
 
-from nominal_code.agent.cli.session import SessionQueue, SessionStore
+from nominal_code.agent.cli.job import JobQueue
+from nominal_code.agent.memory import ConversationStore
 from nominal_code.config import (
     CliAgentConfig,
     Config,
@@ -104,21 +105,21 @@ def _build_merge_request_hook_payload(
 def _create_test_app(
     token: str,
     config: Config,
-) -> tuple[web.Application, SessionStore, SessionQueue]:
+) -> tuple[web.Application, ConversationStore, JobQueue]:
     platform = GitLabPlatform(
         token=token,
         webhook_secret=WEBHOOK_SECRET,
     )
-    session_store = SessionStore()
-    session_queue = SessionQueue()
+    conversation_store = ConversationStore()
+    job_queue = JobQueue()
     app = create_app(
         config=config,
         platforms={"gitlab": platform},
-        session_store=session_store,
-        session_queue=session_queue,
+        conversation_store=conversation_store,
+        job_queue=job_queue,
     )
 
-    return app, session_store, session_queue
+    return app, conversation_store, job_queue
 
 
 @pytest.mark.asyncio
@@ -128,7 +129,7 @@ async def test_webhook_reviewer_mention_posts_review(
     aiohttp_client: AiohttpClient,
 ) -> None:
     config = _build_webhook_config()
-    app, session_store, session_queue = _create_test_app(gitlab_token, config)
+    app, conversation_store, job_queue = _create_test_app(gitlab_token, config)
     client = await aiohttp_client(app)
 
     payload = _build_note_hook_payload(
@@ -156,7 +157,7 @@ async def test_webhook_reviewer_mention_posts_review(
         data = await response.json()
         assert data["status"] == "accepted"
 
-        await wait_for_queue_drain(session_queue)
+        await wait_for_queue_drain(job_queue)
 
     notes = await fetch_mr_notes(gitlab_token, GITLAB_TEST_REPO, buggy_mr.number)
     note_bodies = [note["body"] for note in notes]
@@ -170,7 +171,7 @@ async def test_webhook_worker_mention_posts_reply(
     aiohttp_client: AiohttpClient,
 ) -> None:
     config = _build_webhook_config()
-    app, session_store, session_queue = _create_test_app(gitlab_token, config)
+    app, conversation_store, job_queue = _create_test_app(gitlab_token, config)
     client = await aiohttp_client(app)
 
     payload = _build_note_hook_payload(
@@ -204,7 +205,7 @@ async def test_webhook_worker_mention_posts_reply(
         data = await response.json()
         assert data["status"] == "accepted"
 
-        await wait_for_queue_drain(session_queue)
+        await wait_for_queue_drain(job_queue)
 
     notes = await fetch_mr_notes(gitlab_token, GITLAB_TEST_REPO, buggy_mr.number)
     assert mock_review_and_fix.called or len(notes) >= 0
@@ -219,7 +220,7 @@ async def test_webhook_lifecycle_auto_trigger(
     config = _build_webhook_config(
         reviewer_triggers=frozenset({EventType.PR_OPENED}),
     )
-    app, session_store, session_queue = _create_test_app(gitlab_token, config)
+    app, conversation_store, job_queue = _create_test_app(gitlab_token, config)
     client = await aiohttp_client(app)
 
     payload = _build_merge_request_hook_payload(
@@ -247,7 +248,7 @@ async def test_webhook_lifecycle_auto_trigger(
         data = await response.json()
         assert data["status"] == "accepted"
 
-        await wait_for_queue_drain(session_queue)
+        await wait_for_queue_drain(job_queue)
 
     notes = await fetch_mr_notes(gitlab_token, GITLAB_TEST_REPO, buggy_mr.number)
     note_bodies = [note["body"] for note in notes]
@@ -291,7 +292,7 @@ async def test_webhook_unauthorized_user_ignored(
     aiohttp_client: AiohttpClient,
 ) -> None:
     config = _build_webhook_config()
-    app, _, session_queue = _create_test_app(gitlab_token, config)
+    app, _, job_queue = _create_test_app(gitlab_token, config)
     client = await aiohttp_client(app)
 
     payload = _build_note_hook_payload(
@@ -316,7 +317,7 @@ async def test_webhook_unauthorized_user_ignored(
     data = await response.json()
     assert data["status"] == "accepted"
 
-    assert not session_queue._consumers, "Unauthorized user should not trigger a job"
+    assert not job_queue._consumers, "Unauthorized user should not trigger a job"
 
     notes = await fetch_mr_notes(gitlab_token, GITLAB_TEST_REPO, buggy_mr.number)
     user_notes = [

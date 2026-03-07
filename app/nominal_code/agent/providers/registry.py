@@ -82,13 +82,16 @@ def create_provider(name: str, **kwargs: Any) -> LLMProvider:
     from nominal_code.agent.providers.openai import OpenAIProvider
 
     provider_config = PROVIDERS[provider]
-    api_key: str = kwargs.pop("api_key", "") or os.environ.get(
-        provider_config.api_key_env, ""
+    api_key: str = (
+        kwargs.pop("api_key", "")
+        or os.environ.get(provider_config.api_key_env, "")
+        or os.environ.get("OPENAI_API_KEY", "")
     )
     base_url: str | None = kwargs.pop("base_url", None) or provider_config.base_url
 
     return OpenAIProvider(
         api_key=api_key,
         base_url=base_url,
+        provider_name=provider,
         **kwargs,
     )

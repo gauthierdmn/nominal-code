@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from nominal_code.agent.cli.session import SessionQueue
+from nominal_code.agent.cli.job import JobQueue
 from nominal_code.config import CliAgentConfig, ReviewerConfig, WorkerConfig
 from nominal_code.models import BotType, EventType
 from nominal_code.platforms.base import CommentEvent, LifecycleEvent, PlatformName
@@ -77,7 +77,7 @@ class TestEnqueueJob:
         config = _make_config(allowed_users=["alice"])
         platform = _make_platform()
         comment = _make_comment(author="eve")
-        session_queue = SessionQueue()
+        job_queue = JobQueue()
         mock_job = AsyncMock()
 
         await enqueue_job(
@@ -85,7 +85,7 @@ class TestEnqueueJob:
             bot_type=BotType.WORKER,
             config=config,
             platform=platform,
-            session_queue=session_queue,
+            job_queue=job_queue,
             job=mock_job,
         )
 
@@ -99,7 +99,7 @@ class TestEnqueueJob:
         config = _make_config(allowed_users=["alice"])
         platform = _make_platform()
         comment = _make_comment(author="alice")
-        session_queue = SessionQueue()
+        job_queue = JobQueue()
         mock_job = AsyncMock()
 
         await enqueue_job(
@@ -107,7 +107,7 @@ class TestEnqueueJob:
             bot_type=BotType.WORKER,
             config=config,
             platform=platform,
-            session_queue=session_queue,
+            job_queue=job_queue,
             job=mock_job,
         )
 
@@ -120,7 +120,7 @@ class TestEnqueueJob:
     ):
         config = _make_config(allowed_users=["alice"])
         platform = _make_platform()
-        session_queue = SessionQueue()
+        job_queue = JobQueue()
         mock_job = AsyncMock()
 
         event = LifecycleEvent(
@@ -138,7 +138,7 @@ class TestEnqueueJob:
             bot_type=BotType.REVIEWER,
             config=config,
             platform=platform,
-            session_queue=session_queue,
+            job_queue=job_queue,
             job=mock_job,
         )
 

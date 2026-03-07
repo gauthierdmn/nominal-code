@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import logging
 import tempfile
 from dataclasses import dataclass
@@ -57,7 +58,7 @@ class CliAgentConfig:
     """
     Agent configuration for CLI and webhook modes.
 
-    Uses the Claude Code CLI subprocess. Supports session resumption
+    Uses the Claude Code CLI subprocess. Supports conversation resumption
     and Claude Pro/Max subscriptions.
 
     Attributes:
@@ -75,10 +76,10 @@ class CliAgentConfig:
 @dataclass(frozen=True)
 class ApiAgentConfig:
     """
-    Agent configuration for CI mode.
+    Agent configuration for API-based modes (CI, webhook, CLI).
 
     Calls the LLM provider API directly. Requires a provider API key.
-    Stateless (no session continuity).
+    Stateless (no conversation continuity).
 
     The effective model is always ``provider.model``. To override the
     default, pass a ``ProviderConfig`` with the desired model set (see
@@ -179,6 +180,7 @@ class Config:
         cls,
         model: str = "",
         max_turns: int = 0,
+        provider: ProviderName | None = None,
     ) -> Config:
         """
         Build a Config for CLI mode without requiring webhook-only settings.
@@ -186,9 +188,14 @@ class Config:
         Reviewer is always enabled with the default system prompt. Settings
         like ``ALLOWED_USERS`` and bot usernames are not required.
 
+        When ``provider`` (or the ``AGENT_PROVIDER`` env var) is set, the
+        API runner is used instead of the Claude Code CLI.
+
         Args:
             model (str): Optional agent model override.
             max_turns (int): Optional agent max turns override.
+            provider (ProviderName | None): Optional LLM provider. When set,
+                uses the API runner instead of the CLI runner.
 
         Returns:
             Config: A configuration suitable for one-off CLI reviews.
@@ -210,6 +217,12 @@ class Config:
             env.path("LANGUAGE_GUIDELINES_DIR", DEFAULT_LANGUAGE_GUIDELINES_DIR),
         )
 
+        agent_config: AgentConfig = _resolve_agent_config(
+            provider_name=provider or _parse_provider_env(),
+            model=model or env.str("AGENT_MODEL", ""),
+            max_turns=max_turns or env.int("AGENT_MAX_TURNS", 0),
+        )
+
         return cls(
             worker=None,
             reviewer=ReviewerConfig(
@@ -220,11 +233,7 @@ class Config:
             webhook_port=0,
             allowed_users=frozenset(),
             workspace_base_dir=workspace_base_dir,
-            agent=CliAgentConfig(
-                model=model or env.str("AGENT_MODEL", ""),
-                max_turns=max_turns or env.int("AGENT_MAX_TURNS", 0),
-                cli_path=env.str("AGENT_CLI_PATH", ""),
-            ),
+            agent=agent_config,
             coding_guidelines=coding_guidelines,
             language_guidelines=language_guidelines,
             cleanup_interval_hours=0,
@@ -260,11 +269,7 @@ class Config:
         model_override: str = model or env.str("AGENT_MODEL", "")
 
         if model_override:
-            provider = ProviderConfig(
-                name=provider.name,
-                model=model_override,
-                base_url=provider.base_url,
-            )
+            provider = dataclasses.replace(provider, model=model_override)
 
         reviewer_system_prompt: str = _load_file_content(
             env.path("REVIEWER_SYSTEM_PROMPT", DEFAULT_REVIEWER_PROMPT_PATH),
@@ -404,6 +409,12 @@ class Config:
             env.str("PR_TITLE_EXCLUDE_TAGS", ""),
         )
 
+        agent_config: AgentConfig = _resolve_agent_config(
+            provider_name=_parse_provider_env(),
+            model=env.str("AGENT_MODEL", ""),
+            max_turns=env.int("AGENT_MAX_TURNS", 0),
+        )
+
         return cls(
             worker=worker,
             reviewer=reviewer,
@@ -411,11 +422,7 @@ class Config:
             webhook_port=webhook_port,
             allowed_users=allowed_users,
             workspace_base_dir=workspace_base_dir,
-            agent=CliAgentConfig(
-                model=env.str("AGENT_MODEL", ""),
-                max_turns=env.int("AGENT_MAX_TURNS", 0),
-                cli_path=env.str("AGENT_CLI_PATH", ""),
-            ),
+            agent=agent_config,
             coding_guidelines=coding_guidelines,
             language_guidelines=language_guidelines,
             cleanup_interval_hours=cleanup_interval_hours,
@@ -426,44 +433,112 @@ class Config:
         )
 
 
-def _parse_title_tags(raw: str) -> frozenset[str]:
+def _parse_provider_env() -> ProviderName | None:
+    """
+    Read ``AGENT_PROVIDER`` from the environment and convert to enum.
+
+    Returns:
+        ProviderName | None: The parsed provider, or ``None`` when unset.
+
+    Raises:
+        ValueError: If the value is not a recognised provider name.
+    """
+
+    provider: str = env.str("AGENT_PROVIDER", "")
+
+    if not provider:
+        return None
+
+    try:
+        return ProviderName(provider)
+    except ValueError:
+        available: str = ", ".join(p.value for p in ProviderName)
+
+        raise ValueError(
+            f"Unknown AGENT_PROVIDER: {provider!r}. Available: {available}",
+        ) from None
+
+
+def _resolve_agent_config(
+    provider_name: ProviderName | None,
+    model: str,
+    max_turns: int,
+) -> AgentConfig:
+    """
+    Build either a CLI or API agent config based on provider selection.
+
+    When ``provider_name`` is ``None``, returns a ``CliAgentConfig``
+    (Claude Code CLI). Otherwise resolves the provider from the
+    ``PROVIDERS`` registry and returns an ``ApiAgentConfig``.
+
+    Args:
+        provider_name (ProviderName | None): Provider enum, or ``None``
+            for CLI mode.
+        model (str): Optional model override.
+        max_turns (int): Maximum agentic turns.
+
+    Returns:
+        AgentConfig: Either ``CliAgentConfig`` or ``ApiAgentConfig``.
+    """
+
+    if provider_name is None:
+        return CliAgentConfig(
+            model=model,
+            max_turns=max_turns,
+            cli_path=env.str("AGENT_CLI_PATH", ""),
+        )
+
+    from nominal_code.agent.providers.registry import PROVIDERS
+
+    provider_config: ProviderConfig = PROVIDERS[provider_name]
+
+    if model:
+        provider_config = dataclasses.replace(provider_config, model=model)
+
+    return ApiAgentConfig(
+        provider=provider_config,
+        max_turns=max_turns,
+    )
+
+
+def _parse_title_tags(tags: str) -> frozenset[str]:
     """
     Parse a comma-separated string of tag names into a lowercased frozenset.
 
     Strips whitespace and lowercases each tag.
 
     Args:
-        raw (str): Comma-separated tag names (e.g. ``"nominalbot, CI"``).
+        tags (str): Comma-separated tag names (e.g. ``"nominalbot, CI"``).
 
     Returns:
         frozenset[str]: The parsed tags, lowercased.
     """
 
-    if not raw.strip():
+    if not tags.strip():
         return frozenset()
 
-    return frozenset(tag.strip().lower() for tag in raw.split(",") if tag.strip())
+    return frozenset(tag.strip().lower() for tag in tags.split(",") if tag.strip())
 
 
-def _parse_reviewer_triggers(raw: str) -> frozenset[EventType]:
+def _parse_reviewer_triggers(events: str) -> frozenset[EventType]:
     """
     Parse a comma-separated string of event type names into a frozenset.
 
     Invalid names are logged as warnings and skipped.
 
     Args:
-        raw (str): Comma-separated event type names (e.g. ``pr_opened,pr_push``).
+        events (str): Comma-separated event type names (e.g. ``pr_opened,pr_push``).
 
     Returns:
         frozenset[EventType]: The parsed event types.
     """
 
-    if not raw.strip():
+    if not events.strip():
         return frozenset()
 
     triggers: set[EventType] = set()
 
-    for token in raw.split(","):
+    for token in events.split(","):
         name: str = token.strip()
 
         if not name:

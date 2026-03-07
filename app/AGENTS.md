@@ -6,8 +6,8 @@ AI-powered code review bot that monitors GitHub PRs and GitLab MRs. When a user 
 
 - **Async-first** — built on aiohttp + asyncio; all I/O (HTTP, git, agent) is non-blocking.
 - **Protocol-based platforms** — GitHub and GitLab implement the same `Platform` / `ReviewerPlatform` protocols, making it easy to add new providers.
-- **Per-PR job serialisation** — `SessionQueue` guarantees only one agent job runs per PR at a time, preventing race conditions on the same workspace.
-- **Multi-turn sessions** — `SessionStore` maps (platform, repo, PR, bot) to a session ID so conversations resume across comments. Only applies to webhook mode (CLI runner).
+- **Per-PR job serialisation** — `JobQueue` guarantees only one agent job runs per PR at a time, preventing race conditions on the same workspace.
+- **Multi-turn sessions** — `ConversationStore` maps (platform, repo, PR, bot) to conversation IDs and message histories so conversations resume across comments.
 - **Workspace isolation** — each PR gets its own shallow clone; a shared `.deps/` directory is available for cross-PR dependencies.
 - **Dual agent runners** — CLI and webhook modes use the Claude Code CLI (supports subscriptions); CI mode calls the LLM provider API directly (requires a provider API key).
 

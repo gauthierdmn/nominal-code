@@ -48,9 +48,10 @@ At least one of `WORKER_BOT_USERNAME` or `REVIEWER_BOT_USERNAME` must be set in 
 
 | Variable | Modes | Default | Description |
 |---|---|---|---|
-| `AGENT_MODEL` | `webhook` `cli` | SDK default | Model override (e.g. `claude-sonnet-4-6`, `gpt-4.1`) |
-| `AGENT_MAX_TURNS` | `webhook` `cli` | `0` (unlimited) | Maximum agentic turns per invocation |
-| `AGENT_CLI_PATH` | `webhook` `cli` | Bundled | Path to the `claude` CLI binary |
+| `AGENT_PROVIDER` | `webhook` `cli` `ci` | — | LLM provider name (`anthropic`, `openai`, `deepseek`, `groq`, `together`, `fireworks`). When set in webhook/CLI mode, uses the API runner instead of the Claude Code CLI |
+| `AGENT_MODEL` | `webhook` `cli` `ci` | SDK/provider default | Model override (e.g. `claude-sonnet-4-6`, `gpt-4.1`) |
+| `AGENT_MAX_TURNS` | `webhook` `cli` `ci` | `0` (unlimited) | Maximum agentic turns per invocation |
+| `AGENT_CLI_PATH` | `webhook` `cli` | Bundled | Path to the `claude` CLI binary (ignored when `AGENT_PROVIDER` is set) |
 
 ## Prompts and Guidelines
 
@@ -82,7 +83,6 @@ CI mode reads its configuration from action inputs (mapped to `INPUT_*` environm
 
 | Variable | Modes | Source | Description |
 |---|---|---|---|
-| `AGENT_PROVIDER` | `ci` | Env / Action input | LLM provider name (`anthropic`, `openai`, `deepseek`, `groq`, `together`, `fireworks`). Defaults to `anthropic` |
 | `ANTHROPIC_API_KEY` | `ci` | Secret | API key for the Anthropic provider |
 | `OPENAI_API_KEY` | `ci` | Secret | API key for the OpenAI provider |
 | `DEEPSEEK_API_KEY` | `ci` | Secret | API key for the DeepSeek provider |

@@ -15,7 +15,7 @@ HTTP webhook server, @mention extraction, and job dispatch.
 webhooks/
 ├── server.py      # create_app(), webhook handler, event routing (POST /webhooks/{platform}, GET /health)
 ├── mention.py     # extract_mention(): regex-based @botname extraction from comment text
-└── dispatch.py    # enqueue_job(): auth check, reaction posting, job enqueueing via SessionQueue
+└── dispatch.py    # enqueue_job(): auth check, reaction posting, job enqueueing via JobQueue
 ```
 
 ## Important details

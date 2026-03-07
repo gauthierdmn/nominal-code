@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 from json_repair import loads as json_repair_loads
 
 from nominal_code.agent.api.tools import SUBMIT_REVIEW_TOOL_NAME
-from nominal_code.agent.cli.tracking import run_and_track_session
+from nominal_code.agent.cli.tracking import run_and_track_conversation
 from nominal_code.agent.errors import handle_agent_errors
 from nominal_code.agent.prompts import resolve_system_prompt
 from nominal_code.agent.runner import run_agent
@@ -30,7 +30,7 @@ from nominal_code.platforms.base import (
 from nominal_code.workspace.setup import create_workspace, resolve_branch
 
 if TYPE_CHECKING:
-    from nominal_code.agent.cli.session import SessionStore
+    from nominal_code.agent.memory import ConversationStore
     from nominal_code.agent.result import AgentResult
     from nominal_code.config import Config
     from nominal_code.platforms.base import ReviewerPlatform
@@ -107,9 +107,9 @@ async def review(
     prompt: str,
     config: Config,
     platform: ReviewerPlatform,
-    session_store: SessionStore | None = None,
     bot_username: str = "",
     workspace_path: str = "",
+    conversation_store: ConversationStore | None = None,
 ) -> ReviewResult:
     """
     Run the core review logic without posting results to the platform.
@@ -122,10 +122,11 @@ async def review(
         prompt (str): The extracted prompt.
         config (Config): Application configuration.
         platform (ReviewerPlatform): The platform client with reviewer capabilities.
-        session_store (SessionStore | None): Agent session store (optional for CLI).
         bot_username (str): Bot username to filter from existing comments.
         workspace_path (str): Pre-existing workspace path (skips cloning). Used
             in CI mode where the repo is already checked out.
+        conversation_store (ConversationStore | None): Conversation store for
+            conversation continuity.
 
     Returns:
         ReviewResult: The review result with findings and summary.
@@ -232,15 +233,15 @@ async def review(
     if isinstance(config.agent, ApiAgentConfig):
         effective_allowed_tools.append(SUBMIT_REVIEW_TOOL_NAME)
 
-    result: AgentResult = await run_and_track_session(
+    result: AgentResult = await run_and_track_conversation(
         event=event,
         bot_type=BotType.REVIEWER,
-        session_store=session_store,
         system_prompt=combined_system_prompt,
         prompt=full_prompt,
         cwd=repo_path,
         config=config,
         allowed_tools=effective_allowed_tools,
+        conversation_store=conversation_store,
     )
 
     review_result: AgentReview | None = parse_review_output(result.output)
@@ -316,7 +317,7 @@ async def review_and_post(
     prompt: str,
     config: Config,
     platform: ReviewerPlatform,
-    session_store: SessionStore,
+    conversation_store: ConversationStore | None = None,
 ) -> None:
     """
     Run a review and post the results to the platform.
@@ -326,7 +327,8 @@ async def review_and_post(
         prompt (str): The extracted prompt.
         config (Config): Application configuration.
         platform (ReviewerPlatform): The platform client with reviewer capabilities.
-        session_store (SessionStore): Agent session store.
+        conversation_store (ConversationStore | None): Conversation store for
+            conversation continuity.
     """
 
     effective_event: PullRequestEvent | None = await resolve_branch(
@@ -348,8 +350,8 @@ async def review_and_post(
             prompt=prompt,
             config=config,
             platform=platform,
-            session_store=session_store,
             bot_username=bot_username,
+            conversation_store=conversation_store,
         )
 
         if review_result.agent_review is None:

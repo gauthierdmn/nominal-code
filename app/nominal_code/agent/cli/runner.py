@@ -25,7 +25,7 @@ from claude_agent_sdk.types import (
 
 from nominal_code.agent.result import AgentResult
 
-SESSION_ID_INIT_SUBTYPE: str = "init"
+CONVERSATION_ID_INIT_SUBTYPE: str = "init"
 MAX_TOOL_RESULT_LOG_LENGTH: int = 500
 DEFAULT_PERMISSION_MODE: Literal["bypassPermissions"] = "bypassPermissions"
 
@@ -76,7 +76,7 @@ async def run_agent_cli(
     model: str = "",
     max_turns: int = 0,
     cli_path: str = "",
-    session_id: str = "",
+    conversation_id: str | None = None,
     system_prompt: str = "",
     permission_mode: Literal[
         "default",
@@ -95,7 +95,8 @@ async def run_agent_cli(
         model (str): Optional model override (empty string to skip).
         max_turns (int): Maximum agentic turns (0 for unlimited).
         cli_path (str): Path to the agent CLI binary (empty to use bundled).
-        session_id (str): Optional session ID to resume a previous conversation.
+        conversation_id (str | None): Optional conversation ID to resume a
+            previous conversation.
         system_prompt (str): Optional system prompt for the agent.
         permission_mode (str): Permission mode for the agent.
         allowed_tools (list[str] | None): Restrict which tools the agent may use.
@@ -111,32 +112,32 @@ async def run_agent_cli(
         model=model or None,
         max_turns=max_turns if max_turns > 0 else None,
         cli_path=cli_path or None,
-        resume=session_id or None,
+        resume=conversation_id,
         system_prompt=system_prompt or None,
     )
 
     result: AgentResult | None = None
-    captured_session_id: str = ""
+    returned_conversation_id: str | None = None
 
     async for message in query(prompt=prompt, options=options):
         _log_message(message)
 
         if (
             isinstance(message, SystemMessage)
-            and message.subtype == SESSION_ID_INIT_SUBTYPE
+            and message.subtype == CONVERSATION_ID_INIT_SUBTYPE
         ):
-            captured_session_id = message.data.get("session_id", "")
+            returned_conversation_id = message.data.get("session_id", None)
 
         if isinstance(message, ResultMessage):
             output: str = message.result or "Done, no output."
-            captured_session_id = message.session_id or captured_session_id
+            returned_conversation_id = message.session_id or returned_conversation_id
 
             result = AgentResult(
                 output=output,
                 is_error=message.is_error,
                 num_turns=message.num_turns,
                 duration_ms=message.duration_ms,
-                session_id=captured_session_id,
+                conversation_id=returned_conversation_id,
             )
 
     if result is not None:
@@ -147,7 +148,7 @@ async def run_agent_cli(
         is_error=True,
         num_turns=0,
         duration_ms=0,
-        session_id=captured_session_id,
+        conversation_id=returned_conversation_id,
     )
 
 

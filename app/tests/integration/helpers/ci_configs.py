@@ -1,4 +1,5 @@
 import base64
+import dataclasses
 import os
 
 from nominal_code.agent.providers.registry import PROVIDERS
@@ -65,11 +66,7 @@ def _provider_defaults(provider: str) -> ProviderConfig:
     test_model = TEST_MODEL_OVERRIDES.get(provider_name)
 
     if test_model:
-        return ProviderConfig(
-            name=defaults.name,
-            model=test_model,
-            base_url=defaults.base_url,
-        )
+        return dataclasses.replace(defaults, model=test_model)
 
     return defaults
 

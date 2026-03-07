@@ -6,6 +6,7 @@ from pathlib import Path
 from nominal_code.agent.api.runner import run_agent_api
 from nominal_code.agent.cli.runner import run_agent_cli
 from nominal_code.agent.providers.registry import create_provider
+from nominal_code.agent.providers.types import Message
 from nominal_code.agent.result import AgentResult
 from nominal_code.config import AgentConfig, ApiAgentConfig, CliAgentConfig
 
@@ -18,7 +19,8 @@ async def run_agent(
     system_prompt: str = "",
     allowed_tools: list[str] | None = None,
     agent_config: AgentConfig | None = None,
-    session_id: str = "",
+    conversation_id: str | None = None,
+    prior_messages: list[Message] | None = None,
 ) -> AgentResult:
     """
     Run the agent and return the result.
@@ -35,7 +37,9 @@ async def run_agent(
         agent_config (AgentConfig | None): Agent configuration. Pass an
             ``ApiAgentConfig`` for CI mode or a ``CliAgentConfig`` (default)
             for CLI/webhook mode.
-        session_id (str): Optional session ID to resume (CLI mode only).
+        conversation_id (str | None): Optional conversation ID to resume.
+        prior_messages (list[Message] | None): Prior conversation messages
+            for multi-turn continuity (API mode only).
 
     Returns:
         AgentResult: The parsed result from the agent.
@@ -55,6 +59,7 @@ async def run_agent(
             max_turns=agent_config.max_turns,
             system_prompt=system_prompt,
             allowed_tools=allowed_tools,
+            prior_messages=prior_messages,
         )
 
     return await run_agent_cli(
@@ -63,7 +68,7 @@ async def run_agent(
         model=agent_config.model,
         max_turns=agent_config.max_turns,
         cli_path=agent_config.cli_path,
-        session_id=session_id,
+        conversation_id=conversation_id,
         system_prompt=system_prompt,
         allowed_tools=allowed_tools,
     )

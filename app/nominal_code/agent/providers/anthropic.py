@@ -75,6 +75,7 @@ class AnthropicProvider:
         tools: list[ToolDefinition],
         model: str,
         max_tokens: int,
+        previous_response_id: str | None = None,
     ) -> LLMResponse:
         """
         Send a request to the Anthropic Messages API.
@@ -85,6 +86,8 @@ class AnthropicProvider:
             tools (list[ToolDefinition]): Available tool definitions.
             model (str): The Anthropic model identifier.
             max_tokens (int): Maximum tokens in the response.
+            previous_response_id (str | None): Ignored. Anthropic does not
+                support server-side conversation chaining.
 
         Returns:
             LLMResponse: The model's response in canonical format.

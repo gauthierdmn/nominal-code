@@ -10,6 +10,7 @@ from nominal_code.agent.api.tools import (
     execute_tool,
     get_tool_definitions,
 )
+from nominal_code.agent.memory import truncate_messages
 from nominal_code.agent.providers.base import LLMProvider, ProviderError
 from nominal_code.agent.providers.types import (
     ContentBlock,
@@ -35,6 +36,7 @@ async def run_agent_api(
     max_turns: int = 0,
     system_prompt: str = "",
     allowed_tools: list[str] | None = None,
+    prior_messages: list[Message] | None = None,
 ) -> AgentResult:
     """
     Run the agent using an LLM provider with tool use.
@@ -55,6 +57,8 @@ async def run_agent_api(
         max_turns (int): Maximum agentic turns (0 for unlimited).
         system_prompt (str): Optional system prompt for the agent.
         allowed_tools (list[str] | None): Restrict which tools the agent may use.
+        prior_messages (list[Message] | None): Prior conversation messages
+            for multi-turn continuity. Prepended before the new user message.
 
     Returns:
         AgentResult: The parsed result from the agent.
@@ -62,12 +66,13 @@ async def run_agent_api(
 
     tool_definitions: list[ToolDefinition] = get_tool_definitions(allowed_tools)
 
-    messages: list[Message] = [
-        Message(role="user", content=[TextBlock(text=prompt)]),
-    ]
+    messages: list[Message] = list(prior_messages) if prior_messages else []
+    messages.append(Message(role="user", content=[TextBlock(text=prompt)]))
+    messages = truncate_messages(messages)
 
     turns: int = 0
     start_time: int = _now_ms()
+    conversation_id: str | None = None
 
     try:
         while True:
@@ -77,7 +82,9 @@ async def run_agent_api(
                 tools=tool_definitions,
                 model=model,
                 max_tokens=MAX_RESPONSE_TOKENS,
+                previous_response_id=conversation_id,
             )
+            conversation_id = response.response_id
 
             messages.append(
                 Message(role="assistant", content=list(response.content)),
@@ -96,6 +103,8 @@ async def run_agent_api(
                     is_error=False,
                     num_turns=turns,
                     duration_ms=duration_ms,
+                    messages=tuple(messages),
+                    conversation_id=conversation_id,
                 )
 
             for block in tool_use_blocks:
@@ -114,6 +123,8 @@ async def run_agent_api(
                         is_error=False,
                         num_turns=turns,
                         duration_ms=duration_ms,
+                        messages=tuple(messages),
+                        conversation_id=conversation_id,
                     )
 
             tool_results: list[ContentBlock] = []
@@ -167,6 +178,8 @@ async def run_agent_api(
                     is_error=False,
                     num_turns=turns,
                     duration_ms=duration_ms,
+                    messages=tuple(messages),
+                    conversation_id=conversation_id,
                 )
 
     except ProviderError as exc:

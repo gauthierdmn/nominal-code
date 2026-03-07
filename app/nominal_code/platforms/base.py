@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from aiohttp import web
 
@@ -277,6 +277,7 @@ class Platform(Protocol):
         ...
 
 
+@runtime_checkable
 class ReviewerPlatform(Platform, Protocol):
     """
     Protocol extending Platform with reviewer-specific API calls.
