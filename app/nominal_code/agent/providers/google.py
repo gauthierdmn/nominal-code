@@ -172,8 +172,6 @@ def _to_api_contents(messages: list[Message]) -> list[genai_types.Content]:
                         response={result_key: block.content},
                     ),
                 )
-                    ),
-                )
 
         if parts:
             contents.append(genai_types.Content(role=role, parts=parts))
