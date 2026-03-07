@@ -13,9 +13,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-anthropic = ["anthropic>=0.52.0"]
-openai = ["openai>=1.0"]
-all = ["nominal-code[anthropic]", "nominal-code[openai]"]
+anthropic = ["anthropic==0.84.0"]
+openai = ["openai==2.26.0"]
+google = ["google-genai==1.66.0"]
+all = ["nominal-code[anthropic]", "nominal-code[openai]", "nominal-code[google]"]
 
 [project.scripts]
 nominal-code = "nominal_code.main:main"
@@ -62,7 +63,7 @@ warn_return_any = true
 warn_unused_configs = true
 
 [[tool.mypy.overrides]]
-module = ["openai", "openai.*", "anthropic", "anthropic.*"]
+module = ["openai", "openai.*", "anthropic", "anthropic.*", "google.genai", "google.genai.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

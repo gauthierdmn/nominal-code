@@ -16,6 +16,10 @@ PROVIDERS: dict[ProviderName, ProviderConfig] = {
         name=ProviderName.OPENAI,
         model="gpt-4.1",
     ),
+    ProviderName.GOOGLE: ProviderConfig(
+        name=ProviderName.GOOGLE,
+        model="gemini-2.5-flash",
+    ),
     ProviderName.DEEPSEEK: ProviderConfig(
         name=ProviderName.DEEPSEEK,
         model="deepseek-chat",
@@ -45,6 +49,7 @@ DEFAULT_MODELS: dict[ProviderName, str] = {
 INSTALL_INSTRUCTIONS: dict[ProviderName, str] = {
     ProviderName.ANTHROPIC: 'pip install "nominal-code[anthropic]"',
     ProviderName.OPENAI: 'pip install "nominal-code[openai]"',
+    ProviderName.GOOGLE: 'pip install "nominal-code[google]"',
 }
 
 
@@ -78,6 +83,11 @@ def create_provider(name: str, **kwargs: Any) -> LLMProvider:
         from nominal_code.agent.providers.anthropic import AnthropicProvider
 
         return AnthropicProvider(**kwargs)
+
+    if provider is ProviderName.GOOGLE:
+        from nominal_code.agent.providers.google import GoogleProvider
+
+        return GoogleProvider(**kwargs)
 
     from nominal_code.agent.providers.openai import OpenAIProvider
 

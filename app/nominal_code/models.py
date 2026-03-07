@@ -41,6 +41,7 @@ class ProviderName(StrEnum):
 
     ANTHROPIC = "anthropic"
     OPENAI = "openai"
+    GOOGLE = "google"
     DEEPSEEK = "deepseek"
     GROQ = "groq"
     TOGETHER = "together"

@@ -11,6 +11,7 @@ from nominal_code.agent.providers.registry import DEFAULT_MODELS, create_provide
 
 _has_anthropic = importlib.util.find_spec("anthropic") is not None
 _has_openai = importlib.util.find_spec("openai") is not None
+_has_google = importlib.util.find_spec("google.genai") is not None
 
 
 class TestCreateProvider:
@@ -32,6 +33,15 @@ class TestCreateProvider:
 
         assert isinstance(provider, OpenAIProvider)
 
+    @pytest.mark.skipif(not _has_google, reason="google-genai SDK not installed")
+    def test_create_google_provider(self):
+        from nominal_code.agent.providers.google import GoogleProvider
+
+        with patch("google.genai.Client"):
+            provider = create_provider("google")
+
+        assert isinstance(provider, GoogleProvider)
+
     def test_create_unknown_provider_raises(self):
         with pytest.raises(ValueError, match="Unknown provider"):
             create_provider("nonexistent")
@@ -43,6 +53,10 @@ class TestCreateProvider:
     def test_default_models_has_openai(self):
         assert "openai" in DEFAULT_MODELS
         assert "gpt" in DEFAULT_MODELS["openai"]
+
+    def test_default_models_has_google(self):
+        assert "google" in DEFAULT_MODELS
+        assert "gemini" in DEFAULT_MODELS["google"]
 
     def test_create_anthropic_raises_when_sdk_missing(self):
         real_import = builtins.__import__
@@ -62,6 +76,27 @@ class TestCreateProvider:
             with patch("builtins.__import__", side_effect=_block_anthropic):
                 with pytest.raises(MissingProviderError, match="anthropic"):
                     create_provider("anthropic")
+        finally:
+            sys.modules.update(cached_modules)
+
+    def test_create_google_raises_when_sdk_missing(self):
+        real_import = builtins.__import__
+
+        def _block_google(name, *args, **kwargs):
+            if name == "google.genai" or name == "google":
+                raise ImportError("No module named 'google.genai'")
+            return real_import(name, *args, **kwargs)
+
+        cached_modules = {
+            key: sys.modules.pop(key)
+            for key in list(sys.modules)
+            if key == "google" or key.startswith("google.")
+        }
+
+        try:
+            with patch("builtins.__import__", side_effect=_block_google):
+                with pytest.raises(MissingProviderError, match="google"):
+                    create_provider("google")
         finally:
             sys.modules.update(cached_modules)
 
