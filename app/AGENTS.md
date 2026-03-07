@@ -7,7 +7,7 @@ AI-powered code review bot that monitors GitHub PRs and GitLab MRs. When a user 
 - **Async-first** — built on aiohttp + asyncio; all I/O (HTTP, git, agent) is non-blocking.
 - **Protocol-based platforms** — GitHub and GitLab implement the same `Platform` / `ReviewerPlatform` protocols, making it easy to add new providers.
 - **Per-PR job serialisation** — `JobQueue` guarantees only one agent job runs per PR at a time, preventing race conditions on the same workspace.
-- **Multi-turn sessions** — `ConversationStore` maps (platform, repo, PR, bot) to conversation IDs and message histories so conversations resume across comments.
+- **Multi-turn conversations** — `ConversationStore` maps (platform, repo, PR, bot) to conversation IDs and message histories so conversations resume across comments.
 - **Workspace isolation** — each PR gets its own shallow clone; a shared `.deps/` directory is available for cross-PR dependencies.
 - **Dual agent runners** — CLI and webhook modes use the Claude Code CLI (supports subscriptions); CI mode calls the LLM provider API directly (requires a provider API key).
 
@@ -79,7 +79,8 @@ nominal_code/
 ├── ci.py                # CI mode dispatcher (delegates to platform-specific CI modules, posts results)
 ├── config.py            # Frozen dataclass config loaded from env vars / files
 ├── models.py            # Shared enums (EventType, BotType, FileStatus) and dataclasses (ReviewFinding, AgentReview, ChangedFile)
-├── agent/               # Dual agent runners, session management, prompt composition
+├── http.py              # request_with_retry(): HTTP request helper with transient error retries
+├── agent/               # Dual agent runners, conversation management, prompt composition
 ├── platforms/           # Platform protocol + GitHub/GitLab implementations (subpackages)
 ├── review/              # Reviewer bot handler (structured code review)
 ├── webhooks/            # aiohttp webhook server, @mention extraction, job dispatch

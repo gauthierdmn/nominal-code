@@ -90,6 +90,6 @@ When `--dry-run` is not set, the review is also posted to the PR as native inlin
 
 ## What's Different
 
-CLI mode is a one-shot command — no server, no session continuity. It does not require bot usernames or `ALLOWED_USERS`. See the [mode comparison](../reference/configuration.md#mode-comparison) for a full breakdown.
+CLI mode is a one-shot command — no server, no conversation continuity. It does not require bot usernames or `ALLOWED_USERS`. See the [mode comparison](../reference/configuration.md#mode-comparison) for a full breakdown.
 
 For the complete list of environment variables, see [Environment Variables](../reference/env-vars.md).

@@ -226,7 +226,7 @@ CI mode uses the same review logic as CLI and webhook modes — the same diff fe
 
 ## What's Different
 
-CI mode calls the LLM provider API directly and requires a provider API key (per-token billing). It supports multiple providers (Anthropic, OpenAI, DeepSeek, Groq, Together, Fireworks). It does not support session continuity. The workspace is the CI runner's checkout directory — no cloning is needed.
+CI mode calls the LLM provider API directly and requires a provider API key (per-token billing). It supports multiple providers (Anthropic, OpenAI, DeepSeek, Groq, Together, Fireworks). It does not support conversation continuity. The workspace is the CI runner's checkout directory — no cloning is needed.
 
 CLI and webhook modes use the Claude Code CLI, supporting Claude Pro and Max subscriptions as an alternative to per-token billing. See the [mode comparison](../reference/configuration.md#mode-comparison) for a full breakdown.
 

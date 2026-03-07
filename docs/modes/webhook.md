@@ -1,12 +1,12 @@
 # Webhook Mode
 
-The webhook server provides real-time, interactive code reviews. Mention the bot in a PR comment and it responds — with full session continuity across multiple interactions.
+The webhook server provides real-time, interactive code reviews. Mention the bot in a PR comment and it responds — with full conversation continuity across multiple interactions.
 
 ## What It Does
 
 - Listens for GitHub/GitLab webhook events on PR comments and lifecycle events
 - Runs the reviewer or worker bot in response to `@mentions`
-- Supports multi-turn conversations within the same PR (session continuity)
+- Supports multi-turn conversations within the same PR (conversation continuity)
 - Auto-triggers reviews on PR open, push, reopen, or ready-for-review events
 
 ## Configuration
@@ -102,7 +102,7 @@ Both platforms share the same bot usernames and allowed users list. Each platfor
 
 ## What's Different
 
-Webhook mode is the only mode with session continuity — multi-turn conversations carry context across comments on the same PR. It requires a running server and the Claude Code CLI. See the [mode comparison](../reference/configuration.md#mode-comparison) for a full breakdown.
+Webhook mode is the only mode with conversation continuity — multi-turn conversations carry context across comments on the same PR. It requires a running server and the Claude Code CLI. See the [mode comparison](../reference/configuration.md#mode-comparison) for a full breakdown.
 
 For the complete list of environment variables, see [Environment Variables](../reference/env-vars.md).
 

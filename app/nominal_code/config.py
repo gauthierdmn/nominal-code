@@ -20,6 +20,8 @@ DEFAULT_LANGUAGE_GUIDELINES_DIR: Path = Path("prompts/languages")
 DEFAULT_WEBHOOK_HOST: str = "0.0.0.0"
 DEFAULT_WEBHOOK_PORT: int = 8080
 DEFAULT_CLEANUP_INTERVAL_HOURS: int = 6
+DEFAULT_AGENT_MAX_TURNS: int = 0
+DEFAULT_WORKSPACE_BASE_DIR: Path = Path(tempfile.gettempdir()) / "nominal-code"
 
 
 @dataclass(frozen=True)
@@ -207,7 +209,7 @@ class Config:
 
         workspace_base_dir: Path = env.path(
             "WORKSPACE_BASE_DIR",
-            Path(tempfile.gettempdir()) / "nominal-code",
+            DEFAULT_WORKSPACE_BASE_DIR,
         )
 
         coding_guidelines: str = _load_file_content(
@@ -220,7 +222,7 @@ class Config:
         agent_config: AgentConfig = _resolve_agent_config(
             provider_name=provider or _parse_provider_env(),
             model=model or env.str("AGENT_MODEL", ""),
-            max_turns=max_turns or env.int("AGENT_MAX_TURNS", 0),
+            max_turns=max_turns or env.int("AGENT_MAX_TURNS", DEFAULT_AGENT_MAX_TURNS),
         )
 
         return cls(
@@ -277,7 +279,7 @@ class Config:
 
         workspace_base_dir: Path = env.path(
             "WORKSPACE_BASE_DIR",
-            Path(tempfile.gettempdir()) / "nominal-code",
+            DEFAULT_WORKSPACE_BASE_DIR,
         )
 
         coding_guidelines: str = _load_file_content(
@@ -306,7 +308,8 @@ class Config:
             workspace_base_dir=workspace_base_dir,
             agent=ApiAgentConfig(
                 provider=provider,
-                max_turns=max_turns or env.int("AGENT_MAX_TURNS", 0),
+                max_turns=max_turns
+                or env.int("AGENT_MAX_TURNS", DEFAULT_AGENT_MAX_TURNS),
             ),
             coding_guidelines=coding_guidelines,
             language_guidelines=language_guidelines,
@@ -377,7 +380,7 @@ class Config:
 
         workspace_base_dir: Path = env.path(
             "WORKSPACE_BASE_DIR",
-            Path(tempfile.gettempdir()) / "nominal-code",
+            DEFAULT_WORKSPACE_BASE_DIR,
         )
 
         coding_guidelines: str = _load_file_content(
@@ -412,7 +415,7 @@ class Config:
         agent_config: AgentConfig = _resolve_agent_config(
             provider_name=_parse_provider_env(),
             model=env.str("AGENT_MODEL", ""),
-            max_turns=env.int("AGENT_MAX_TURNS", 0),
+            max_turns=env.int("AGENT_MAX_TURNS", DEFAULT_AGENT_MAX_TURNS),
         )
 
         return cls(

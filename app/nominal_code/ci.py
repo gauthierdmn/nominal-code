@@ -6,7 +6,7 @@ from pathlib import Path
 from types import ModuleType
 
 from nominal_code.agent.providers.registry import PROVIDERS
-from nominal_code.config import Config, ProviderConfig
+from nominal_code.config import DEFAULT_AGENT_MAX_TURNS, Config, ProviderConfig
 from nominal_code.models import ProviderName
 from nominal_code.platforms.base import (
     CommentReply,
@@ -17,6 +17,8 @@ from nominal_code.platforms.base import (
 from nominal_code.review.handler import ReviewResult, review
 
 logger: logging.Logger = logging.getLogger(__name__)
+
+DEFAULT_AGENT_PROVIDER: str = "anthropic"
 
 
 async def run_ci_review(platform_name: str) -> int:
@@ -47,14 +49,17 @@ async def run_ci_review(platform_name: str) -> int:
 
     custom_prompt: str = os.environ.get("INPUT_PROMPT", "")
     model: str = os.environ.get("INPUT_MODEL", "")
-    max_turns_raw: str = os.environ.get("INPUT_MAX_TURNS", "0")
+    max_turns_raw: str = os.environ.get(
+        "INPUT_MAX_TURNS",
+        str(DEFAULT_AGENT_MAX_TURNS),
+    )
 
     try:
         max_turns: int = int(max_turns_raw)
     except ValueError:
         max_turns = 0
 
-    provider: str = os.environ.get("AGENT_PROVIDER", "anthropic")
+    provider: str = os.environ.get("AGENT_PROVIDER", DEFAULT_AGENT_PROVIDER)
 
     try:
         provider_name: ProviderName = ProviderName(provider)

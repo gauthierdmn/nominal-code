@@ -10,7 +10,7 @@ It runs anywhere: as a **CI job** (GitHub Actions or GitLab CI), from the **comm
 |---|---|---|---|
 | **[CI](modes/ci.md)** | Teams wanting zero-infrastructure automated reviews on every PR | Add a workflow file — no server, no CLI | Uses the LLM provider API directly |
 | **[CLI](modes/cli.md)** | Developers running one-off reviews from their terminal | Install the Claude Code CLI and run a command | Uses the Claude Code CLI as agent runner |
-| **[Webhook](modes/webhook.md)** | Teams wanting real-time, interactive reviews via `@mention` | Deploy a webhook server | Session continuity, auto-trigger, multi-turn |
+| **[Webhook](modes/webhook.md)** | Teams wanting real-time, interactive reviews via `@mention` | Deploy a webhook server | Conversation continuity, auto-trigger, multi-turn |
 
 New here? Start with the **[Getting Started](getting-started.md)** guide.
 
@@ -20,7 +20,7 @@ New here? Start with the **[Getting Started](getting-started.md)** guide.
 - **Worker bot** *(beta)* — receives a prompt, clones the repo, runs an agent with full tool access, commits and pushes changes
 - **Three execution modes** — CI job, CLI one-off, or webhook server
 - **GitHub and GitLab** — supports both platforms simultaneously
-- **Session continuity** — multi-turn conversations within the same PR (webhook mode)
+- **Conversation continuity** — multi-turn conversations within the same PR (webhook mode)
 - **Auto-trigger** — run reviews automatically on PR open, push, reopen, or ready-for-review events
 - **Per-repo guidelines** — coding standards via `.nominal/guidelines.md` and `.nominal/languages/{lang}.md`
 

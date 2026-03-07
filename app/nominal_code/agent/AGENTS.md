@@ -50,6 +50,7 @@ Tool definitions use canonical `ToolDefinition` (TypedDict with `name`, `descrip
 agent/
 ├── runner.py        # Dispatcher: routes to api/ or cli/ runner based on agent config type
 ├── result.py        # AgentResult dataclass (output, is_error, num_turns, duration_ms, conversation_id)
+├── memory.py        # ConversationStore (unified per-PR conversation ID + message history store)
 ├── prompts.py       # Guideline loading (.nominal/ overrides), language detection, system prompt composition
 ├── errors.py        # handle_agent_errors(): async context manager that catches and posts error replies
 ├── providers/
@@ -63,7 +64,7 @@ agent/
 │   └── tools.py     # Tool definitions and local execution (Read, Glob, Grep, Bash)
 └── cli/
     ├── runner.py    # Claude Code CLI wrapper (claude_agent_sdk.query + SDK monkey-patch)
-    ├── job.py   # PRKey type alias and JobQueue (per-PR async queue)
+    ├── job.py   # JobQueue (per-PR async queue)
     └── tracking.py  # run_and_track_conversation(): conversation lookup/store around agent runs
 ```
 
