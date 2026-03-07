@@ -23,7 +23,7 @@ GitHub/GitLab sends webhook             GitHub/GitLab sends webhook
                        │   enqueue_job()            ← no auth check, no reaction
                        │       │
                        │       ▼
-                       │   session_queue.enqueue()  ← reviewer with empty prompt
+                       │   job_queue.enqueue()  ← reviewer with empty prompt
                        │
                        ├─ [comment event?]
                        │       ▼
@@ -36,7 +36,7 @@ GitHub/GitLab sends webhook             GitHub/GitLab sends webhook
                        │       ├─ post_reaction("eyes")
                        │       │
                        │       ▼
-                       │   session_queue.enqueue()
+                       │   job_queue.enqueue()
                        │
                        └─ [otherwise] → ignored
                                │
@@ -92,13 +92,13 @@ _load_platform_ci()                 ← import platform-specific CI module
         ├─ resolve_workspace()      ← use CI runner checkout
         │
         ▼
-Config.for_ci()                     ← build config with use_api=True
+Config.for_ci()                     ← build config with ApiAgentConfig
         │
         ▼
 review()
         │
         ├─ diff + comments (parallel fetch)
-        ├─ build prompt + run agent (Anthropic API)
+        ├─ build prompt + run agent (LLM provider API)
         ├─ parse JSON + filter findings
         │
         ▼
@@ -116,30 +116,30 @@ Nominal Code supports two agent execution backends. The mode is selected automat
 
 Used by **CLI mode** and **webhook server mode**. Wraps the [Claude Code SDK](https://github.com/anthropics/claude-code-sdk-python) to spawn the Claude Code CLI as a subprocess.
 
-- Streams messages from the CLI process and captures the session ID for multi-turn continuity.
+- Streams messages from the CLI process and captures the conversation ID for multi-turn continuity.
 - Monkey-patches the SDK message parser to gracefully handle unknown message types (e.g. `rate_limit_event`), preventing the stream from crashing.
-- Supports session resumption via stored session IDs.
+- Supports conversation resumption via stored conversation IDs.
 - Requires the Claude Code CLI to be installed and on `PATH` (or set via `AGENT_CLI_PATH`).
 - Uses the CLI's configured login method — supports Claude Pro and Claude Max subscriptions as an alternative to per-token API billing.
 
-### Anthropic API Runner
+### LLM Provider API Runner
 
-Used by **CI mode**. Calls the Anthropic Messages API directly with tool use.
+Used by **CI mode**. Calls the LLM provider API directly with tool use. Supports multiple providers (Anthropic, OpenAI, DeepSeek, Groq, Together, Fireworks).
 
 - Implements an agentic loop: sends a prompt, processes `tool_use` blocks by executing tools locally, sends results back, and repeats until the model produces a final text answer or `max_turns` is reached.
 - Provides four tools: `Read` (file contents), `Glob` (file search), `Grep` (content search), and `Bash` (shell commands with allowlist validation).
-- Does not require the Claude Code CLI — only an `ANTHROPIC_API_KEY` (per-token billing).
-- Does not support session continuity (each run is stateless).
+- Does not require the Claude Code CLI — only a provider API key (per-token billing).
+- Does not support conversation continuity (each run is stateless).
 
 ### Runner Selection
 
 | Execution Mode | Agent Runner | Selected By |
 |---|---|---|
-| CI (`nominal-code ci`) | Anthropic API | `AgentConfig(use_api=True)` |
-| CLI (`nominal-code review`) | Claude Code CLI | `AgentConfig(use_api=False)` |
-| Webhook server | Claude Code CLI | `AgentConfig(use_api=False)` |
+| CI (`nominal-code ci`) | LLM provider API | `ApiAgentConfig` |
+| CLI (`nominal-code review`) | Claude Code CLI | `CliAgentConfig` |
+| Webhook server | Claude Code CLI | `CliAgentConfig` |
 
-The dispatcher in `agent/runner.py` routes to the appropriate backend based on the `use_api` flag in `AgentConfig`.
+The dispatcher in `agent/runner.py` routes to the appropriate backend based on whether the config is a `CliAgentConfig` or `ApiAgentConfig`.
 
 ## Components
 
@@ -150,7 +150,7 @@ An [aiohttp](https://docs.aiohttp.org/) application that exposes:
 - `GET /health` — returns `{"status": "ok"}`
 - `POST /webhooks/{platform}` — one route per enabled platform
 
-Each incoming request is verified, parsed, and dispatched. The HTTP response is returned immediately; actual processing happens asynchronously via the session queue.
+Each incoming request is verified, parsed, and dispatched. The HTTP response is returned immediately; actual processing happens asynchronously via the job queue.
 
 ### Platform Registry
 
@@ -187,11 +187,11 @@ Each platform provides a `ci.py` module with three functions:
 
 ### Agent Runner (`agent/runner.py`)
 
-Dispatcher that routes to the API or CLI runner based on `AgentConfig.use_api`. See [Agent Runners](#agent-runners) above.
+Dispatcher that routes to the API or CLI runner based on the agent config type (`CliAgentConfig` or `ApiAgentConfig`). See [Agent Runners](#agent-runners) above.
 
 ### API Runner (`agent/api/runner.py`)
 
-Implements the Anthropic API agentic loop with local tool execution. See [Anthropic API Runner](#anthropic-api-runner) above.
+Implements the LLM provider API agentic loop with local tool execution. See [LLM Provider API Runner](#llm-provider-api-runner) above.
 
 ### API Tools (`agent/api/tools.py`)
 
@@ -205,14 +205,14 @@ Wraps the Claude Code SDK to stream messages from the CLI subprocess. See [Claud
 
 Loads and composes the system prompt from multiple sources: the bot's base prompt, global coding guidelines, and per-repo/per-language overrides from the `.nominal/` directory. Language detection is based on file extensions in the PR diff.
 
-### Session Tracking (`agent/cli/tracking.py`)
+### Conversation Tracking (`agent/cli/tracking.py`)
 
-Bridges the session store and the CLI runner. Looks up the existing session ID for a PR/bot pair, passes it to the agent for multi-turn continuity, and stores the new session ID after execution. Only used in webhook mode (CLI and CI are stateless).
+Bridges the conversation store and the agent runner. Looks up the existing conversation ID for a PR/bot pair, passes it to the agent for multi-turn continuity, and stores the new conversation ID after execution. Only used in webhook mode (CLI and CI are stateless).
 
-### Session Store and Queue (`agent/cli/session.py`)
+### Conversation Store and Job Queue (`agent/memory.py`, `agent/cli/job.py`)
 
-- **SessionStore** — an in-memory dict mapping `(platform, repo, pr_number, bot_type)` to a session ID. Used to resume agent sessions across multiple interactions on the same PR.
-- **SessionQueue** — per-PR async job queue. Each PR key gets its own `asyncio.Queue` with a single consumer task, ensuring that agent invocations on the same PR run serially (no race conditions). The consumer and queue are cleaned up when drained.
+- **ConversationStore** — a unified in-memory store with two parallel dicts keyed by `(platform, repo, pr_number, bot_type)`: lightweight conversation IDs and full message histories (API mode only). Used to resume conversations across multiple interactions on the same PR.
+- **JobQueue** — per-PR async job queue. Each PR key gets its own `asyncio.Queue` with a single consumer task, ensuring that agent invocations on the same PR run serially (no race conditions). The consumer and queue are cleaned up when drained.
 
 ### Git Workspace (`workspace/git.py`)
 
@@ -246,9 +246,9 @@ Each `pr-{N}` directory is a shallow clone of the repository checked out to the 
 
 In CI mode, the workspace is the CI runner's checkout directory (e.g. `$GITHUB_WORKSPACE` or `$CI_PROJECT_DIR`) — no cloning is needed.
 
-## Session Queue
+## Job Queue
 
-The session queue ensures that only one agent runs per PR at a time. This prevents race conditions when multiple comments arrive in quick succession on the same PR.
+The job queue ensures that only one agent runs per PR at a time. This prevents race conditions when multiple comments arrive in quick succession on the same PR.
 
 Jobs are keyed by `(platform_name, repo_full_name, pr_number, bot_type)`. When a job is enqueued:
 
@@ -278,16 +278,16 @@ nominal_code/
 ├── models.py            # Shared enums (EventType, BotType, FileStatus) and dataclasses
 ├── agent/
 │   ├── runner.py        # Dispatcher: routes to API or CLI runner based on config
-│   ├── result.py        # AgentResult dataclass (output, turns, session ID)
+│   ├── result.py        # AgentResult dataclass (output, turns, conversation ID)
 │   ├── prompts.py       # Guideline loading, language detection, system prompt composition
 │   ├── errors.py        # Async context manager for handler error handling
 │   ├── api/
-│   │   ├── runner.py    # Anthropic API agentic loop (tool use)
+│   │   ├── runner.py    # LLM provider API agentic loop (tool use)
 │   │   └── tools.py     # Tool definitions and execution (Read, Glob, Grep, Bash)
 │   └── cli/
 │       ├── runner.py    # Claude Code CLI subprocess wrapper (SDK integration)
-│       ├── session.py   # SessionStore (in-memory dict) and SessionQueue (per-PR async queue)
-│       └── tracking.py  # Bridges session store and agent runner for multi-turn continuity
+│       ├── job.py       # JobQueue (per-PR async queue)
+│       └── tracking.py  # Bridges conversation store and agent runner for multi-turn continuity
 ├── platforms/
 │   ├── base.py          # Protocol definitions and shared dataclasses
 │   ├── registry.py      # Self-registering platform factory pattern

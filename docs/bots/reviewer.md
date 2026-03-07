@@ -83,6 +83,6 @@ Before running the agent, the reviewer fetches all existing comments on the PR t
 
 The reviewer is available in all three modes:
 
-- **[Webhook](../modes/webhook.md)** — real-time via `@mention` with session continuity
+- **[Webhook](../modes/webhook.md)** — real-time via `@mention` with conversation continuity
 - **[CLI](../modes/cli.md)** — one-shot from the command line
 - **[CI](../modes/ci.md)** — automated in GitHub Actions or GitLab CI

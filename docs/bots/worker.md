@@ -41,6 +41,6 @@ The worker runs with `bypassPermissions` mode and all tools available. The agent
 !!! danger "Security considerations"
     The worker bot runs with full tool access and can execute arbitrary commands. A successful prompt injection could result in unauthorized code changes. Only enable it in trusted, private repositories with a restricted set of allowed users. See [Security](../security.md#llm-security) for details.
 
-## Session Continuity
+## Conversation Continuity
 
-The worker maintains session continuity within the same PR. When you send multiple comments, the agent resumes from its previous session, preserving context from earlier interactions. Sessions are keyed by `(platform, repo, pr_number, "worker")`.
+The worker maintains conversation continuity within the same PR. When you send multiple comments, the agent resumes from its previous conversation, preserving context from earlier interactions. Conversations are keyed by `(platform, repo, pr_number, "worker")`.

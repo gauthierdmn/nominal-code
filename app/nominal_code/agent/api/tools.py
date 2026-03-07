@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from anthropic.types import ToolParam
+from nominal_code.agent.providers.types import ToolDefinition
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -18,7 +18,7 @@ MAX_LINE_LENGTH: int = 2000
 
 SUBMIT_REVIEW_TOOL_NAME: str = "submit_review"
 
-SUBMIT_REVIEW_TOOL: ToolParam = {
+SUBMIT_REVIEW_TOOL: ToolDefinition = {
     "name": SUBMIT_REVIEW_TOOL_NAME,
     "description": (
         "Submit your final code review. You MUST call this tool with your "
@@ -83,7 +83,7 @@ SUBMIT_REVIEW_TOOL: ToolParam = {
     },
 }
 
-TOOL_DEFINITIONS: list[ToolParam] = [
+TOOL_DEFINITIONS: list[ToolDefinition] = [
     {
         "name": "Read",
         "description": (
@@ -202,7 +202,7 @@ class ToolError(Exception):
 
 def get_tool_definitions(
     allowed_tools: list[str] | None,
-) -> list[ToolParam]:
+) -> list[ToolDefinition]:
     """
     Return tool definitions filtered by the allowed tools list.
 
@@ -218,7 +218,7 @@ def get_tool_definitions(
         allowed_tools (list[str] | None): List of allowed tool names/patterns.
 
     Returns:
-        list[ToolParam]: Filtered list of Anthropic API tool definitions.
+        list[ToolDefinition]: Filtered list of tool definitions.
     """
 
     if not allowed_tools:
@@ -230,7 +230,7 @@ def get_tool_definitions(
         name: str = entry.split("(")[0]
         allowed_names.add(name)
 
-    tools: list[ToolParam] = [
+    tools: list[ToolDefinition] = [
         tool for tool in TOOL_DEFINITIONS if tool["name"] in allowed_names
     ]
 

@@ -4,9 +4,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nominal_code.agent.cli.session import SessionStore
+from nominal_code.agent.memory import ConversationStore
 from nominal_code.agent.runner import AgentResult
-from nominal_code.config import AgentConfig, WorkerConfig
+from nominal_code.config import CliAgentConfig, WorkerConfig
 from nominal_code.models import EventType
 from nominal_code.platforms.base import CommentEvent, PlatformName
 from nominal_code.worker.handler import _build_prompt, review_and_fix
@@ -16,7 +16,7 @@ def _make_config(allowed_users=None):
     config = MagicMock()
     config.allowed_users = frozenset(allowed_users or ["alice"])
     config.workspace_base_dir = "/tmp/workspaces"
-    config.agent = AgentConfig()
+    config.agent = CliAgentConfig()
     config.coding_guidelines = "Use snake_case."
     config.language_guidelines = {"python": "Python style rules."}
     config.worker = WorkerConfig(
@@ -68,7 +68,7 @@ class TestWorkerProcessComment:
         config = _make_config(allowed_users=["alice"])
         platform = _make_platform()
         comment = _make_comment(author="alice")
-        session_store = SessionStore()
+        conversation_store = ConversationStore()
 
         with patch(
             "nominal_code.agent.cli.tracking.run_agent",
@@ -79,7 +79,7 @@ class TestWorkerProcessComment:
                 is_error=False,
                 num_turns=1,
                 duration_ms=1000,
-                session_id="sess-1",
+                conversation_id="sess-1",
             )
 
             with patch(
@@ -95,7 +95,7 @@ class TestWorkerProcessComment:
                     prompt="fix this",
                     config=config,
                     platform=platform,
-                    session_store=session_store,
+                    conversation_store=conversation_store,
                 )
 
             mock_run.assert_called_once()
@@ -109,7 +109,7 @@ class TestWorkerProcessComment:
         config = _make_config(allowed_users=["alice"])
         platform = _make_platform()
         comment = _make_comment(author="alice")
-        session_store = SessionStore()
+        conversation_store = ConversationStore()
 
         with patch(
             "nominal_code.agent.cli.tracking.run_agent",
@@ -120,7 +120,7 @@ class TestWorkerProcessComment:
                 is_error=False,
                 num_turns=1,
                 duration_ms=1000,
-                session_id="sess-1",
+                conversation_id="sess-1",
             )
 
             with patch(
@@ -140,7 +140,7 @@ class TestWorkerProcessComment:
                         prompt="fix this",
                         config=config,
                         platform=platform,
-                        session_store=session_store,
+                        conversation_store=conversation_store,
                     )
 
                     mock_resolve.assert_called_once_with(

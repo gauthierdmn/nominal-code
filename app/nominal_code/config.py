@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import logging
 import tempfile
 from dataclasses import dataclass
@@ -7,7 +8,7 @@ from pathlib import Path
 
 from environs import Env, EnvError
 
-from nominal_code.models import EventType
+from nominal_code.models import EventType, ProviderName
 
 logger: logging.Logger = logging.getLogger(__name__)
 env: Env = Env()
@@ -19,26 +20,84 @@ DEFAULT_LANGUAGE_GUIDELINES_DIR: Path = Path("prompts/languages")
 DEFAULT_WEBHOOK_HOST: str = "0.0.0.0"
 DEFAULT_WEBHOOK_PORT: int = 8080
 DEFAULT_CLEANUP_INTERVAL_HOURS: int = 6
+DEFAULT_AGENT_MAX_TURNS: int = 0
+DEFAULT_WORKSPACE_BASE_DIR: Path = Path(tempfile.gettempdir()) / "nominal-code"
 
 
 @dataclass(frozen=True)
-class AgentConfig:
+class ProviderConfig:
     """
-    Agent runner configuration.
+    LLM provider configuration.
 
     Attributes:
-        model (str): Optional model override (empty string uses default).
+        name (ProviderName): Provider identifier.
+        model (str): Model name (e.g. ``"claude-sonnet-4-20250514"``).
+        base_url (str | None): Base URL for OpenAI-compatible providers.
+            ``None`` for native providers and OpenAI itself (uses SDK default).
+    """
+
+    name: ProviderName
+    model: str
+    base_url: str | None = None
+
+    @property
+    def api_key_env(self) -> str:
+        """
+        Environment variable name for the provider's API key.
+
+        Derived from the provider name: ``{NAME}_API_KEY``
+        (e.g. ``"ANTHROPIC_API_KEY"``).
+
+        Returns:
+            str: The environment variable name.
+        """
+
+        return f"{self.name.upper()}_API_KEY"
+
+
+@dataclass(frozen=True)
+class CliAgentConfig:
+    """
+    Agent configuration for CLI and webhook modes.
+
+    Uses the Claude Code CLI subprocess. Supports conversation resumption
+    and Claude Pro/Max subscriptions.
+
+    Attributes:
+        model (str): Optional model override (empty string uses CLI default).
         max_turns (int): Maximum agentic turns (0 for unlimited).
-        use_api (bool): If True, use the Anthropic API directly; if False,
-            use the Claude Code CLI subprocess.
-        cli_path (str): Path to the Claude Code CLI binary. Only used when
-            use_api is False.
+        cli_path (str): Path to the Claude Code CLI binary (empty to use
+            bundled).
     """
 
     model: str = ""
     max_turns: int = 0
-    use_api: bool = False
     cli_path: str = ""
+
+
+@dataclass(frozen=True)
+class ApiAgentConfig:
+    """
+    Agent configuration for API-based modes (CI, webhook, CLI).
+
+    Calls the LLM provider API directly. Requires a provider API key.
+    Stateless (no conversation continuity).
+
+    The effective model is always ``provider.model``. To override the
+    default, pass a ``ProviderConfig`` with the desired model set (see
+    ``Config.for_ci``).
+
+    Attributes:
+        provider (ProviderConfig): The LLM provider configuration. Determines
+            which SDK, API key, and model to use.
+        max_turns (int): Maximum agentic turns (0 for unlimited).
+    """
+
+    provider: ProviderConfig
+    max_turns: int = 0
+
+
+AgentConfig = CliAgentConfig | ApiAgentConfig
 
 
 @dataclass(frozen=True)
@@ -81,7 +140,9 @@ class Config:
         webhook_port (int): Port to bind the webhook server.
         allowed_users (frozenset[str]): Usernames permitted to trigger the bots.
         workspace_base_dir (Path): Directory for cloning repositories.
-        agent (AgentConfig): Agent runner configuration.
+        agent (AgentConfig): Agent runner configuration. Either a
+            ``CliAgentConfig`` (CLI/webhook mode) or ``ApiAgentConfig``
+            (CI mode with direct API calls).
         coding_guidelines (str): Coding guidelines text appended to the
             system prompt.
         language_guidelines (dict[str, str]): Language-specific guidelines
@@ -121,6 +182,7 @@ class Config:
         cls,
         model: str = "",
         max_turns: int = 0,
+        provider: ProviderName | None = None,
     ) -> Config:
         """
         Build a Config for CLI mode without requiring webhook-only settings.
@@ -128,9 +190,14 @@ class Config:
         Reviewer is always enabled with the default system prompt. Settings
         like ``ALLOWED_USERS`` and bot usernames are not required.
 
+        When ``provider`` (or the ``AGENT_PROVIDER`` env var) is set, the
+        API runner is used instead of the Claude Code CLI.
+
         Args:
             model (str): Optional agent model override.
             max_turns (int): Optional agent max turns override.
+            provider (ProviderName | None): Optional LLM provider. When set,
+                uses the API runner instead of the CLI runner.
 
         Returns:
             Config: A configuration suitable for one-off CLI reviews.
@@ -142,7 +209,7 @@ class Config:
 
         workspace_base_dir: Path = env.path(
             "WORKSPACE_BASE_DIR",
-            Path(tempfile.gettempdir()) / "nominal-code",
+            DEFAULT_WORKSPACE_BASE_DIR,
         )
 
         coding_guidelines: str = _load_file_content(
@@ -150,6 +217,12 @@ class Config:
         )
         language_guidelines: dict[str, str] = _load_language_guidelines(
             env.path("LANGUAGE_GUIDELINES_DIR", DEFAULT_LANGUAGE_GUIDELINES_DIR),
+        )
+
+        agent_config: AgentConfig = _resolve_agent_config(
+            provider_name=provider or _parse_provider_env(),
+            model=model or env.str("AGENT_MODEL", ""),
+            max_turns=max_turns or env.int("AGENT_MAX_TURNS", DEFAULT_AGENT_MAX_TURNS),
         )
 
         return cls(
@@ -162,12 +235,7 @@ class Config:
             webhook_port=0,
             allowed_users=frozenset(),
             workspace_base_dir=workspace_base_dir,
-            agent=AgentConfig(
-                model=model or env.str("AGENT_MODEL", ""),
-                max_turns=max_turns or env.int("AGENT_MAX_TURNS", 0),
-                use_api=False,
-                cli_path=env.str("AGENT_CLI_PATH", ""),
-            ),
+            agent=agent_config,
             coding_guidelines=coding_guidelines,
             language_guidelines=language_guidelines,
             cleanup_interval_hours=0,
@@ -176,6 +244,7 @@ class Config:
     @classmethod
     def for_ci(
         cls,
+        provider: ProviderConfig,
         model: str = "",
         max_turns: int = 0,
         guidelines_path: Path = Path(),
@@ -183,11 +252,15 @@ class Config:
         """
         Build a Config for CI mode (GitHub Actions / GitLab CI).
 
-        Similar to ``for_cli`` but uses the Anthropic API directly and
-        optionally accepts a custom coding guidelines path.
+        Similar to ``for_cli`` but calls the LLM provider API directly
+        and optionally accepts a custom coding guidelines path.
 
         Args:
-            model (str): Optional agent model override.
+            provider (ProviderConfig): The resolved provider configuration
+                (from ``PROVIDERS`` registry). When ``model`` is given,
+                a copy with the overridden model is stored.
+            model (str): Optional model override. When set, replaces the
+                provider's default model.
             max_turns (int): Optional agent max turns override.
             guidelines_path (Path): Optional path to a coding guidelines file.
 
@@ -195,13 +268,18 @@ class Config:
             Config: A configuration suitable for CI-triggered reviews.
         """
 
+        model_override: str = model or env.str("AGENT_MODEL", "")
+
+        if model_override:
+            provider = dataclasses.replace(provider, model=model_override)
+
         reviewer_system_prompt: str = _load_file_content(
             env.path("REVIEWER_SYSTEM_PROMPT", DEFAULT_REVIEWER_PROMPT_PATH),
         )
 
         workspace_base_dir: Path = env.path(
             "WORKSPACE_BASE_DIR",
-            Path(tempfile.gettempdir()) / "nominal-code",
+            DEFAULT_WORKSPACE_BASE_DIR,
         )
 
         coding_guidelines: str = _load_file_content(
@@ -228,11 +306,10 @@ class Config:
             webhook_port=0,
             allowed_users=frozenset(),
             workspace_base_dir=workspace_base_dir,
-            agent=AgentConfig(
-                model=model or env.str("AGENT_MODEL", ""),
-                max_turns=max_turns or env.int("AGENT_MAX_TURNS", 0),
-                use_api=True,
-                cli_path="",
+            agent=ApiAgentConfig(
+                provider=provider,
+                max_turns=max_turns
+                or env.int("AGENT_MAX_TURNS", DEFAULT_AGENT_MAX_TURNS),
             ),
             coding_guidelines=coding_guidelines,
             language_guidelines=language_guidelines,
@@ -303,7 +380,7 @@ class Config:
 
         workspace_base_dir: Path = env.path(
             "WORKSPACE_BASE_DIR",
-            Path(tempfile.gettempdir()) / "nominal-code",
+            DEFAULT_WORKSPACE_BASE_DIR,
         )
 
         coding_guidelines: str = _load_file_content(
@@ -335,6 +412,12 @@ class Config:
             env.str("PR_TITLE_EXCLUDE_TAGS", ""),
         )
 
+        agent_config: AgentConfig = _resolve_agent_config(
+            provider_name=_parse_provider_env(),
+            model=env.str("AGENT_MODEL", ""),
+            max_turns=env.int("AGENT_MAX_TURNS", DEFAULT_AGENT_MAX_TURNS),
+        )
+
         return cls(
             worker=worker,
             reviewer=reviewer,
@@ -342,12 +425,7 @@ class Config:
             webhook_port=webhook_port,
             allowed_users=allowed_users,
             workspace_base_dir=workspace_base_dir,
-            agent=AgentConfig(
-                model=env.str("AGENT_MODEL", ""),
-                max_turns=env.int("AGENT_MAX_TURNS", 0),
-                use_api=False,
-                cli_path=env.str("AGENT_CLI_PATH", ""),
-            ),
+            agent=agent_config,
             coding_guidelines=coding_guidelines,
             language_guidelines=language_guidelines,
             cleanup_interval_hours=cleanup_interval_hours,
@@ -358,44 +436,112 @@ class Config:
         )
 
 
-def _parse_title_tags(raw: str) -> frozenset[str]:
+def _parse_provider_env() -> ProviderName | None:
+    """
+    Read ``AGENT_PROVIDER`` from the environment and convert to enum.
+
+    Returns:
+        ProviderName | None: The parsed provider, or ``None`` when unset.
+
+    Raises:
+        ValueError: If the value is not a recognised provider name.
+    """
+
+    provider: str = env.str("AGENT_PROVIDER", "")
+
+    if not provider:
+        return None
+
+    try:
+        return ProviderName(provider)
+    except ValueError:
+        available: str = ", ".join(p.value for p in ProviderName)
+
+        raise ValueError(
+            f"Unknown AGENT_PROVIDER: {provider!r}. Available: {available}",
+        ) from None
+
+
+def _resolve_agent_config(
+    provider_name: ProviderName | None,
+    model: str,
+    max_turns: int,
+) -> AgentConfig:
+    """
+    Build either a CLI or API agent config based on provider selection.
+
+    When ``provider_name`` is ``None``, returns a ``CliAgentConfig``
+    (Claude Code CLI). Otherwise resolves the provider from the
+    ``PROVIDERS`` registry and returns an ``ApiAgentConfig``.
+
+    Args:
+        provider_name (ProviderName | None): Provider enum, or ``None``
+            for CLI mode.
+        model (str): Optional model override.
+        max_turns (int): Maximum agentic turns.
+
+    Returns:
+        AgentConfig: Either ``CliAgentConfig`` or ``ApiAgentConfig``.
+    """
+
+    if provider_name is None:
+        return CliAgentConfig(
+            model=model,
+            max_turns=max_turns,
+            cli_path=env.str("AGENT_CLI_PATH", ""),
+        )
+
+    from nominal_code.agent.providers.registry import PROVIDERS
+
+    provider_config: ProviderConfig = PROVIDERS[provider_name]
+
+    if model:
+        provider_config = dataclasses.replace(provider_config, model=model)
+
+    return ApiAgentConfig(
+        provider=provider_config,
+        max_turns=max_turns,
+    )
+
+
+def _parse_title_tags(tags: str) -> frozenset[str]:
     """
     Parse a comma-separated string of tag names into a lowercased frozenset.
 
     Strips whitespace and lowercases each tag.
 
     Args:
-        raw (str): Comma-separated tag names (e.g. ``"nominalbot, CI"``).
+        tags (str): Comma-separated tag names (e.g. ``"nominalbot, CI"``).
 
     Returns:
         frozenset[str]: The parsed tags, lowercased.
     """
 
-    if not raw.strip():
+    if not tags.strip():
         return frozenset()
 
-    return frozenset(tag.strip().lower() for tag in raw.split(",") if tag.strip())
+    return frozenset(tag.strip().lower() for tag in tags.split(",") if tag.strip())
 
 
-def _parse_reviewer_triggers(raw: str) -> frozenset[EventType]:
+def _parse_reviewer_triggers(events: str) -> frozenset[EventType]:
     """
     Parse a comma-separated string of event type names into a frozenset.
 
     Invalid names are logged as warnings and skipped.
 
     Args:
-        raw (str): Comma-separated event type names (e.g. ``pr_opened,pr_push``).
+        events (str): Comma-separated event type names (e.g. ``pr_opened,pr_push``).
 
     Returns:
         frozenset[EventType]: The parsed event types.
     """
 
-    if not raw.strip():
+    if not events.strip():
         return frozenset()
 
     triggers: set[EventType] = set()
 
-    for token in raw.split(","):
+    for token in events.split(","):
         name: str = token.strip()
 
         if not name:

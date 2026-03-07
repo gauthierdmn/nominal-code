@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from nominal_code.agent.cli.tracking import run_and_track_session
+from nominal_code.agent.cli.tracking import run_and_track_conversation
 from nominal_code.agent.errors import handle_agent_errors
 from nominal_code.agent.prompts import resolve_system_prompt
 from nominal_code.models import BotType
@@ -12,7 +12,7 @@ from nominal_code.platforms.base import CommentEvent, CommentReply
 from nominal_code.workspace.setup import create_workspace, resolve_branch
 
 if TYPE_CHECKING:
-    from nominal_code.agent.cli.session import SessionStore
+    from nominal_code.agent.memory import ConversationStore
     from nominal_code.config import Config
     from nominal_code.platforms.base import Platform
     from nominal_code.workspace.git import GitWorkspace
@@ -25,7 +25,7 @@ async def review_and_fix(
     prompt: str,
     config: Config,
     platform: Platform,
-    session_store: SessionStore,
+    conversation_store: ConversationStore | None = None,
 ) -> None:
     """
     Review and fix code using the worker bot: clone, run agent, post reply.
@@ -35,7 +35,8 @@ async def review_and_fix(
         prompt (str): The extracted prompt.
         config (Config): Application configuration.
         platform (Platform): The platform client.
-        session_store (SessionStore): Agent session store.
+        conversation_store (ConversationStore | None): Conversation store for
+            conversation continuity.
     """
 
     effective_event: CommentEvent | None = await resolve_branch(
@@ -73,14 +74,14 @@ async def review_and_fix(
             deps_path=workspace.deps_path,
         )
 
-        result = await run_and_track_session(
+        result = await run_and_track_conversation(
             event=event,
             bot_type=BotType.WORKER,
-            session_store=session_store,
             system_prompt=system_prompt,
             prompt=full_prompt,
             cwd=workspace.repo_path,
             config=config,
+            conversation_store=conversation_store,
         )
 
         await platform.post_reply(

@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+PRKey = tuple[str, str, int, str]
+
 
 class EventType(StrEnum):
     """
@@ -30,6 +32,19 @@ COMMENT_EVENT_TYPES: frozenset[EventType] = frozenset(
         EventType.NOTE,
     }
 )
+
+
+class ProviderName(StrEnum):
+    """
+    Supported LLM provider identifiers.
+    """
+
+    ANTHROPIC = "anthropic"
+    OPENAI = "openai"
+    DEEPSEEK = "deepseek"
+    GROQ = "groq"
+    TOGETHER = "together"
+    FIREWORKS = "fireworks"
 
 
 class BotType(StrEnum):

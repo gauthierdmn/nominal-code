@@ -4,10 +4,11 @@ set -euo pipefail
 # Delete a SHA-tagged container image from GHCR.
 #
 # Required env vars:
-#   GH_TOKEN    — GitHub token with packages:write permission
-#   IMAGE_TAG   — The tag to find and delete (typically a commit SHA)
+#   GH_TOKEN      — GitHub token with packages:write permission
+#   IMAGE_PACKAGE — The GHCR package name (e.g. nominal-code, nominal-code-anthropic)
+#   IMAGE_TAG     — The tag to find and delete (typically a commit SHA)
 
-PACKAGE="nominal-code"
+PACKAGE="${IMAGE_PACKAGE:?IMAGE_PACKAGE is required}"
 
 VERSION_ID=$(gh api \
   "/user/packages/container/${PACKAGE}/versions" \

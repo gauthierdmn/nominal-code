@@ -1,6 +1,6 @@
 # worker/
 
-Worker bot handler — runs a Claude agent to apply code fixes and push changes.
+Worker bot handler — runs an LLM agent to apply code fixes and push changes.
 
 ## Key concepts
 

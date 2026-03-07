@@ -8,7 +8,8 @@ from datetime import timedelta
 from aiohttp import web
 from environs import Env
 
-from nominal_code.agent.cli.session import SessionQueue, SessionStore
+from nominal_code.agent.cli.job import JobQueue
+from nominal_code.agent.memory import ConversationStore
 from nominal_code.config import Config
 from nominal_code.platforms import build_platforms
 from nominal_code.platforms.base import Platform
@@ -59,14 +60,14 @@ async def _async_main() -> None:
         )
         sys.exit(1)
 
-    session_store: SessionStore = SessionStore()
-    session_queue: SessionQueue = SessionQueue()
+    conversation_store: ConversationStore = ConversationStore()
+    job_queue: JobQueue = JobQueue()
 
     app: web.Application = create_app(
         config=config,
         platforms=platforms,
-        session_store=session_store,
-        session_queue=session_queue,
+        conversation_store=conversation_store,
+        job_queue=job_queue,
     )
 
     enabled: list[str] = list(platforms.keys())

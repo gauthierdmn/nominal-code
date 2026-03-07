@@ -1,6 +1,6 @@
 # Coding Guidelines
 
-Replace this file with your project's coding standards. These guidelines are appended to the system prompt and sent to Claude Code on every invocation.
+Replace this file with your project's coding standards. These guidelines are appended to the system prompt and sent to the agent on every invocation.
 
 ## Example topics to cover
 

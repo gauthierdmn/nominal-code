@@ -5,10 +5,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import pytest_asyncio
 
-from nominal_code.agent.cli.session import SessionQueue, SessionStore
-from nominal_code.config import AgentConfig, ReviewerConfig, WorkerConfig
+from nominal_code.agent.cli.job import JobQueue
+from nominal_code.agent.memory import ConversationStore
+from nominal_code.config import CliAgentConfig, ReviewerConfig, WorkerConfig
 from nominal_code.models import BotType, EventType
-from nominal_code.platforms.base import CommentEvent, LifecycleEvent, PlatformName
+from nominal_code.platforms.base import (
+    CommentEvent,
+    LifecycleEvent,
+    PlatformName,
+    ReviewerPlatform,
+)
 from nominal_code.webhooks.server import _should_process_event, create_app
 
 
@@ -33,7 +39,7 @@ def _make_config(
     )
     config.allowed_users = frozenset(["alice"])
     config.workspace_base_dir = "/tmp/workspaces"
-    config.agent = AgentConfig()
+    config.agent = CliAgentConfig()
     config.reviewer_triggers = frozenset(reviewer_triggers or [])
     config.allowed_repos = frozenset(allowed_repos or [])
     config.pr_title_include_tags = frozenset(pr_title_include_tags or [])
@@ -43,7 +49,7 @@ def _make_config(
 
 
 def _make_github_platform():
-    platform = MagicMock()
+    platform = MagicMock(spec=ReviewerPlatform)
     platform.verify_webhook = MagicMock(return_value=True)
     platform.parse_event = MagicMock(return_value=None)
     platform.post_reaction = AsyncMock()
@@ -66,8 +72,8 @@ def app():
     return create_app(
         config=config,
         platforms=platforms,
-        session_store=SessionStore(),
-        session_queue=SessionQueue(),
+        conversation_store=ConversationStore(),
+        job_queue=JobQueue(),
     )
 
 
@@ -259,8 +265,8 @@ class TestSingleBotConfig:
         app = create_app(
             config=config,
             platforms=platforms,
-            session_store=SessionStore(),
-            session_queue=SessionQueue(),
+            conversation_store=ConversationStore(),
+            job_queue=JobQueue(),
         )
         client = await aiohttp_client(app)
 
@@ -297,8 +303,8 @@ class TestSingleBotConfig:
         app = create_app(
             config=config,
             platforms=platforms,
-            session_store=SessionStore(),
-            session_queue=SessionQueue(),
+            conversation_store=ConversationStore(),
+            job_queue=JobQueue(),
         )
         client = await aiohttp_client(app)
 
@@ -340,8 +346,8 @@ class TestAutoTrigger:
         app = create_app(
             config=config,
             platforms=platforms,
-            session_store=SessionStore(),
-            session_queue=SessionQueue(),
+            conversation_store=ConversationStore(),
+            job_queue=JobQueue(),
         )
         client = await aiohttp_client(app)
 
@@ -391,8 +397,8 @@ class TestAutoTrigger:
         app = create_app(
             config=config,
             platforms=platforms,
-            session_store=SessionStore(),
-            session_queue=SessionQueue(),
+            conversation_store=ConversationStore(),
+            job_queue=JobQueue(),
         )
         client = await aiohttp_client(app)
 
@@ -431,8 +437,8 @@ class TestAutoTrigger:
         app = create_app(
             config=config,
             platforms=platforms,
-            session_store=SessionStore(),
-            session_queue=SessionQueue(),
+            conversation_store=ConversationStore(),
+            job_queue=JobQueue(),
         )
         client = await aiohttp_client(app)
 
@@ -744,8 +750,8 @@ class TestAllowedReposFilter:
         app = create_app(
             config=config,
             platforms=platforms,
-            session_store=SessionStore(),
-            session_queue=SessionQueue(),
+            conversation_store=ConversationStore(),
+            job_queue=JobQueue(),
         )
         client = await aiohttp_client(app)
 
@@ -780,8 +786,8 @@ class TestAllowedReposFilter:
         app = create_app(
             config=config,
             platforms=platforms,
-            session_store=SessionStore(),
-            session_queue=SessionQueue(),
+            conversation_store=ConversationStore(),
+            job_queue=JobQueue(),
         )
         client = await aiohttp_client(app)
 
@@ -811,8 +817,8 @@ class TestAllowedReposFilter:
         app = create_app(
             config=config,
             platforms=platforms,
-            session_store=SessionStore(),
-            session_queue=SessionQueue(),
+            conversation_store=ConversationStore(),
+            job_queue=JobQueue(),
         )
         client = await aiohttp_client(app)
 
@@ -849,8 +855,8 @@ class TestAllowedReposFilter:
         app = create_app(
             config=config,
             platforms=platforms,
-            session_store=SessionStore(),
-            session_queue=SessionQueue(),
+            conversation_store=ConversationStore(),
+            job_queue=JobQueue(),
         )
         client = await aiohttp_client(app)
 

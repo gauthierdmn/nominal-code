@@ -3,19 +3,25 @@ from __future__ import annotations
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from aiohttp import web
 
 from nominal_code.models import COMMENT_EVENT_TYPES, BotType
-from nominal_code.platforms.base import CommentEvent, LifecycleEvent, PullRequestEvent
+from nominal_code.platforms.base import (
+    CommentEvent,
+    LifecycleEvent,
+    PullRequestEvent,
+    ReviewerPlatform,
+)
 from nominal_code.webhooks.dispatch import enqueue_job
 from nominal_code.webhooks.mention import extract_mention
 
 if TYPE_CHECKING:
-    from nominal_code.agent.cli.session import SessionQueue, SessionStore
+    from nominal_code.agent.cli.job import JobQueue
+    from nominal_code.agent.memory import ConversationStore
     from nominal_code.config import Config
-    from nominal_code.platforms.base import Platform, ReviewerPlatform
+    from nominal_code.platforms.base import Platform
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -57,8 +63,8 @@ def _should_process_event(event: PullRequestEvent, config: Config) -> bool:
 def create_app(
     config: Config,
     platforms: dict[str, Platform],
-    session_store: SessionStore,
-    session_queue: SessionQueue,
+    conversation_store: ConversationStore,
+    job_queue: JobQueue,
 ) -> web.Application:
     """
     Create the aiohttp web application with webhook routes.
@@ -66,8 +72,9 @@ def create_app(
     Args:
         config (Config): Application configuration.
         platforms (dict[str, Platform]): Mapping of platform names to clients.
-        session_store (SessionStore): Claude session store.
-        session_queue (SessionQueue): Per-PR job queue.
+        conversation_store (ConversationStore): Conversation store for
+            conversation continuity.
+        job_queue (JobQueue): Per-PR job queue.
 
     Returns:
         web.Application: The configured aiohttp application.
@@ -77,8 +84,8 @@ def create_app(
 
     app["config"] = config
     app["platforms"] = platforms
-    app["session_store"] = session_store
-    app["session_queue"] = session_queue
+    app["conversation_store"] = conversation_store
+    app["job_queue"] = job_queue
 
     app.router.add_get("/health", _handle_health)
 
@@ -120,7 +127,10 @@ def _make_webhook_handler(
     """
 
     async def _handler(request: web.Request) -> web.Response:
-        return await _handle_webhook(request, platform_name)
+        return await _handle_webhook(
+            request=request,
+            platform_name=platform_name,
+        )
 
     return _handler
 
@@ -145,8 +155,8 @@ async def _handle_webhook(
     try:
         config: Config = request.app["config"]
         platform: Platform = request.app["platforms"][platform_name]
-        session_store: SessionStore = request.app["session_store"]
-        session_queue: SessionQueue = request.app["session_queue"]
+        conversation_store: ConversationStore = request.app["conversation_store"]
+        job_queue: JobQueue = request.app["job_queue"]
 
         body: bytes = await request.read()
 
@@ -181,26 +191,30 @@ async def _handle_webhook(
             if not isinstance(event, LifecycleEvent):
                 return web.json_response({"status": "ignored"})
 
+            if not isinstance(platform, ReviewerPlatform):
+                return web.json_response({"status": "ignored"})
+
             lifecycle_event: LifecycleEvent = event
+            reviewer_platform: ReviewerPlatform = platform
 
             async def _auto_trigger_job() -> None:
                 from nominal_code.review.handler import review_and_post
 
-                await platform.ensure_auth()
+                await reviewer_platform.ensure_auth()
 
                 ready_event: LifecycleEvent = replace(
                     lifecycle_event,
-                    clone_url=platform.build_clone_url(
+                    clone_url=reviewer_platform.build_clone_url(
                         lifecycle_event.repo_full_name,
                     ),
                 )
 
                 await review_and_post(
-                    ready_event,
-                    "",
-                    config,
-                    cast("ReviewerPlatform", platform),
-                    session_store,
+                    event=ready_event,
+                    prompt="",
+                    config=config,
+                    platform=reviewer_platform,
+                    conversation_store=conversation_store,
                 )
 
             await enqueue_job(
@@ -208,7 +222,7 @@ async def _handle_webhook(
                 bot_type=BotType.REVIEWER,
                 config=config,
                 platform=platform,
-                session_queue=session_queue,
+                job_queue=job_queue,
                 job=_auto_trigger_job,
             )
 
@@ -254,35 +268,36 @@ async def _handle_webhook(
                 )
 
                 await review_and_fix(
-                    ready_event,
-                    prompt,
-                    config,
-                    platform,
-                    session_store,
+                    event=ready_event,
+                    prompt=prompt,
+                    config=config,
+                    platform=platform,
+                    conversation_store=conversation_store,
                 )
 
-        elif reviewer_prompt is not None:
+        elif reviewer_prompt is not None and isinstance(platform, ReviewerPlatform):
             bot_type = BotType.REVIEWER
             prompt = reviewer_prompt
+            reviewer_platform = platform
 
             async def _job() -> None:
                 from nominal_code.review.handler import review_and_post
 
-                await platform.ensure_auth()
+                await reviewer_platform.ensure_auth()
 
                 ready_event: CommentEvent = replace(
                     comment_event,
-                    clone_url=platform.build_clone_url(
+                    clone_url=reviewer_platform.build_clone_url(
                         comment_event.repo_full_name,
                     ),
                 )
 
                 await review_and_post(
-                    ready_event,
-                    prompt,
-                    config,
-                    cast("ReviewerPlatform", platform),
-                    session_store,
+                    event=ready_event,
+                    prompt=prompt,
+                    config=config,
+                    platform=reviewer_platform,
+                    conversation_store=conversation_store,
                 )
 
         else:
@@ -293,7 +308,7 @@ async def _handle_webhook(
             bot_type=bot_type,
             config=config,
             platform=platform,
-            session_queue=session_queue,
+            job_queue=job_queue,
             job=_job,
         )
 

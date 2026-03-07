@@ -8,7 +8,7 @@ from nominal_code.models import BotType
 from nominal_code.platforms.base import CommentEvent, LifecycleEvent
 
 if TYPE_CHECKING:
-    from nominal_code.agent.cli.session import SessionQueue
+    from nominal_code.agent.cli.job import JobQueue
     from nominal_code.config import Config
     from nominal_code.platforms.base import Platform
 
@@ -22,7 +22,7 @@ async def enqueue_job(
     bot_type: BotType,
     config: Config,
     platform: Platform,
-    session_queue: SessionQueue,
+    job_queue: JobQueue,
     job: Callable[[], Awaitable[None]],
 ) -> None:
     """
@@ -37,7 +37,7 @@ async def enqueue_job(
         bot_type (BotType): Which bot personality to use.
         config (Config): Application configuration.
         platform (Platform): The platform client for API calls.
-        session_queue (SessionQueue): Per-PR job queue.
+        job_queue (JobQueue): Per-PR job queue.
         job (Callable[[], Awaitable[None]]): The async job to enqueue.
     """
 
@@ -80,7 +80,7 @@ async def enqueue_job(
         reaction=EYES_REACTION,
     )
 
-    await session_queue.enqueue(
+    await job_queue.enqueue(
         platform=event.platform,
         repo=event.repo_full_name,
         pr_number=event.pr_number,

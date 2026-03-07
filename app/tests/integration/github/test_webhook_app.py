@@ -10,9 +10,10 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from aiohttp.pytest_plugin import AiohttpClient
 
-from nominal_code.agent.cli.session import SessionQueue, SessionStore
+from nominal_code.agent.cli.job import JobQueue
+from nominal_code.agent.memory import ConversationStore
 from nominal_code.config import (
-    AgentConfig,
+    CliAgentConfig,
     Config,
     ReviewerConfig,
     WorkerConfig,
@@ -92,7 +93,7 @@ def _build_webhook_config(
         webhook_port=0,
         allowed_users=frozenset({ALLOWED_USER}),
         workspace_base_dir=Path(tempfile.mkdtemp()),
-        agent=AgentConfig(use_api=False),
+        agent=CliAgentConfig(),
         coding_guidelines="",
         language_guidelines={},
         cleanup_interval_hours=0,
@@ -160,13 +161,13 @@ async def test_app_auth_reviewer_mention_posts_review(
     platform = GitHubPlatform(auth=auth, webhook_secret=WEBHOOK_SECRET)
 
     config = _build_webhook_config()
-    session_store = SessionStore()
-    session_queue = SessionQueue()
+    conversation_store = ConversationStore()
+    job_queue = JobQueue()
     app = create_app(
         config=config,
         platforms={"github": platform},
-        session_store=session_store,
-        session_queue=session_queue,
+        conversation_store=conversation_store,
+        job_queue=job_queue,
     )
     client = await aiohttp_client(app)
 
@@ -196,7 +197,7 @@ async def test_app_auth_reviewer_mention_posts_review(
         data = await response.json()
         assert data["status"] == "accepted"
 
-        await wait_for_queue_drain(session_queue)
+        await wait_for_queue_drain(job_queue)
 
     assert auth.installation_id == installation_id
     assert auth._cached_token, "App auth should have obtained an installation token"
@@ -224,13 +225,13 @@ async def test_app_auth_lifecycle_auto_trigger(
     config = _build_webhook_config(
         reviewer_triggers=frozenset({EventType.PR_OPENED}),
     )
-    session_store = SessionStore()
-    session_queue = SessionQueue()
+    conversation_store = ConversationStore()
+    job_queue = JobQueue()
     app = create_app(
         config=config,
         platforms={"github": platform},
-        session_store=session_store,
-        session_queue=session_queue,
+        conversation_store=conversation_store,
+        job_queue=job_queue,
     )
     client = await aiohttp_client(app)
 
@@ -261,7 +262,7 @@ async def test_app_auth_lifecycle_auto_trigger(
         data = await response.json()
         assert data["status"] == "accepted"
 
-        await wait_for_queue_drain(session_queue)
+        await wait_for_queue_drain(job_queue)
 
     assert auth.installation_id == installation_id
 

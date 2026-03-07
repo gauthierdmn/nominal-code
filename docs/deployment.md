@@ -9,7 +9,7 @@ cd app
 uv run nominal-code
 ```
 
-The process runs until terminated. It handles multiple concurrent webhook events using asyncio, with per-PR serial processing enforced by the session queue.
+The process runs until terminated. It handles multiple concurrent webhook events using asyncio, with per-PR serial processing enforced by the job queue.
 
 For multi-platform configuration (GitHub + GitLab simultaneously), see [Webhook Mode — Multi-Platform Setup](modes/webhook.md#multi-platform).
 

@@ -16,12 +16,12 @@ Nominal Code is configured via environment variables, `.env` files, CLI flags, a
 | | CI Mode | CLI Mode | Webhook Mode |
 |---|---|---|---|
 | **Trigger** | PR event in CI pipeline | Manual command | PR comment via webhook |
-| **Agent runner** | Anthropic API (direct) | Claude Code CLI | Claude Code CLI |
+| **Agent runner** | LLM provider API (direct) | Claude Code CLI | Claude Code CLI |
 | **Requires Claude Code CLI** | No | Yes | Yes |
-| **Billing** | `ANTHROPIC_API_KEY` (per-token) | Claude Code CLI login (Pro/Max or API key) | Claude Code CLI login (Pro/Max or API key) |
+| **Billing** | Provider API key (per-token) | Claude Code CLI login (Pro/Max or API key) | Claude Code CLI login (Pro/Max or API key) |
 | **Server** | Not needed | Not needed | aiohttp server required |
 | **Auth check** | None (CI handles it) | None (you are the user) | `ALLOWED_USERS` allowlist |
-| **Session continuity** | No (one-shot) | No (one-shot) | Yes (multi-turn per PR) |
+| **Conversation continuity** | No (one-shot) | No (one-shot) | Yes (multi-turn per PR) |
 | **Workspace** | CI runner checkout | Cloned to temp dir | Cloned to `WORKSPACE_BASE_DIR` |
 | **Workspace cleanup** | N/A (CI runner) | Manual | Automatic periodic cleanup |
 | **Bot username** | Not needed | Not needed | Required for `@mention` |

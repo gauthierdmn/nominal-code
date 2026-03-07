@@ -3,9 +3,10 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from nominal_code.agent.providers.registry import PROVIDERS
 from nominal_code.agent.result import AgentResult
 from nominal_code.config import Config
-from nominal_code.models import EventType
+from nominal_code.models import EventType, ProviderName
 from nominal_code.platforms.base import CommentReply, PlatformName, PullRequestEvent
 from nominal_code.platforms.gitlab import GitLabPlatform
 from nominal_code.review.handler import review
@@ -39,7 +40,7 @@ def _build_event(pr_info: PrInfo) -> PullRequestEvent:
 
 
 def _build_ci_config() -> Config:
-    return Config.for_ci()
+    return Config.for_ci(provider=PROVIDERS[ProviderName.ANTHROPIC])
 
 
 async def _run_ci_review(

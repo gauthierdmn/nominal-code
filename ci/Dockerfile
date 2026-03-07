@@ -9,7 +9,8 @@ COPY --from=ghcr.io/astral-sh/uv:0.10.7 /uv /uvx /usr/local/bin/
 COPY app/ /app/
 WORKDIR /app
 
-RUN uv sync --no-dev --frozen
+ARG EXTRAS=all
+RUN uv sync --no-dev --frozen --extra ${EXTRAS}
 
 COPY ci/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

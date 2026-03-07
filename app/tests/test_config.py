@@ -6,13 +6,15 @@ from unittest.mock import patch
 import pytest
 
 from nominal_code.config import (
+    ApiAgentConfig,
+    CliAgentConfig,
     Config,
     _load_file_content,
     _load_language_guidelines,
     _parse_reviewer_triggers,
     _parse_title_tags,
 )
-from nominal_code.models import EventType
+from nominal_code.models import EventType, ProviderName
 
 
 @pytest.fixture
@@ -290,6 +292,33 @@ class TestFromEnv:
 
         assert config.allowed_repos == frozenset()
 
+    def test_from_env_default_agent_is_cli(self, _both_bots_env):
+        config = Config.from_env()
+
+        assert isinstance(config.agent, CliAgentConfig)
+
+    def test_from_env_agent_provider_creates_api_config(self, _both_bots_env):
+        with patch.dict(os.environ, {"AGENT_PROVIDER": "openai"}):
+            config = Config.from_env()
+
+        assert isinstance(config.agent, ApiAgentConfig)
+        assert config.agent.provider.name == ProviderName.OPENAI
+
+    def test_from_env_agent_provider_with_model_override(self, _both_bots_env):
+        with patch.dict(
+            os.environ,
+            {"AGENT_PROVIDER": "anthropic", "AGENT_MODEL": "claude-opus-4-6"},
+        ):
+            config = Config.from_env()
+
+        assert isinstance(config.agent, ApiAgentConfig)
+        assert config.agent.provider.model == "claude-opus-4-6"
+
+    def test_from_env_unknown_agent_provider_raises(self, _both_bots_env):
+        with patch.dict(os.environ, {"AGENT_PROVIDER": "unknown"}):
+            with pytest.raises(ValueError, match="Unknown AGENT_PROVIDER"):
+                Config.from_env()
+
 
 class TestParseReviewerTriggers:
     def test_parse_reviewer_triggers_empty_string(self):
@@ -462,6 +491,38 @@ class TestConfigForCli:
             config = Config.for_cli()
 
         assert config.allowed_repos == frozenset()
+
+    def test_config_for_cli_default_agent_is_cli(self, tmp_path):
+        with patch.dict(os.environ, {"WORKSPACE_BASE_DIR": str(tmp_path)}, clear=True):
+            config = Config.for_cli()
+
+        assert isinstance(config.agent, CliAgentConfig)
+
+    def test_config_for_cli_provider_creates_api_config(self, tmp_path):
+        with patch.dict(os.environ, {"WORKSPACE_BASE_DIR": str(tmp_path)}, clear=True):
+            config = Config.for_cli(provider=ProviderName.OPENAI)
+
+        assert isinstance(config.agent, ApiAgentConfig)
+        assert config.agent.provider.name == ProviderName.OPENAI
+        assert config.agent.provider.model == "gpt-4.1"
+
+    def test_config_for_cli_provider_with_model_override(self, tmp_path):
+        with patch.dict(os.environ, {"WORKSPACE_BASE_DIR": str(tmp_path)}, clear=True):
+            config = Config.for_cli(provider=ProviderName.OPENAI, model="gpt-4o")
+
+        assert isinstance(config.agent, ApiAgentConfig)
+        assert config.agent.provider.model == "gpt-4o"
+
+    def test_config_for_cli_provider_from_env(self, tmp_path):
+        with patch.dict(
+            os.environ,
+            {"WORKSPACE_BASE_DIR": str(tmp_path), "AGENT_PROVIDER": "anthropic"},
+            clear=True,
+        ):
+            config = Config.for_cli()
+
+        assert isinstance(config.agent, ApiAgentConfig)
+        assert config.agent.provider.name == ProviderName.ANTHROPIC
 
 
 class TestParseTitleTags:

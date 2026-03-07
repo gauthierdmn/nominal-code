@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from nominal_code.agent.cli.session import SessionQueue
+from nominal_code.agent.cli.job import JobQueue
 from nominal_code.models import BotType
 from nominal_code.platforms.base import PlatformName
 from tests.integration.github import api as github_api
@@ -66,16 +66,16 @@ def unique_branch_name(prefix: str) -> str:
 
 
 async def wait_for_queue_drain(
-    session_queue: SessionQueue,
+    job_queue: JobQueue,
     timeout: float = 60.0,
 ) -> None:
     """
-    Wait for all consumers in the session queue to finish.
+    Wait for all consumers in the job queue to finish.
 
     Returns immediately if no consumers are present.
 
     Args:
-        session_queue (SessionQueue): The session queue to monitor.
+        job_queue (JobQueue): The job queue to monitor.
         timeout (float): Maximum wait time in seconds.
 
     Raises:
@@ -86,10 +86,10 @@ async def wait_for_queue_drain(
     interval = 0.5
 
     while elapsed < timeout:
-        if not session_queue._consumers:
+        if not job_queue._consumers:
             return
 
-        all_done = all(task.done() for task in session_queue._consumers.values())
+        all_done = all(task.done() for task in job_queue._consumers.values())
 
         if all_done:
             return
@@ -97,25 +97,25 @@ async def wait_for_queue_drain(
         await asyncio.sleep(interval)
         elapsed += interval
 
-    raise TimeoutError("Session queue did not drain within timeout")
+    raise TimeoutError("Job queue did not drain within timeout")
 
 
-def install_enqueue_hook(session_queue: SessionQueue) -> asyncio.Event:
+def install_enqueue_hook(job_queue: JobQueue) -> asyncio.Event:
     """
-    Wrap ``session_queue.enqueue`` to set an event on the first call.
+    Wrap ``job_queue.enqueue`` to set an event on the first call.
 
     Returns an ``asyncio.Event`` that is set the moment any job is
     enqueued. This avoids modifying production code for test observability.
 
     Args:
-        session_queue (SessionQueue): The queue to instrument.
+        job_queue (JobQueue): The queue to instrument.
 
     Returns:
         asyncio.Event: An event that is set when a job is enqueued.
     """
 
     job_enqueued: asyncio.Event = asyncio.Event()
-    original_enqueue = session_queue.enqueue
+    original_enqueue = job_queue.enqueue
 
     async def _hooked_enqueue(
         platform: PlatformName,
@@ -127,14 +127,14 @@ def install_enqueue_hook(session_queue: SessionQueue) -> asyncio.Event:
         await original_enqueue(platform, repo, pr_number, bot_type, job)
         job_enqueued.set()
 
-    session_queue.enqueue = _hooked_enqueue  # type: ignore[method-assign]
+    job_queue.enqueue = _hooked_enqueue  # type: ignore[method-assign]
 
     return job_enqueued
 
 
 async def wait_for_webhook_processing(
     job_enqueued: asyncio.Event,
-    session_queue: SessionQueue,
+    job_queue: JobQueue,
     timeout: float = 120.0,
     attempt_redelivery: Callable[[], Awaitable[None]] | None = None,
 ) -> None:
@@ -150,7 +150,7 @@ async def wait_for_webhook_processing(
 
     Args:
         job_enqueued (asyncio.Event): Event set when a job is enqueued.
-        session_queue (SessionQueue): The session queue to monitor.
+        job_queue (JobQueue): The job queue to monitor.
         timeout (float): Maximum wait time in seconds.
         attempt_redelivery (Callable[[], Awaitable[None]] | None): Optional
             async callback that checks delivery status and requests
@@ -191,7 +191,7 @@ async def wait_for_webhook_processing(
     elapsed: float = asyncio.get_event_loop().time() - start_time
     drain_timeout: float = max(0.0, timeout - elapsed)
 
-    await wait_for_queue_drain(session_queue, timeout=drain_timeout)
+    await wait_for_queue_drain(job_queue, timeout=drain_timeout)
 
 
 async def create_github_branch_with_file(

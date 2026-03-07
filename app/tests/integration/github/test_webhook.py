@@ -10,9 +10,10 @@ import pytest
 from aiohttp import web
 from aiohttp.pytest_plugin import AiohttpClient
 
-from nominal_code.agent.cli.session import SessionQueue, SessionStore
+from nominal_code.agent.cli.job import JobQueue
+from nominal_code.agent.memory import ConversationStore
 from nominal_code.config import (
-    AgentConfig,
+    CliAgentConfig,
     Config,
     ReviewerConfig,
     WorkerConfig,
@@ -65,7 +66,7 @@ def _build_webhook_config(
         webhook_port=0,
         allowed_users=frozenset({ALLOWED_USER}),
         workspace_base_dir=Path(tempfile.mkdtemp()),
-        agent=AgentConfig(use_api=False),
+        agent=CliAgentConfig(),
         coding_guidelines="",
         language_guidelines={},
         cleanup_interval_hours=0,
@@ -116,21 +117,21 @@ def _build_pull_request_payload(
 def _create_test_app(
     token: str,
     config: Config,
-) -> tuple[web.Application, SessionStore, SessionQueue]:
+) -> tuple[web.Application, ConversationStore, JobQueue]:
     platform = GitHubPlatform(
         auth=GitHubPatAuth(token=token),
         webhook_secret=WEBHOOK_SECRET,
     )
-    session_store = SessionStore()
-    session_queue = SessionQueue()
+    conversation_store = ConversationStore()
+    job_queue = JobQueue()
     app = create_app(
         config=config,
         platforms={"github": platform},
-        session_store=session_store,
-        session_queue=session_queue,
+        conversation_store=conversation_store,
+        job_queue=job_queue,
     )
 
-    return app, session_store, session_queue
+    return app, conversation_store, job_queue
 
 
 @pytest.mark.asyncio
@@ -140,7 +141,7 @@ async def test_webhook_reviewer_mention_posts_review(
     aiohttp_client: AiohttpClient,
 ) -> None:
     config = _build_webhook_config()
-    app, session_store, session_queue = _create_test_app(github_token, config)
+    app, conversation_store, job_queue = _create_test_app(github_token, config)
     client = await aiohttp_client(app)
 
     payload = _build_issue_comment_payload(
@@ -168,7 +169,7 @@ async def test_webhook_reviewer_mention_posts_review(
         data = await response.json()
         assert data["status"] == "accepted"
 
-        await wait_for_queue_drain(session_queue)
+        await wait_for_queue_drain(job_queue)
 
     reviews = await fetch_pr_reviews(github_token, GITHUB_TEST_REPO, buggy_pr.number)
     assert len(reviews) >= 1
@@ -182,7 +183,7 @@ async def test_webhook_worker_mention_posts_reply(
     aiohttp_client: AiohttpClient,
 ) -> None:
     config = _build_webhook_config()
-    app, session_store, session_queue = _create_test_app(github_token, config)
+    app, conversation_store, job_queue = _create_test_app(github_token, config)
     client = await aiohttp_client(app)
 
     worker_result = BUGGY_AGENT_RESULT
@@ -218,7 +219,7 @@ async def test_webhook_worker_mention_posts_reply(
         data = await response.json()
         assert data["status"] == "accepted"
 
-        await wait_for_queue_drain(session_queue)
+        await wait_for_queue_drain(job_queue)
 
     comments = await fetch_pr_comments(github_token, GITHUB_TEST_REPO, buggy_pr.number)
     # The worker handler is mocked, so we just assert the job was dispatched.
@@ -235,7 +236,7 @@ async def test_webhook_lifecycle_auto_trigger(
     config = _build_webhook_config(
         reviewer_triggers=frozenset({EventType.PR_OPENED}),
     )
-    app, session_store, session_queue = _create_test_app(github_token, config)
+    app, conversation_store, job_queue = _create_test_app(github_token, config)
     client = await aiohttp_client(app)
 
     payload = _build_pull_request_payload(
@@ -264,7 +265,7 @@ async def test_webhook_lifecycle_auto_trigger(
         data = await response.json()
         assert data["status"] == "accepted"
 
-        await wait_for_queue_drain(session_queue)
+        await wait_for_queue_drain(job_queue)
 
     reviews = await fetch_pr_reviews(github_token, GITHUB_TEST_REPO, buggy_pr.number)
     assert len(reviews) >= 1
@@ -307,7 +308,7 @@ async def test_webhook_unauthorized_user_ignored(
     aiohttp_client: AiohttpClient,
 ) -> None:
     config = _build_webhook_config()
-    app, _, session_queue = _create_test_app(github_token, config)
+    app, _, job_queue = _create_test_app(github_token, config)
     client = await aiohttp_client(app)
 
     payload = _build_issue_comment_payload(
@@ -332,7 +333,7 @@ async def test_webhook_unauthorized_user_ignored(
     data = await response.json()
     assert data["status"] == "accepted"
 
-    assert not session_queue._consumers, "Unauthorized user should not trigger a job"
+    assert not job_queue._consumers, "Unauthorized user should not trigger a job"
 
     reviews = await fetch_pr_reviews(github_token, GITHUB_TEST_REPO, buggy_pr.number)
     review_with_findings = [review for review in reviews if review.get("body")]

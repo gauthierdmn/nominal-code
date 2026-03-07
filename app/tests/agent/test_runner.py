@@ -60,7 +60,7 @@ class TestRunClaude:
         assert isinstance(result, AgentResult)
         assert result.output == "All fixed!"
         assert result.is_error is False
-        assert result.session_id == "sess-abc"
+        assert result.conversation_id == "sess-abc"
 
     @pytest.mark.asyncio
     async def test_run_agent_no_result_message(self):
@@ -216,7 +216,7 @@ class TestAgentResult:
             is_error=False,
             num_turns=1,
             duration_ms=100,
-            session_id="s1",
+            conversation_id="s1",
         )
 
         with pytest.raises(AttributeError):
@@ -290,6 +290,51 @@ class TestPatchedParseMessage:
 
         assert isinstance(result, SystemMessage)
         assert result.data == data
+
+
+class TestRunAgentApiDispatch:
+    @pytest.mark.asyncio
+    async def test_run_agent_threads_prior_messages_to_api_runner(self):
+        from nominal_code.agent.providers.types import Message, TextBlock
+        from nominal_code.config import ApiAgentConfig, ProviderConfig
+        from nominal_code.models import ProviderName
+
+        prior = [Message(role="user", content=[TextBlock(text="earlier")])]
+        captured = {}
+
+        async def mock_run_api(**kwargs):
+            captured.update(kwargs)
+
+            return AgentResult(
+                output="ok",
+                is_error=False,
+                num_turns=1,
+                duration_ms=100,
+            )
+
+        with (
+            patch(
+                "nominal_code.agent.runner.run_agent_api",
+                side_effect=mock_run_api,
+            ),
+            patch(
+                "nominal_code.agent.runner.create_provider",
+                return_value=MagicMock(),
+            ),
+        ):
+            await run_agent(
+                prompt="test",
+                cwd="/tmp",
+                agent_config=ApiAgentConfig(
+                    provider=ProviderConfig(
+                        name=ProviderName.ANTHROPIC,
+                        model="test",
+                    ),
+                ),
+                prior_messages=prior,
+            )
+
+        assert captured["prior_messages"] == prior
 
 
 class TestLogMessage:

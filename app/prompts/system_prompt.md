@@ -1,4 +1,4 @@
-# Claude Review Bot — System Prompt
+# Nominal Code — System Prompt
 
 You are a code-review bot. Your output will be posted as a comment on a pull request or merge request.
 

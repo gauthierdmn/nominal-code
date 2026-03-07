@@ -1,7 +1,24 @@
 spec:
   inputs:
+    provider:
+      description: "LLM provider to use (anthropic, openai, deepseek, groq, together, fireworks)"
+      default: "anthropic"
+      options:
+        - anthropic
+        - openai
+        - deepseek
+        - groq
+        - together
+        - fireworks
+    image:
+      description: >
+        Docker image to use. The default all-in-one image works with any provider.
+        For a smaller footprint, use a provider-specific variant:
+        anthropic -> ghcr.io/gauthierdmn/nominal-code-anthropic:latest,
+        openai/deepseek/groq/together/fireworks -> ghcr.io/gauthierdmn/nominal-code-openai:latest
+      default: "ghcr.io/gauthierdmn/nominal-code:latest"
     model:
-      description: "Claude model to use (e.g. claude-sonnet-4-20250514)"
+      description: "Model to use (e.g. claude-sonnet-4-20250514, gpt-4.1). Defaults to the provider's default model."
       default: ""
     max_turns:
       description: "Maximum agentic turns for the reviewer (0 = unlimited)"
@@ -20,8 +37,9 @@ spec:
 
 nominal-code-review:
   stage: $[[ inputs.stage ]]
-  image: ghcr.io/gauthierdmn/nominal-code:latest
+  image: $[[ inputs.image ]]
   variables:
+    AGENT_PROVIDER: $[[ inputs.provider ]]
     INPUT_MODEL: $[[ inputs.model ]]
     INPUT_MAX_TURNS: $[[ inputs.max_turns ]]
     INPUT_PROMPT: $[[ inputs.prompt ]]
