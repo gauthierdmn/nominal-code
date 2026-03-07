@@ -10,8 +10,8 @@ DEFAULT_DOCKER_IMAGE = "ghcr.io/gauthierdmn/nominal-code:latest"
 DEFAULT_PROVIDER = "anthropic"
 
 TEST_MODEL_OVERRIDES: dict[ProviderName, str] = {
-    ProviderName.ANTHROPIC: "claude-haiku-4-5-20251001",
-    ProviderName.OPENAI: "gpt-4.1-mini",
+    ProviderName.ANTHROPIC: "claude-3-haiku-20240307",
+    ProviderName.OPENAI: "gpt-4.1-nano",
 }
 
 

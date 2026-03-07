@@ -66,19 +66,21 @@ class TestMain:
     def test_main_calls_asyncio_run_when_no_review_arg(self):
         with patch.object(sys, "argv", ["nominal-code"]):
             with patch("nominal_code.main.setup_logging"):
-                with patch("nominal_code.main.asyncio.run") as mock_run:
-                    main()
+                with patch("nominal_code.main._async_main", new=MagicMock()):
+                    with patch("nominal_code.main.asyncio.run") as mock_run:
+                        main()
 
-                    mock_run.assert_called_once()
+                        mock_run.assert_called_once()
 
     def test_main_handles_keyboard_interrupt_gracefully(self):
         with patch.object(sys, "argv", ["nominal-code"]):
             with patch("nominal_code.main.setup_logging"):
-                with patch(
-                    "nominal_code.main.asyncio.run",
-                    side_effect=KeyboardInterrupt,
-                ):
-                    main()
+                with patch("nominal_code.main._async_main", new=MagicMock()):
+                    with patch(
+                        "nominal_code.main.asyncio.run",
+                        side_effect=KeyboardInterrupt,
+                    ):
+                        main()
 
     def test_main_calls_setup_logging_before_asyncio_run(self):
         call_order = []
@@ -88,11 +90,12 @@ class TestMain:
                 "nominal_code.main.setup_logging",
                 side_effect=lambda: call_order.append("setup_logging"),
             ):
-                with patch(
-                    "nominal_code.main.asyncio.run",
-                    side_effect=lambda *a, **kw: call_order.append("asyncio_run"),
-                ):
-                    main()
+                with patch("nominal_code.main._async_main", new=MagicMock()):
+                    with patch(
+                        "nominal_code.main.asyncio.run",
+                        side_effect=lambda *a, **kw: call_order.append("asyncio_run"),
+                    ):
+                        main()
 
         assert call_order == ["setup_logging", "asyncio_run"]
 
