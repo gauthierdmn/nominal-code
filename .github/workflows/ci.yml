@@ -59,7 +59,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        extras: [anthropic, openai]
+        extras: [anthropic, openai, google]
     name: unit-test (${{ matrix.extras }} only)
     defaults:
       run:
@@ -113,6 +113,8 @@ jobs:
             image: nominal-code-anthropic
           - extras: openai
             image: nominal-code-openai
+          - extras: google
+            image: nominal-code-google
           - extras: all
             image: nominal-code
     permissions:
@@ -151,6 +153,8 @@ jobs:
             provider: anthropic
           - image: nominal-code-openai
             provider: openai
+          - image: nominal-code-google
+            provider: google
     name: integration-test-pipeline (${{ matrix.image }})
     defaults:
       run:
@@ -174,6 +178,7 @@ jobs:
           TEST_GITLAB_TOKEN: ${{ secrets.TEST_GITLAB_TOKEN }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
         run: uv run pytest tests/integration/ -m integration_pipeline -v
 
   integration-test-webhook-server:
@@ -222,7 +227,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          for package in nominal-code nominal-code-anthropic nominal-code-openai; do
+          for package in nominal-code nominal-code-anthropic nominal-code-openai nominal-code-google; do
             IMAGE_PACKAGE="$package" IMAGE_TAG="${{ github.sha }}" scripts/ci/cleanup-test-image.sh
           done
 
@@ -247,7 +252,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        image: [nominal-code, nominal-code-anthropic, nominal-code-openai]
+        image: [nominal-code, nominal-code-anthropic, nominal-code-openai, nominal-code-google]
     permissions:
       packages: write
 
@@ -271,7 +276,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        image: [nominal-code, nominal-code-anthropic, nominal-code-openai]
+        image: [nominal-code, nominal-code-anthropic, nominal-code-openai, nominal-code-google]
     permissions:
       packages: write
 

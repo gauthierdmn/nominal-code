@@ -13,6 +13,7 @@ DEFAULT_PROVIDER = "anthropic"
 TEST_MODEL_OVERRIDES: dict[ProviderName, str] = {
     ProviderName.ANTHROPIC: "claude-3-haiku-20240307",
     ProviderName.OPENAI: "gpt-4.1-nano",
+    ProviderName.GOOGLE: "gemini-2.5-flash-lite",
 }
 
 

@@ -12,7 +12,7 @@ Minimal steps to go from zero to a working review.
 
 === "CI (fastest)"
 
-    Add your LLM provider API key as a repository secret, then create a workflow file. The example below uses Anthropic — see [CI Mode](modes/ci.md) for other providers (OpenAI, DeepSeek, Groq, etc.).
+    Add your LLM provider API key as a repository secret, then create a workflow file. The example below uses Anthropic — see [CI Mode](modes/ci.md) for other providers (OpenAI, Google Gemini, DeepSeek, Groq, etc.).
 
     ```yaml
     # .github/workflows/review.yml
