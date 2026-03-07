@@ -165,10 +165,13 @@ def _to_api_contents(messages: list[Message]) -> list[genai_types.Content]:
                     block.tool_use_id,
                     block.tool_use_id,
                 )
+                result_key: str = "error" if block.is_error else "result"
                 parts.append(
                     genai_types.Part.from_function_response(
                         name=function_name,
-                        response={"result": block.content},
+                        response={result_key: block.content},
+                    ),
+                )
                     ),
                 )
 
