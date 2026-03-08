@@ -61,6 +61,13 @@ class GoogleProvider:
 
         self._client: genai.Client = genai.Client()
 
+    async def close(self) -> None:
+        """
+        Close the underlying Google GenAI client.
+        """
+
+        await self._client.aio.aclose()
+
     async def send(
         self,
         messages: list[Message],

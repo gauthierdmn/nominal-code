@@ -91,6 +91,13 @@ class OpenAIProvider:
         )
         self._provider_name: ProviderName = provider_name
 
+    async def close(self) -> None:
+        """
+        Close the underlying OpenAI HTTP client.
+        """
+
+        await self._client.close()
+
     async def send(
         self,
         messages: list[Message],

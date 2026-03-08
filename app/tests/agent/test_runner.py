@@ -1,5 +1,5 @@
 # type: ignore
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from claude_agent_sdk import ResultMessage, SystemMessage
@@ -319,7 +319,7 @@ class TestRunAgentApiDispatch:
             ),
             patch(
                 "nominal_code.agent.runner.create_provider",
-                return_value=MagicMock(),
+                return_value=AsyncMock(),
             ),
         ):
             await run_agent(

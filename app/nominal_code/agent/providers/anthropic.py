@@ -72,6 +72,13 @@ class AnthropicProvider:
 
         self._client: anthropic.AsyncAnthropic = _anthropic.AsyncAnthropic()
 
+    async def close(self) -> None:
+        """
+        Close the underlying Anthropic HTTP client.
+        """
+
+        await self._client.close()
+
     async def send(
         self,
         messages: list[Message],
