@@ -5,8 +5,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nominal_code.ci import _load_platform_ci, run_ci_review
-from nominal_code.models import AgentReview, EventType, ReviewFinding
+from nominal_code.agent.cost import CostSummary
+from nominal_code.ci import (
+    _build_ci_config,
+    _format_cost_summary,
+    _load_platform_ci,
+    run_ci_review,
+)
+from nominal_code.config import ApiAgentConfig
+from nominal_code.models import AgentReview, EventType, ProviderName, ReviewFinding
 from nominal_code.platforms.base import PlatformName, PullRequestEvent
 from nominal_code.review.handler import ReviewResult
 
@@ -69,6 +76,157 @@ def _make_review_result(
         effective_summary=summary,
         raw_output=raw_output,
     )
+
+
+class TestBuildCiConfig:
+    def test_defaults_to_anthropic(self):
+        env = {
+            "INPUT_MODEL": "",
+            "INPUT_MAX_TURNS": "0",
+            "INPUT_CODING_GUIDELINES": "",
+        }
+
+        with patch.dict(os.environ, env, clear=False):
+            config = _build_ci_config()
+
+        assert isinstance(config.agent, ApiAgentConfig)
+        assert config.agent.provider.name == ProviderName.ANTHROPIC
+
+    def test_custom_provider(self):
+        env = {
+            "AGENT_PROVIDER": "openai",
+            "INPUT_MODEL": "",
+            "INPUT_MAX_TURNS": "0",
+            "INPUT_CODING_GUIDELINES": "",
+        }
+
+        with patch.dict(os.environ, env, clear=False):
+            config = _build_ci_config()
+
+        assert isinstance(config.agent, ApiAgentConfig)
+        assert config.agent.provider.name == ProviderName.OPENAI
+
+    def test_invalid_provider_raises(self):
+        env = {
+            "AGENT_PROVIDER": "nonexistent",
+            "INPUT_MODEL": "",
+            "INPUT_MAX_TURNS": "0",
+            "INPUT_CODING_GUIDELINES": "",
+        }
+
+        with patch.dict(os.environ, env, clear=False):
+            with pytest.raises(ValueError, match="nonexistent"):
+                _build_ci_config()
+
+    def test_invalid_max_turns_defaults_to_zero(self):
+        env = {
+            "INPUT_MODEL": "",
+            "INPUT_MAX_TURNS": "not-a-number",
+            "INPUT_CODING_GUIDELINES": "",
+        }
+
+        with patch.dict(os.environ, env, clear=False):
+            config = _build_ci_config()
+
+        assert config.agent.max_turns == 0
+
+    def test_custom_max_turns(self):
+        env = {
+            "INPUT_MODEL": "",
+            "INPUT_MAX_TURNS": "5",
+            "INPUT_CODING_GUIDELINES": "",
+        }
+
+        with patch.dict(os.environ, env, clear=False):
+            config = _build_ci_config()
+
+        assert config.agent.max_turns == 5
+
+
+class TestFormatCostSummary:
+    def test_none_returns_empty(self):
+        result = _format_cost_summary(None)
+
+        assert result == ""
+
+    def test_includes_model_and_provider(self):
+        cost = CostSummary(
+            model="gpt-4.1",
+            provider=ProviderName.OPENAI,
+            total_input_tokens=100,
+            total_output_tokens=50,
+        )
+
+        result = _format_cost_summary(cost)
+
+        assert "gpt-4.1" in result
+        assert "openai" in result
+
+    def test_includes_token_counts(self):
+        cost = CostSummary(
+            total_input_tokens=1000,
+            total_output_tokens=500,
+        )
+
+        result = _format_cost_summary(cost)
+
+        assert "1,000 in" in result
+        assert "500 out" in result
+
+    def test_includes_cache_read_tokens(self):
+        cost = CostSummary(
+            total_input_tokens=1000,
+            total_output_tokens=500,
+            total_cache_read_tokens=200,
+        )
+
+        result = _format_cost_summary(cost)
+
+        assert "cache read: 200" in result
+
+    def test_omits_cache_read_when_zero(self):
+        cost = CostSummary(
+            total_input_tokens=1000,
+            total_output_tokens=500,
+            total_cache_read_tokens=0,
+        )
+
+        result = _format_cost_summary(cost)
+
+        assert "cache read" not in result
+
+    def test_includes_cost_usd(self):
+        cost = CostSummary(
+            total_input_tokens=100,
+            total_output_tokens=50,
+            total_cost_usd=0.0123,
+        )
+
+        result = _format_cost_summary(cost)
+
+        assert "$0.0123" in result
+
+    def test_includes_api_calls(self):
+        cost = CostSummary(
+            total_input_tokens=100,
+            total_output_tokens=50,
+            num_api_calls=3,
+        )
+
+        result = _format_cost_summary(cost)
+
+        assert "API calls: 3" in result
+
+    def test_omits_api_calls_when_zero(self):
+        cost = CostSummary(
+            total_input_tokens=100,
+            total_output_tokens=50,
+            num_api_calls=0,
+        )
+
+        result = _format_cost_summary(cost)
+
+        assert "API calls" not in result
 
 
 class TestLoadPlatformCi:

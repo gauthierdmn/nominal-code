@@ -97,6 +97,84 @@ class ToolDefinition(TypedDict):
 
 
 @dataclass(frozen=True)
+class ModelPricing:
+    """
+    Per-token pricing for a model.
+
+    All values are in dollars per token (not per million tokens).
+
+    Attributes:
+        input_per_token (float): Cost per input token.
+        output_per_token (float): Cost per output token.
+        cache_write_per_token (float): Cost per cache creation token.
+        cache_read_per_token (float): Cost per cache read token.
+    """
+
+    input_per_token: float
+    output_per_token: float
+    cache_write_per_token: float = 0.0
+    cache_read_per_token: float = 0.0
+
+
+@dataclass(frozen=True)
+class TokenUsage:
+    """
+    Token counts from a single LLM API call.
+
+    Attributes:
+        input_tokens (int): Number of input tokens.
+        output_tokens (int): Number of output tokens.
+        cache_creation_input_tokens (int): Tokens written to cache.
+        cache_read_input_tokens (int): Tokens read from cache.
+    """
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_creation_input_tokens: int = 0
+    cache_read_input_tokens: int = 0
+
+    def compute_cost(self, pricing: ModelPricing) -> float:
+        """
+        Compute the dollar cost for this usage.
+
+        Args:
+            pricing (ModelPricing): Per-token pricing for the model.
+
+        Returns:
+            float: Cost in USD.
+        """
+
+        return (
+            self.input_tokens * pricing.input_per_token
+            + self.output_tokens * pricing.output_per_token
+            + self.cache_creation_input_tokens * pricing.cache_write_per_token
+            + self.cache_read_input_tokens * pricing.cache_read_per_token
+        )
+
+    def __add__(self, other: TokenUsage) -> TokenUsage:
+        """
+        Sum two TokenUsage instances.
+
+        Args:
+            other (TokenUsage): The other usage to add.
+
+        Returns:
+            TokenUsage: Combined usage.
+        """
+
+        return TokenUsage(
+            input_tokens=self.input_tokens + other.input_tokens,
+            output_tokens=self.output_tokens + other.output_tokens,
+            cache_creation_input_tokens=(
+                self.cache_creation_input_tokens + other.cache_creation_input_tokens
+            ),
+            cache_read_input_tokens=(
+                self.cache_read_input_tokens + other.cache_read_input_tokens
+            ),
+        )
+
+
+@dataclass(frozen=True)
 class LLMResponse:
     """
     The result of a single LLM API call.
@@ -107,8 +185,11 @@ class LLMResponse:
         response_id (str | None): Provider-assigned response ID for
             conversation continuity (e.g. OpenAI Responses API). ``None``
             when the provider does not support server-side chaining.
+        usage (TokenUsage | None): Token usage for this call. ``None``
+            when the provider does not report usage.
     """
 
     content: list[TextBlock | ToolUseBlock]
     stop_reason: StopReason
     response_id: str | None = None
+    usage: TokenUsage | None = None

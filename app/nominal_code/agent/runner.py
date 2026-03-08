@@ -60,6 +60,7 @@ async def run_agent(
             system_prompt=system_prompt,
             allowed_tools=allowed_tools,
             prior_messages=prior_messages,
+            provider_name=agent_config.provider.name,
         )
 
     return await run_agent_cli(

@@ -12,6 +12,7 @@ pytest.importorskip("openai")
 
 from nominal_code.agent.providers.openai import (
     OpenAIProvider,
+    _responses_to_llm_response,
     _to_api_messages,
     _to_api_tools,
     _to_llm_response,
@@ -223,6 +224,109 @@ class TestToLlmResponse:
 
         assert isinstance(result.content[0], ToolUseBlock)
         assert result.content[0].input == {}
+
+
+class TestToLlmResponseUsage:
+    def test_extracts_usage_from_chat_completions(self):
+        choice = MagicMock()
+        choice.message.content = "Hello!"
+        choice.message.tool_calls = None
+        choice.finish_reason = "stop"
+
+        response = MagicMock()
+        response.choices = [choice]
+        response.usage.prompt_tokens = 100
+        response.usage.completion_tokens = 50
+
+        result = _to_llm_response(response)
+
+        assert result.usage is not None
+        assert result.usage.input_tokens == 100
+        assert result.usage.output_tokens == 50
+
+    def test_no_usage_from_chat_completions(self):
+        choice = MagicMock()
+        choice.message.content = "Hello!"
+        choice.message.tool_calls = None
+        choice.finish_reason = "stop"
+
+        response = MagicMock()
+        response.choices = [choice]
+        response.usage = None
+
+        result = _to_llm_response(response)
+
+        assert result.usage is None
+
+
+class TestResponsesToLlmResponseUsage:
+    def test_extracts_usage_from_responses_api(self):
+        from openai.types.responses import (
+            Response,
+            ResponseOutputMessage,
+            ResponseOutputText,
+            ResponseUsage,
+        )
+        from openai.types.responses.response_usage import (
+            InputTokensDetails,
+            OutputTokensDetails,
+        )
+
+        text_part = ResponseOutputText(
+            type="output_text",
+            text="Hello!",
+            annotations=[],
+        )
+        message_item = ResponseOutputMessage(
+            id="msg_1",
+            type="message",
+            role="assistant",
+            content=[text_part],
+            status="completed",
+        )
+        usage = ResponseUsage(
+            input_tokens=200,
+            output_tokens=80,
+            total_tokens=280,
+            input_tokens_details=InputTokensDetails(cached_tokens=0),
+            output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
+        )
+        response = Response(
+            id="resp_1",
+            created_at=0,
+            model="gpt-4.1",
+            object="response",
+            output=[message_item],
+            parallel_tool_calls=True,
+            tool_choice="auto",
+            tools=[],
+            usage=usage,
+        )
+
+        result = _responses_to_llm_response(response)
+
+        assert result.usage is not None
+        assert result.usage.input_tokens == 200
+        assert result.usage.output_tokens == 80
+
+    def test_no_usage_from_responses_api(self):
+        from openai.types.responses import Response
+
+        response = Response(
+            id="resp_1",
+            created_at=0,
+            model="gpt-4.1",
+            object="response",
+            output=[],
+            parallel_tool_calls=True,
+            tool_choice="auto",
+            tools=[],
+            usage=None,
+        )
+
+        result = _responses_to_llm_response(response)
+
+        assert result.usage is None
 
 
 class TestOpenAIProviderSend:

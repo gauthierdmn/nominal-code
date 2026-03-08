@@ -16,6 +16,7 @@ from nominal_code.agent.providers.types import (
     Message,
     StopReason,
     TextBlock,
+    TokenUsage,
     ToolDefinition,
     ToolResultBlock,
     ToolUseBlock,
@@ -32,6 +33,7 @@ if TYPE_CHECKING:
         ChatCompletionToolParam,
     )
     from openai.types.chat.chat_completion import Choice
+    from openai.types.responses import Response as OpenAIResponse
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -276,6 +278,7 @@ class OpenAIProvider:
             content=llm_response.content,
             stop_reason=llm_response.stop_reason,
             response_id=response.id,
+            usage=llm_response.usage,
         )
 
 
@@ -446,10 +449,25 @@ def _to_llm_response(response: ChatCompletion) -> LLMResponse:
     else:
         stop_reason = StopReason.END_TURN
 
-    return LLMResponse(content=content, stop_reason=stop_reason)
+    usage: TokenUsage | None = None
+
+    if response.usage is not None:
+        cached_tokens: int = 0
+        prompt_details = response.usage.prompt_tokens_details
+
+        if prompt_details is not None and prompt_details.cached_tokens is not None:
+            cached_tokens = prompt_details.cached_tokens
+
+        usage = TokenUsage(
+            input_tokens=response.usage.prompt_tokens or 0,
+            output_tokens=response.usage.completion_tokens or 0,
+            cache_read_input_tokens=cached_tokens,
+        )
+
+    return LLMResponse(content=content, stop_reason=stop_reason, usage=usage)
 
 
-def _responses_to_llm_response(response: object) -> LLMResponse:
+def _responses_to_llm_response(response: OpenAIResponse) -> LLMResponse:
     """
     Convert an OpenAI Responses API response to canonical LLMResponse.
 
@@ -457,48 +475,40 @@ def _responses_to_llm_response(response: object) -> LLMResponse:
     Output items contain message content and function calls.
 
     Args:
-        response (object): The OpenAI Responses API response object.
+        response (OpenAIResponse): The OpenAI Responses API response object.
 
     Returns:
         LLMResponse: Canonical response.
     """
 
+    from openai.types.responses import (
+        ResponseFunctionToolCall,
+        ResponseOutputMessage,
+        ResponseOutputText,
+    )
+
     content: list[TextBlock | ToolUseBlock] = []
     has_tool_calls: bool = False
 
-    output_items: list[object] = getattr(response, "output", [])
+    for item in response.output:
+        if isinstance(item, ResponseOutputMessage):
+            for part in item.content:
+                if isinstance(part, ResponseOutputText) and part.text:
+                    content.append(TextBlock(text=part.text))
 
-    for item in output_items:
-        item_type: str = getattr(item, "type", "")
-
-        if item_type == "message":
-            message_content: list[object] = getattr(item, "content", [])
-
-            for part in message_content:
-                part_type: str = getattr(part, "type", "")
-
-                if part_type == "output_text":
-                    text: str = getattr(part, "text", "")
-
-                    if text:
-                        content.append(TextBlock(text=text))
-
-        elif item_type == "function_call":
-            call_id: str = getattr(item, "call_id", "")
-            name: str = getattr(item, "name", "")
-            arguments_raw: str = getattr(item, "arguments", "{}")
+        elif isinstance(item, ResponseFunctionToolCall):
             arguments: dict[str, Any] = {}
 
             try:
-                arguments = json.loads(arguments_raw)
+                arguments = json.loads(item.arguments)
             except (json.JSONDecodeError, TypeError):
                 logger.warning(
                     "Failed to parse Responses API tool call arguments for %s",
-                    name,
+                    item.name,
                 )
 
             content.append(
-                ToolUseBlock(id=call_id, name=name, input=arguments),
+                ToolUseBlock(id=item.call_id, name=item.name, input=arguments),
             )
             has_tool_calls = True
 
@@ -507,4 +517,18 @@ def _responses_to_llm_response(response: object) -> LLMResponse:
     else:
         stop_reason = StopReason.END_TURN
 
-    return LLMResponse(content=content, stop_reason=stop_reason)
+    usage: TokenUsage | None = None
+
+    if response.usage is not None:
+        cached_tokens: int = 0
+
+        if response.usage.input_tokens_details is not None:
+            cached_tokens = response.usage.input_tokens_details.cached_tokens
+
+        usage = TokenUsage(
+            input_tokens=response.usage.input_tokens,
+            output_tokens=response.usage.output_tokens,
+            cache_read_input_tokens=cached_tokens,
+        )
+
+    return LLMResponse(content=content, stop_reason=stop_reason, usage=usage)

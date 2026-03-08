@@ -1,0 +1,45 @@
+name: Update Model Pricing
+
+on:
+  schedule:
+    - cron: "0 9 * * 1"  # Every Monday at 9:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-pricing:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        working-directory: app
+        run: uv sync --group dev
+
+      - name: Fetch latest pricing
+        working-directory: app
+        run: uv run python ../scripts/update_pricing.py
+
+      - name: Check for changes
+        id: diff
+        run: |
+          git diff --quiet app/nominal_code/agent/data/pricing.json && echo "changed=false" >> "$GITHUB_OUTPUT" || echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Create pull request
+        if: steps.diff.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: chore/update-model-pricing
+          commit-message: "chore: update model pricing from LiteLLM"
+          title: "chore: update model pricing from LiteLLM"
+          body: |
+            Automated update of `app/nominal_code/agent/pricing.json` from the
+            [LiteLLM pricing database](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json).
+          labels: dependencies

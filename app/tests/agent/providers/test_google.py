@@ -262,6 +262,41 @@ class TestToLlmResponse:
         assert result.content[1].id == "call_1"
 
 
+class TestToLlmResponseUsage:
+    def test_extracts_usage_metadata(self):
+        mock_response = MagicMock()
+        part = MagicMock()
+        part.function_call = None
+        part.text = "Hello!"
+        candidate = MagicMock()
+        candidate.content.parts = [part]
+        candidate.finish_reason = "STOP"
+        mock_response.candidates = [candidate]
+        mock_response.usage_metadata.prompt_token_count = 150
+        mock_response.usage_metadata.candidates_token_count = 75
+
+        result = _to_llm_response(mock_response)
+
+        assert result.usage is not None
+        assert result.usage.input_tokens == 150
+        assert result.usage.output_tokens == 75
+
+    def test_null_usage_metadata(self):
+        mock_response = MagicMock()
+        part = MagicMock()
+        part.function_call = None
+        part.text = "Hello!"
+        candidate = MagicMock()
+        candidate.content.parts = [part]
+        candidate.finish_reason = "STOP"
+        mock_response.candidates = [candidate]
+        mock_response.usage_metadata = None
+
+        result = _to_llm_response(mock_response)
+
+        assert result.usage is None
+
+
 def _make_provider():
     with patch("google.genai.Client"):
         return GoogleProvider()

@@ -30,6 +30,7 @@ from nominal_code.platforms.base import (
 from nominal_code.workspace.setup import create_workspace, resolve_branch
 
 if TYPE_CHECKING:
+    from nominal_code.agent.cost import CostSummary
     from nominal_code.agent.memory import ConversationStore
     from nominal_code.agent.result import AgentResult
     from nominal_code.config import Config
@@ -93,6 +94,7 @@ class ReviewResult:
         rejected_findings (list[ReviewFinding]): Findings on lines outside the diff.
         effective_summary (str): Summary with rejected findings appended.
         raw_output (str): The raw agent output text.
+        cost (CostSummary | None): Cost information from the agent invocation.
     """
 
     agent_review: AgentReview | None
@@ -100,6 +102,7 @@ class ReviewResult:
     rejected_findings: list[ReviewFinding]
     effective_summary: str
     raw_output: str
+    cost: CostSummary | None = None
 
 
 async def review(
@@ -294,13 +297,24 @@ async def review(
         rejected_findings=rejected_findings,
     )
 
+    cost_str: str = ""
+
+    if result.cost is not None and result.cost.total_cost_usd is not None:
+        cost_usd: float = result.cost.total_cost_usd
+        tokens_in: int = result.cost.total_input_tokens
+        tokens_out: int = result.cost.total_output_tokens
+        cost_str = (
+            f", cost=${cost_usd:.4f}, tokens_in={tokens_in}, tokens_out={tokens_out}"
+        )
+
     logger.info(
-        "Reviewer finished for %s#%d (findings=%d, turns=%d, duration=%dms)",
+        "Reviewer finished for %s#%d (findings=%d, turns=%d, duration=%dms%s)",
         event.repo_full_name,
         event.pr_number,
         len(review_result.findings),
         result.num_turns,
         result.duration_ms,
+        cost_str,
     )
 
     return ReviewResult(
@@ -309,6 +323,7 @@ async def review(
         rejected_findings=rejected_findings,
         effective_summary=effective_summary,
         raw_output=result.output,
+        cost=result.cost,
     )
 
 

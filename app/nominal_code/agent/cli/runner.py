@@ -23,7 +23,9 @@ from claude_agent_sdk.types import (
     ToolUseBlock,
 )
 
+from nominal_code.agent.cost import CostSummary
 from nominal_code.agent.result import AgentResult
+from nominal_code.models import ProviderName
 
 CONVERSATION_ID_INIT_SUBTYPE: str = "init"
 MAX_TOOL_RESULT_LOG_LENGTH: int = 500
@@ -132,12 +134,31 @@ async def run_agent_cli(
             output: str = message.result or "Done, no output."
             returned_conversation_id = message.session_id or returned_conversation_id
 
+            cli_cost: CostSummary | None = None
+            usage_dict: dict[str, Any] | None = getattr(message, "usage", None)
+
+            if message.total_cost_usd is not None or usage_dict:
+                cli_cost = CostSummary(
+                    total_input_tokens=(usage_dict or {}).get("input_tokens", 0),
+                    total_output_tokens=(usage_dict or {}).get("output_tokens", 0),
+                    total_cache_creation_tokens=(usage_dict or {}).get(
+                        "cache_creation_input_tokens", 0
+                    ),
+                    total_cache_read_tokens=(usage_dict or {}).get(
+                        "cache_read_input_tokens", 0
+                    ),
+                    total_cost_usd=message.total_cost_usd,
+                    provider=ProviderName.ANTHROPIC,
+                    model="",
+                )
+
             result = AgentResult(
                 output=output,
                 is_error=message.is_error,
                 num_turns=message.num_turns,
                 duration_ms=message.duration_ms,
                 conversation_id=returned_conversation_id,
+                cost=cli_cost,
             )
 
     if result is not None:
