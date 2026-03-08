@@ -162,19 +162,32 @@ log "Created branch: $BRANCH"
 
 sleep 2
 
-curl -sf -X PUT \
+EXISTING_SHA=$(curl -s \
+    -H "$AUTH_HEADER" \
+    "$GITHUB_API/repos/$REPO/contents/src/calculator.py?ref=$BRANCH" | jq -r '.sha // empty')
+
+PUT_BODY="{\"message\":\"test: add buggy calculator\",\"content\":\"$BUGGY_CONTENT_B64\",\"branch\":\"$BRANCH\""
+if [ -n "$EXISTING_SHA" ]; then
+    PUT_BODY="$PUT_BODY,\"sha\":\"$EXISTING_SHA\""
+    log "Updating existing file (sha: $EXISTING_SHA)"
+fi
+PUT_BODY="$PUT_BODY}"
+
+PUT_RESPONSE=$(curl -s -w "\n%{http_code}" -X PUT \
     -H "$AUTH_HEADER" \
     -H "Accept: application/vnd.github+json" \
     "$GITHUB_API/repos/$REPO/contents/src/calculator.py" \
-    -d "{
-        \"message\":\"test: add buggy calculator\",
-        \"content\":\"$BUGGY_CONTENT_B64\",
-        \"branch\":\"$BRANCH\"
-    }" > /dev/null
+    -d "$PUT_BODY")
+
+PUT_HTTP_CODE=$(echo "$PUT_RESPONSE" | tail -1)
+if [ "$PUT_HTTP_CODE" != "200" ] && [ "$PUT_HTTP_CODE" != "201" ]; then
+    echo "$PUT_RESPONSE" | head -n -1 >&2
+    fail "Failed to push file (HTTP $PUT_HTTP_CODE)"
+fi
 
 log "Pushed buggy calculator file"
 
-PR_RESPONSE=$(curl -sf -X POST \
+PR_RESPONSE=$(curl -s -X POST \
     -H "$AUTH_HEADER" \
     -H "Accept: application/vnd.github+json" \
     "$GITHUB_API/repos/$REPO/pulls" \
