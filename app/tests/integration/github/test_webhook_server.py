@@ -14,6 +14,7 @@ from nominal_code.config import (
     ReviewerConfig,
     WorkerConfig,
 )
+from nominal_code.jobs.in_process import InProcessRunner
 from nominal_code.models import EventType
 from nominal_code.platforms.github import GitHubPlatform
 from nominal_code.platforms.github.auth import GitHubPatAuth
@@ -83,12 +84,18 @@ async def test_webhook_server_posts_review(
     )
     conversation_store = ConversationStore()
     job_queue = JobQueue()
+    platforms = {"github": platform}
+    in_process_runner = InProcessRunner(
+        config=config,
+        platforms=platforms,
+        conversation_store=conversation_store,
+        job_queue=job_queue,
+    )
 
     app = create_app(
         config=config,
-        platforms={"github": platform},
-        conversation_store=conversation_store,
-        job_queue=job_queue,
+        platforms=platforms,
+        runner=in_process_runner,
     )
 
     runner = web.AppRunner(app)

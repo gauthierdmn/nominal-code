@@ -1,4 +1,4 @@
-FROM python:3.13-slim
+FROM python:3.13-slim AS base
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends git ca-certificates && \
@@ -16,3 +16,11 @@ COPY ci/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
+
+FROM base AS controller
+
+ENTRYPOINT ["uv", "run", "--no-sync", "nominal-code"]
+
+FROM base AS job
+
+ENTRYPOINT ["uv", "run", "--no-sync", "nominal-code", "run-job"]

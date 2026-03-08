@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
-from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from aiohttp import web
@@ -14,13 +13,13 @@ from nominal_code.platforms.base import (
     PullRequestEvent,
     ReviewerPlatform,
 )
-from nominal_code.webhooks.dispatch import enqueue_job
+from nominal_code.webhooks.dispatch import run_pre_flight
 from nominal_code.webhooks.mention import extract_mention
 
 if TYPE_CHECKING:
-    from nominal_code.agent.cli.job import JobQueue
-    from nominal_code.agent.memory import ConversationStore
     from nominal_code.config import Config
+    from nominal_code.jobs.payload import ReviewJob
+    from nominal_code.jobs.runner import JobRunner
     from nominal_code.platforms.base import Platform
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -63,8 +62,7 @@ def _should_process_event(event: PullRequestEvent, config: Config) -> bool:
 def create_app(
     config: Config,
     platforms: dict[str, Platform],
-    conversation_store: ConversationStore,
-    job_queue: JobQueue,
+    runner: JobRunner,
 ) -> web.Application:
     """
     Create the aiohttp web application with webhook routes.
@@ -72,9 +70,7 @@ def create_app(
     Args:
         config (Config): Application configuration.
         platforms (dict[str, Platform]): Mapping of platform names to clients.
-        conversation_store (ConversationStore): Conversation store for
-            conversation continuity.
-        job_queue (JobQueue): Per-PR job queue.
+        runner (JobRunner): Job runner for dispatching review jobs.
 
     Returns:
         web.Application: The configured aiohttp application.
@@ -84,8 +80,7 @@ def create_app(
 
     app["config"] = config
     app["platforms"] = platforms
-    app["conversation_store"] = conversation_store
-    app["job_queue"] = job_queue
+    app["runner"] = runner
 
     app.router.add_get("/health", _handle_health)
 
@@ -135,6 +130,65 @@ def _make_webhook_handler(
     return _handler
 
 
+def _build_review_job(
+    event: CommentEvent | LifecycleEvent,
+    prompt: str,
+    bot_type: BotType,
+) -> ReviewJob:
+    """
+    Build a ReviewJob payload from a parsed webhook event.
+
+    Args:
+        event (CommentEvent | LifecycleEvent): The parsed event.
+        prompt (str): The extracted prompt text.
+        bot_type (BotType): Which bot personality to use.
+
+    Returns:
+        ReviewJob: The serializable job payload.
+    """
+
+    from nominal_code.jobs.payload import ReviewJob as ReviewJobClass
+
+    if isinstance(event, CommentEvent):
+        return ReviewJobClass(
+            platform=event.platform,
+            repo_full_name=event.repo_full_name,
+            pr_number=event.pr_number,
+            pr_branch=event.pr_branch,
+            pr_title=event.pr_title,
+            event_type=event.event_type,
+            is_comment_event=True,
+            author_username=event.author_username,
+            comment_body=event.body,
+            comment_id=event.comment_id,
+            diff_hunk=event.diff_hunk,
+            file_path=event.file_path,
+            discussion_id=event.discussion_id,
+            prompt=prompt,
+            pr_author="",
+            bot_type=bot_type.value,
+        )
+
+    return ReviewJobClass(
+        platform=event.platform,
+        repo_full_name=event.repo_full_name,
+        pr_number=event.pr_number,
+        pr_branch=event.pr_branch,
+        pr_title=event.pr_title,
+        event_type=event.event_type,
+        is_comment_event=False,
+        author_username="",
+        comment_body="",
+        comment_id=0,
+        diff_hunk="",
+        file_path="",
+        discussion_id="",
+        prompt=prompt,
+        pr_author=event.pr_author,
+        bot_type=bot_type.value,
+    )
+
+
 async def _handle_webhook(
     request: web.Request,
     platform_name: str,
@@ -155,8 +209,7 @@ async def _handle_webhook(
     try:
         config: Config = request.app["config"]
         platform: Platform = request.app["platforms"][platform_name]
-        conversation_store: ConversationStore = request.app["conversation_store"]
-        job_queue: JobQueue = request.app["job_queue"]
+        runner: JobRunner = request.app["runner"]
 
         body: bytes = await request.read()
 
@@ -194,37 +247,23 @@ async def _handle_webhook(
             if not isinstance(platform, ReviewerPlatform):
                 return web.json_response({"status": "ignored"})
 
-            lifecycle_event: LifecycleEvent = event
-            reviewer_platform: ReviewerPlatform = platform
-
-            async def _auto_trigger_job() -> None:
-                from nominal_code.review.handler import review_and_post
-
-                await reviewer_platform.ensure_auth()
-
-                ready_event: LifecycleEvent = replace(
-                    lifecycle_event,
-                    clone_url=reviewer_platform.build_clone_url(
-                        lifecycle_event.repo_full_name,
-                    ),
-                )
-
-                await review_and_post(
-                    event=ready_event,
-                    prompt="",
-                    config=config,
-                    platform=reviewer_platform,
-                    conversation_store=conversation_store,
-                )
-
-            await enqueue_job(
-                event=lifecycle_event,
+            proceed: bool = await run_pre_flight(
+                event=event,
                 bot_type=BotType.REVIEWER,
                 config=config,
                 platform=platform,
-                job_queue=job_queue,
-                job=_auto_trigger_job,
             )
+
+            if not proceed:
+                return web.json_response({"status": "unauthorized"})
+
+            job: ReviewJob = _build_review_job(
+                event=event,
+                prompt="",
+                bot_type=BotType.REVIEWER,
+            )
+
+            await runner.run(job)
 
             return web.json_response({"status": "accepted"})
 
@@ -255,62 +294,30 @@ async def _handle_webhook(
             bot_type: BotType = BotType.WORKER
             prompt: str = worker_prompt
 
-            async def _job() -> None:
-                from nominal_code.worker.handler import review_and_fix
-
-                await platform.ensure_auth()
-
-                ready_event: CommentEvent = replace(
-                    comment_event,
-                    clone_url=platform.build_clone_url(
-                        comment_event.repo_full_name,
-                    ),
-                )
-
-                await review_and_fix(
-                    event=ready_event,
-                    prompt=prompt,
-                    config=config,
-                    platform=platform,
-                    conversation_store=conversation_store,
-                )
-
         elif reviewer_prompt is not None and isinstance(platform, ReviewerPlatform):
             bot_type = BotType.REVIEWER
             prompt = reviewer_prompt
-            reviewer_platform = platform
-
-            async def _job() -> None:
-                from nominal_code.review.handler import review_and_post
-
-                await reviewer_platform.ensure_auth()
-
-                ready_event: CommentEvent = replace(
-                    comment_event,
-                    clone_url=reviewer_platform.build_clone_url(
-                        comment_event.repo_full_name,
-                    ),
-                )
-
-                await review_and_post(
-                    event=ready_event,
-                    prompt=prompt,
-                    config=config,
-                    platform=reviewer_platform,
-                    conversation_store=conversation_store,
-                )
 
         else:
             return web.json_response({"status": "no_mention"})
 
-        await enqueue_job(
+        proceed = await run_pre_flight(
             event=comment_event,
             bot_type=bot_type,
             config=config,
             platform=platform,
-            job_queue=job_queue,
-            job=_job,
         )
+
+        if not proceed:
+            return web.json_response({"status": "unauthorized"})
+
+        job = _build_review_job(
+            event=comment_event,
+            prompt=prompt,
+            bot_type=bot_type,
+        )
+
+        await runner.run(job)
 
         return web.json_response({"status": "accepted"})
 

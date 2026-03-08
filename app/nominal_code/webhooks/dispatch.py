@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
 from nominal_code.models import BotType
 from nominal_code.platforms.base import CommentEvent, LifecycleEvent
 
 if TYPE_CHECKING:
-    from nominal_code.agent.cli.job import JobQueue
     from nominal_code.config import Config
     from nominal_code.platforms.base import Platform
 
@@ -17,28 +15,28 @@ EYES_REACTION: str = "eyes"
 logger: logging.Logger = logging.getLogger(__name__)
 
 
-async def enqueue_job(
+async def run_pre_flight(
     event: CommentEvent | LifecycleEvent,
     bot_type: BotType,
     config: Config,
     platform: Platform,
-    job_queue: JobQueue,
-    job: Callable[[], Awaitable[None]],
-) -> None:
+) -> bool:
     """
-    Pre-flight checks and enqueue a caller-provided job closure.
+    Run pre-flight checks before dispatching a job.
 
     For comment events: validates the author against allowed users, logs
-    the event, and posts an eyes reaction.
-    For lifecycle events: logs with event type/title/author and skips auth and reaction.
+    the event, posts an eyes reaction on the comment and PR.
+    For lifecycle events: logs with event type/title/author, posts a PR
+    reaction, and skips auth and comment reaction.
 
     Args:
         event (CommentEvent | LifecycleEvent): The parsed event.
         bot_type (BotType): Which bot personality to use.
         config (Config): Application configuration.
         platform (Platform): The platform client for API calls.
-        job_queue (JobQueue): Per-PR job queue.
-        job (Callable[[], Awaitable[None]]): The async job to enqueue.
+
+    Returns:
+        bool: True if the job should proceed, False if it should be skipped.
     """
 
     if isinstance(event, CommentEvent):
@@ -48,7 +46,7 @@ async def enqueue_job(
                 event.author_username,
             )
 
-            return
+            return False
 
         logger.info(
             "Processing %s comment from %s on %s#%d: %s",
@@ -80,10 +78,4 @@ async def enqueue_job(
         reaction=EYES_REACTION,
     )
 
-    await job_queue.enqueue(
-        platform=event.platform,
-        repo=event.repo_full_name,
-        pr_number=event.pr_number,
-        bot_type=bot_type,
-        job=job,
-    )
+    return True

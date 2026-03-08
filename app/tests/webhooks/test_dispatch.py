@@ -3,11 +3,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from nominal_code.agent.cli.job import JobQueue
 from nominal_code.config import CliAgentConfig, ReviewerConfig, WorkerConfig
 from nominal_code.models import BotType, EventType
 from nominal_code.platforms.base import CommentEvent, LifecycleEvent, PlatformName
-from nominal_code.webhooks.dispatch import enqueue_job
+from nominal_code.webhooks.dispatch import run_pre_flight
 
 
 def _make_config(allowed_users=None):
@@ -71,57 +70,46 @@ def _make_platform():
     return platform
 
 
-class TestEnqueueJob:
+class TestRunPreFlight:
     @pytest.mark.asyncio
-    async def test_enqueue_job_unauthorized_user(self):
+    async def test_unauthorized_user_returns_false(self):
         config = _make_config(allowed_users=["alice"])
         platform = _make_platform()
         comment = _make_comment(author="eve")
-        job_queue = JobQueue()
-        mock_job = AsyncMock()
 
-        await enqueue_job(
+        result = await run_pre_flight(
             event=comment,
             bot_type=BotType.WORKER,
             config=config,
             platform=platform,
-            job_queue=job_queue,
-            job=mock_job,
         )
 
+        assert result is False
         platform.post_reaction.assert_not_called()
         platform.post_pr_reaction.assert_not_called()
         platform.ensure_auth.assert_not_called()
-        mock_job.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_enqueue_job_authorized_user_posts_reaction_and_enqueues(self):
+    async def test_authorized_user_posts_reactions_and_returns_true(self):
         config = _make_config(allowed_users=["alice"])
         platform = _make_platform()
         comment = _make_comment(author="alice")
-        job_queue = JobQueue()
-        mock_job = AsyncMock()
 
-        await enqueue_job(
+        result = await run_pre_flight(
             event=comment,
             bot_type=BotType.WORKER,
             config=config,
             platform=platform,
-            job_queue=job_queue,
-            job=mock_job,
         )
 
+        assert result is True
         platform.post_reaction.assert_called_once()
         platform.post_pr_reaction.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_enqueue_job_auto_trigger_skips_comment_reaction_but_reacts_on_pr(
-        self,
-    ):
+    async def test_lifecycle_event_skips_comment_reaction_but_reacts_on_pr(self):
         config = _make_config(allowed_users=["alice"])
         platform = _make_platform()
-        job_queue = JobQueue()
-        mock_job = AsyncMock()
 
         event = LifecycleEvent(
             platform=PlatformName.GITHUB,
@@ -133,15 +121,14 @@ class TestEnqueueJob:
             pr_author="eve",
         )
 
-        await enqueue_job(
+        result = await run_pre_flight(
             event=event,
             bot_type=BotType.REVIEWER,
             config=config,
             platform=platform,
-            job_queue=job_queue,
-            job=mock_job,
         )
 
+        assert result is True
         platform.post_reaction.assert_not_called()
         platform.post_pr_reaction.assert_called_once()
         platform.ensure_auth.assert_called_once()

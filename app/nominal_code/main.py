@@ -63,11 +63,26 @@ async def _async_main() -> None:
     conversation_store: ConversationStore = ConversationStore()
     job_queue: JobQueue = JobQueue()
 
+    if config.kubernetes is not None:
+        from nominal_code.jobs.kubernetes import KubernetesRunner
+
+        runner: KubernetesRunner | InProcessRunner = KubernetesRunner(
+            config.kubernetes,
+        )
+    else:
+        from nominal_code.jobs.in_process import InProcessRunner
+
+        runner = InProcessRunner(
+            config=config,
+            platforms=platforms,
+            conversation_store=conversation_store,
+            job_queue=job_queue,
+        )
+
     app: web.Application = create_app(
         config=config,
         platforms=platforms,
-        conversation_store=conversation_store,
-        job_queue=job_queue,
+        runner=runner,
     )
 
     enabled: list[str] = list(platforms.keys())
@@ -80,12 +95,15 @@ async def _async_main() -> None:
     if config.reviewer is not None:
         bots.append(f"reviewer=@{config.reviewer.bot_username}")
 
+    runner_mode: str = "kubernetes" if config.kubernetes is not None else "in-process"
+
     logger.info(
-        "Starting server on %s:%d | platforms=%s | %s | allowed_users=%s",
+        "Starting server on %s:%d | platforms=%s | %s | runner=%s | allowed_users=%s",
         config.webhook_host,
         config.webhook_port,
         enabled,
         " | ".join(bots),
+        runner_mode,
         config.allowed_users,
     )
 
@@ -98,12 +116,12 @@ async def _async_main() -> None:
             cleanup_wait=timedelta(hours=config.cleanup_interval_hours),
         )
 
-    runner: web.AppRunner = web.AppRunner(app)
+    web_runner: web.AppRunner = web.AppRunner(app)
 
-    await runner.setup()
+    await web_runner.setup()
 
     site: web.TCPSite = web.TCPSite(
-        runner,
+        web_runner,
         config.webhook_host,
         config.webhook_port,
     )
@@ -125,11 +143,18 @@ async def _async_main() -> None:
         if cleaner is not None:
             await cleaner.stop()
 
-        await runner.cleanup()
+        await web_runner.cleanup()
 
 
 def main() -> None:
-    """Entry point: dispatch to CLI review, CI, or start the webhook server."""
+    """Entry point: dispatch to run-job, CLI review, CI, or start the webhook server."""
+
+    if len(sys.argv) > 1 and sys.argv[1] == "run-job":
+        from nominal_code.jobs.entrypoint import run_job_main
+
+        setup_logging()
+        exit_code: int = asyncio.run(run_job_main())
+        sys.exit(exit_code)
 
     if len(sys.argv) > 1 and sys.argv[1] == "review":
         from nominal_code.cli import cli_main
@@ -144,7 +169,7 @@ def main() -> None:
         setup_logging()
 
         platform_name: str = sys.argv[2]
-        exit_code: int = asyncio.run(run_ci_review(platform_name))
+        exit_code = asyncio.run(run_ci_review(platform_name))
         sys.exit(exit_code)
 
     setup_logging()

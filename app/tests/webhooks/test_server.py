@@ -5,10 +5,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import pytest_asyncio
 
-from nominal_code.agent.cli.job import JobQueue
-from nominal_code.agent.memory import ConversationStore
 from nominal_code.config import CliAgentConfig, ReviewerConfig, WorkerConfig
-from nominal_code.models import BotType, EventType
+from nominal_code.models import EventType
 from nominal_code.platforms.base import (
     CommentEvent,
     LifecycleEvent,
@@ -59,8 +57,16 @@ def _make_github_platform():
     platform.build_clone_url = MagicMock(
         return_value="https://x-access-token:test@github.com/owner/repo.git"
     )
+    platform.post_pr_reaction = AsyncMock()
 
     return platform
+
+
+def _make_runner(config, platforms):
+    mock_runner = MagicMock()
+    mock_runner.run = AsyncMock()
+
+    return mock_runner
 
 
 @pytest.fixture
@@ -68,12 +74,12 @@ def app():
     config = _make_config()
     github_platform = _make_github_platform()
     platforms = {"github": github_platform}
+    runner = _make_runner(config, platforms)
 
     return create_app(
         config=config,
         platforms=platforms,
-        conversation_store=ConversationStore(),
-        job_queue=JobQueue(),
+        runner=runner,
     )
 
 
@@ -166,9 +172,10 @@ class TestGitHubWebhook:
         app["platforms"]["github"].parse_event.return_value = comment
 
         with patch(
-            "nominal_code.webhooks.server.enqueue_job",
+            "nominal_code.webhooks.server.run_pre_flight",
             new_callable=AsyncMock,
-        ) as mock_handle:
+            return_value=True,
+        ):
             response = await client.post(
                 "/webhooks/github",
                 data=b"{}",
@@ -180,11 +187,10 @@ class TestGitHubWebhook:
             data = await response.json()
 
             assert data["status"] == "accepted"
-            mock_handle.assert_called_once()
-            call_kwargs = mock_handle.call_args.kwargs
+            app["runner"].run.assert_called_once()
+            job = app["runner"].run.call_args.args[0]
 
-            assert call_kwargs["bot_type"] == BotType.WORKER
-            assert callable(call_kwargs["job"])
+            assert job.bot_type == "worker"
 
     @pytest.mark.asyncio
     async def test_github_webhook_reviewer_mention(self, client, app):
@@ -201,9 +207,10 @@ class TestGitHubWebhook:
         app["platforms"]["github"].parse_event.return_value = comment
 
         with patch(
-            "nominal_code.webhooks.server.enqueue_job",
+            "nominal_code.webhooks.server.run_pre_flight",
             new_callable=AsyncMock,
-        ) as mock_handle:
+            return_value=True,
+        ):
             response = await client.post(
                 "/webhooks/github",
                 data=b"{}",
@@ -215,11 +222,10 @@ class TestGitHubWebhook:
             data = await response.json()
 
             assert data["status"] == "accepted"
-            mock_handle.assert_called_once()
-            call_kwargs = mock_handle.call_args.kwargs
+            app["runner"].run.assert_called_once()
+            job = app["runner"].run.call_args.args[0]
 
-            assert call_kwargs["bot_type"] == BotType.REVIEWER
-            assert callable(call_kwargs["job"])
+            assert job.bot_type == "reviewer"
 
     @pytest.mark.asyncio
     async def test_github_webhook_worker_takes_precedence_over_reviewer(
@@ -240,9 +246,10 @@ class TestGitHubWebhook:
         app["platforms"]["github"].parse_event.return_value = comment
 
         with patch(
-            "nominal_code.webhooks.server.enqueue_job",
+            "nominal_code.webhooks.server.run_pre_flight",
             new_callable=AsyncMock,
-        ) as mock_handle:
+            return_value=True,
+        ):
             response = await client.post(
                 "/webhooks/github",
                 data=b"{}",
@@ -250,9 +257,9 @@ class TestGitHubWebhook:
             )
 
             assert response.status == 200
-            call_kwargs = mock_handle.call_args.kwargs
+            job = app["runner"].run.call_args.args[0]
 
-            assert call_kwargs["bot_type"] == BotType.WORKER
+            assert job.bot_type == "worker"
 
 
 class TestSingleBotConfig:
@@ -261,12 +268,12 @@ class TestSingleBotConfig:
         config = _make_config(worker=False, reviewer=True)
         github_platform = _make_github_platform()
         platforms = {"github": github_platform}
+        runner = _make_runner(config, platforms)
 
         app = create_app(
             config=config,
             platforms=platforms,
-            conversation_store=ConversationStore(),
-            job_queue=JobQueue(),
+            runner=runner,
         )
         client = await aiohttp_client(app)
 
@@ -299,12 +306,12 @@ class TestSingleBotConfig:
         config = _make_config(worker=True, reviewer=False)
         github_platform = _make_github_platform()
         platforms = {"github": github_platform}
+        runner = _make_runner(config, platforms)
 
         app = create_app(
             config=config,
             platforms=platforms,
-            conversation_store=ConversationStore(),
-            job_queue=JobQueue(),
+            runner=runner,
         )
         client = await aiohttp_client(app)
 
@@ -342,12 +349,12 @@ class TestAutoTrigger:
         )
         github_platform = _make_github_platform()
         platforms = {"github": github_platform}
+        runner = _make_runner(config, platforms)
 
         app = create_app(
             config=config,
             platforms=platforms,
-            conversation_store=ConversationStore(),
-            job_queue=JobQueue(),
+            runner=runner,
         )
         client = await aiohttp_client(app)
 
@@ -363,9 +370,10 @@ class TestAutoTrigger:
         app["platforms"]["github"].parse_event.return_value = event
 
         with patch(
-            "nominal_code.webhooks.server.enqueue_job",
+            "nominal_code.webhooks.server.run_pre_flight",
             new_callable=AsyncMock,
-        ) as mock_auto:
+            return_value=True,
+        ):
             response = await client.post(
                 "/webhooks/github",
                 data=b"{}",
@@ -377,13 +385,7 @@ class TestAutoTrigger:
             data = await response.json()
 
             assert data["status"] == "accepted"
-            mock_auto.assert_called_once()
-            call_kwargs = mock_auto.call_args.kwargs
-
-            dispatched_event = call_kwargs["event"]
-
-            assert dispatched_event.repo_full_name == event.repo_full_name
-            assert dispatched_event.pr_number == event.pr_number
+            runner.run.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_lifecycle_event_ignored_when_triggers_not_configured(
@@ -393,12 +395,12 @@ class TestAutoTrigger:
         config = _make_config(reviewer=True, reviewer_triggers=[])
         github_platform = _make_github_platform()
         platforms = {"github": github_platform}
+        runner = _make_runner(config, platforms)
 
         app = create_app(
             config=config,
             platforms=platforms,
-            conversation_store=ConversationStore(),
-            job_queue=JobQueue(),
+            runner=runner,
         )
         client = await aiohttp_client(app)
 
@@ -433,12 +435,12 @@ class TestAutoTrigger:
         )
         github_platform = _make_github_platform()
         platforms = {"github": github_platform}
+        runner = _make_runner(config, platforms)
 
         app = create_app(
             config=config,
             platforms=platforms,
-            conversation_store=ConversationStore(),
-            job_queue=JobQueue(),
+            runner=runner,
         )
         client = await aiohttp_client(app)
 
@@ -531,9 +533,6 @@ class TestHandleWebhook:
 
     @pytest.mark.asyncio
     async def test_handle_webhook_no_mention_returns_no_mention(self, client, app):
-        from nominal_code.models import EventType
-        from nominal_code.platforms.base import CommentEvent, PlatformName
-
         event = CommentEvent(
             platform=PlatformName.GITHUB,
             repo_full_name="owner/repo",
@@ -554,9 +553,6 @@ class TestHandleWebhook:
 
     @pytest.mark.asyncio
     async def test_handle_webhook_worker_mention_returns_accepted(self, client, app):
-        from nominal_code.models import EventType
-        from nominal_code.platforms.base import CommentEvent, PlatformName
-
         event = CommentEvent(
             platform=PlatformName.GITHUB,
             repo_full_name="owner/repo",
@@ -570,7 +566,10 @@ class TestHandleWebhook:
         app["platforms"]["github"].verify_webhook.return_value = True
         app["platforms"]["github"].parse_event.return_value = event
 
-        with patch("nominal_code.webhooks.server.enqueue_job", new=AsyncMock()):
+        with patch(
+            "nominal_code.webhooks.server.run_pre_flight",
+            new=AsyncMock(return_value=True),
+        ):
             response = await client.post("/webhooks/github", data=b"{}")
 
         data = await response.json()
@@ -589,9 +588,6 @@ class TestHandleWebhook:
 class TestAutoTriggerJob:
     @pytest.mark.asyncio
     async def test_auto_trigger_lifecycle_event_returns_accepted(self, client, app):
-        from nominal_code.models import EventType
-        from nominal_code.platforms.base import LifecycleEvent, PlatformName
-
         event = LifecycleEvent(
             platform=PlatformName.GITHUB,
             repo_full_name="owner/repo",
@@ -603,7 +599,10 @@ class TestAutoTriggerJob:
         app["platforms"]["github"].verify_webhook.return_value = True
         app["platforms"]["github"].parse_event.return_value = event
 
-        with patch("nominal_code.webhooks.server.enqueue_job", new=AsyncMock()):
+        with patch(
+            "nominal_code.webhooks.server.run_pre_flight",
+            new=AsyncMock(return_value=True),
+        ):
             response = await client.post("/webhooks/github", data=b"{}")
 
         data = await response.json()
@@ -612,9 +611,6 @@ class TestAutoTriggerJob:
 
     @pytest.mark.asyncio
     async def test_auto_trigger_no_reviewer_returns_ignored(self, client, app):
-        from nominal_code.models import EventType
-        from nominal_code.platforms.base import LifecycleEvent, PlatformName
-
         event = LifecycleEvent(
             platform=PlatformName.GITHUB,
             repo_full_name="owner/repo",
@@ -734,6 +730,7 @@ class TestAllowedReposFilter:
         config = _make_config(allowed_repos=[])
         github_platform = _make_github_platform()
         platforms = {"github": github_platform}
+        runner = _make_runner(config, platforms)
 
         comment = CommentEvent(
             platform=PlatformName.GITHUB,
@@ -750,14 +747,14 @@ class TestAllowedReposFilter:
         app = create_app(
             config=config,
             platforms=platforms,
-            conversation_store=ConversationStore(),
-            job_queue=JobQueue(),
+            runner=runner,
         )
         client = await aiohttp_client(app)
 
         with patch(
-            "nominal_code.webhooks.server.enqueue_job",
+            "nominal_code.webhooks.server.run_pre_flight",
             new_callable=AsyncMock,
+            return_value=True,
         ):
             response = await client.post("/webhooks/github", data=b"{}")
 
@@ -770,6 +767,7 @@ class TestAllowedReposFilter:
         config = _make_config(allowed_repos=["owner/allowed-repo"])
         github_platform = _make_github_platform()
         platforms = {"github": github_platform}
+        runner = _make_runner(config, platforms)
 
         comment = CommentEvent(
             platform=PlatformName.GITHUB,
@@ -786,8 +784,7 @@ class TestAllowedReposFilter:
         app = create_app(
             config=config,
             platforms=platforms,
-            conversation_store=ConversationStore(),
-            job_queue=JobQueue(),
+            runner=runner,
         )
         client = await aiohttp_client(app)
 
@@ -801,6 +798,7 @@ class TestAllowedReposFilter:
         config = _make_config(allowed_repos=["owner/allowed-repo"])
         github_platform = _make_github_platform()
         platforms = {"github": github_platform}
+        runner = _make_runner(config, platforms)
 
         comment = CommentEvent(
             platform=PlatformName.GITHUB,
@@ -817,14 +815,14 @@ class TestAllowedReposFilter:
         app = create_app(
             config=config,
             platforms=platforms,
-            conversation_store=ConversationStore(),
-            job_queue=JobQueue(),
+            runner=runner,
         )
         client = await aiohttp_client(app)
 
         with patch(
-            "nominal_code.webhooks.server.enqueue_job",
+            "nominal_code.webhooks.server.run_pre_flight",
             new_callable=AsyncMock,
+            return_value=True,
         ):
             response = await client.post("/webhooks/github", data=b"{}")
 
@@ -840,6 +838,7 @@ class TestAllowedReposFilter:
         )
         github_platform = _make_github_platform()
         platforms = {"github": github_platform}
+        runner = _make_runner(config, platforms)
 
         event = LifecycleEvent(
             platform=PlatformName.GITHUB,
@@ -855,8 +854,7 @@ class TestAllowedReposFilter:
         app = create_app(
             config=config,
             platforms=platforms,
-            conversation_store=ConversationStore(),
-            job_queue=JobQueue(),
+            runner=runner,
         )
         client = await aiohttp_client(app)
 

@@ -16,6 +16,7 @@ from nominal_code.config import (
     ReviewerConfig,
     WorkerConfig,
 )
+from nominal_code.jobs.in_process import InProcessRunner
 from nominal_code.models import EventType
 from nominal_code.platforms.gitlab import GitLabPlatform
 from nominal_code.webhooks.server import create_app
@@ -112,11 +113,17 @@ def _create_test_app(
     )
     conversation_store = ConversationStore()
     job_queue = JobQueue()
-    app = create_app(
+    platforms = {"gitlab": platform}
+    runner = InProcessRunner(
         config=config,
-        platforms={"gitlab": platform},
+        platforms=platforms,
         conversation_store=conversation_store,
         job_queue=job_queue,
+    )
+    app = create_app(
+        config=config,
+        platforms=platforms,
+        runner=runner,
     )
 
     return app, conversation_store, job_queue

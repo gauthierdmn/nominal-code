@@ -18,6 +18,7 @@ from nominal_code.config import (
     ReviewerConfig,
     WorkerConfig,
 )
+from nominal_code.jobs.in_process import InProcessRunner
 from nominal_code.models import EventType
 from nominal_code.platforms.github import GitHubPlatform
 from nominal_code.platforms.github.auth import GitHubPatAuth
@@ -124,11 +125,17 @@ def _create_test_app(
     )
     conversation_store = ConversationStore()
     job_queue = JobQueue()
-    app = create_app(
+    platforms = {"github": platform}
+    runner = InProcessRunner(
         config=config,
-        platforms={"github": platform},
+        platforms=platforms,
         conversation_store=conversation_store,
         job_queue=job_queue,
+    )
+    app = create_app(
+        config=config,
+        platforms=platforms,
+        runner=runner,
     )
 
     return app, conversation_store, job_queue
