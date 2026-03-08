@@ -18,6 +18,7 @@ from nominal_code.platforms.base import (
     ReviewerPlatform,
 )
 from nominal_code.review.handler import ReviewResult, review
+from nominal_code.workspace.setup import resolve_branch
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -89,6 +90,20 @@ async def _run_reviewer_job(
 
     event: PullRequestEvent = _build_event(job, platform)
 
+    resolved_event: PullRequestEvent | None = await resolve_branch(
+        event=event,
+        platform=platform,
+    )
+
+    if resolved_event is None:
+        logger.error(
+            "Cannot resolve branch for %s#%d",
+            job.repo_full_name,
+            job.pr_number,
+        )
+
+        return 1
+
     logger.info(
         "Running job review for %s#%d on %s",
         job.repo_full_name,
@@ -98,7 +113,7 @@ async def _run_reviewer_job(
 
     try:
         result: ReviewResult = await review(
-            event=event,
+            event=resolved_event,
             prompt=job.prompt,
             config=config,
             platform=platform,
@@ -186,6 +201,20 @@ async def _run_worker_job(
         clone_url=platform.build_clone_url(job.repo_full_name),
     )
 
+    resolved_event: CommentEvent | None = await resolve_branch(
+        event=comment_event,
+        platform=platform,
+    )
+
+    if resolved_event is None:
+        logger.error(
+            "Cannot resolve branch for %s#%d",
+            job.repo_full_name,
+            job.pr_number,
+        )
+
+        return 1
+
     logger.info(
         "Running worker job for %s#%d on %s",
         job.repo_full_name,
@@ -195,7 +224,7 @@ async def _run_worker_job(
 
     try:
         await review_and_fix(
-            event=comment_event,
+            event=resolved_event,
             prompt=job.prompt,
             config=config,
             platform=platform,
