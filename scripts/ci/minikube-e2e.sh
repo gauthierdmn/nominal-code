@@ -1,19 +1,23 @@
 #!/usr/bin/env bash
 #
-# End-to-end test for the Kubernetes job dispatch flow.
+# Full E2E test for the Kubernetes deployment flow.
 #
 # Prerequisites (handled by the CI workflow):
 #   - minikube is running
 #   - controller image built as nominal-code:controller
 #   - job image built as nominal-code:job
 #
+# Required env vars:
+#   TEST_GITHUB_TOKEN  — real GitHub token (PR creation + review verification)
+#   GOOGLE_API_KEY     — real LLM API key (for job pod)
+#
 # This script:
-#   1. Applies Kubernetes manifests (namespace, RBAC, secrets, deployment, service)
-#   2. Waits for the controller pod to become ready
-#   3. Port-forwards the controller service
-#   4. Sends a synthetic GitHub webhook (issue_comment) to the controller
-#   5. Verifies a Kubernetes Job is created with the correct spec
-#   6. Cleans up
+#   1. Creates a real PR on gauthierdmn/nominal-code-test with a buggy file
+#   2. Deploys the controller to minikube with real secrets
+#   3. Sends a synthetic webhook referencing the real PR
+#   4. Waits for the K8s Job to complete (real LLM review)
+#   5. Verifies a review was posted to the PR
+#   6. Cleans up everything
 
 set -euo pipefail
 
@@ -27,25 +31,171 @@ JOB_IMAGE="nominal-code:job"
 LOCAL_PORT=9090
 TIMEOUT=120
 
+REPO="gauthierdmn/nominal-code-test"
+BRANCH="test/k8s-e2e-$(date +%s)-$RANDOM"
+PR_NUMBER=""
+PORT_FORWARD_PID=""
+
+GITHUB_API="https://api.github.com"
+AUTH_HEADER="Authorization: token ${TEST_GITHUB_TOKEN:-}"
+
 log() { echo "==> $*"; }
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
 cleanup() {
     log "Cleaning up..."
     kill "$PORT_FORWARD_PID" 2>/dev/null || true
+
+    if [ -n "$PR_NUMBER" ]; then
+        log "Closing PR #${PR_NUMBER}"
+        curl -sf -X PATCH \
+            -H "$AUTH_HEADER" \
+            -H "Accept: application/vnd.github+json" \
+            "$GITHUB_API/repos/$REPO/pulls/$PR_NUMBER" \
+            -d '{"state":"closed"}' > /dev/null || true
+    fi
+
+    if [ -n "$BRANCH" ]; then
+        log "Deleting branch $BRANCH"
+        curl -sf -X DELETE \
+            -H "$AUTH_HEADER" \
+            "$GITHUB_API/repos/$REPO/git/refs/heads/$BRANCH" > /dev/null || true
+    fi
+
     kubectl delete namespace "$NAMESPACE" --ignore-not-found --wait=false 2>/dev/null || true
 }
 
 trap cleanup EXIT
 
-# --------------------------------------------------------------------------- #
-# 1. Apply manifests with test-specific overrides
-# --------------------------------------------------------------------------- #
+if [ -z "${TEST_GITHUB_TOKEN:-}" ]; then
+    fail "TEST_GITHUB_TOKEN is required"
+fi
+
+if [ -z "${GOOGLE_API_KEY:-}" ]; then
+    fail "GOOGLE_API_KEY is required"
+fi
+
+BUGGY_CALCULATOR_CONTENT='import os
+
+
+def add(first, second):
+    """Add two numbers together."""
+
+    return first + second
+
+
+def subtract(first, second):
+    """Subtract second from first."""
+
+    return first - second
+
+
+def multiply(first, second):
+    """Multiply two numbers together."""
+
+    return first * second
+
+
+def power(base, exponent):
+    """Raise base to the given exponent."""
+
+    result = 1
+
+    for _ in range(exponent):
+        result *= base
+
+    return result
+
+
+def absolute(value):
+    """Return the absolute value of a number."""
+    if value < 0:
+        return -value
+    return value
+
+
+def negate(value):
+    """Negate a number."""
+
+    return -value
+
+
+def divide(first, second):
+    """Divide first by second."""
+
+    if not isinstance(first, (int, float)):
+        raise TypeError("first must be a number")
+
+    if not isinstance(second, (int, float)):
+        raise TypeError("second must be a number")
+
+    log_message = f"Dividing {first} by {second}"
+    print(log_message)
+
+    precision = 10
+    rounded = False
+    result = first / second
+
+    if precision and rounded:
+        result = round(result, precision)
+
+    return result
+'
+
+BUGGY_CONTENT_B64=$(echo -n "$BUGGY_CALCULATOR_CONTENT" | base64 | tr -d '\n')
+
+log "Creating test PR on $REPO"
+
+MAIN_SHA=$(curl -sf \
+    -H "$AUTH_HEADER" \
+    "$GITHUB_API/repos/$REPO/git/ref/heads/main" | jq -r '.object.sha')
+
+log "Main branch SHA: $MAIN_SHA"
+
+curl -sf -X POST \
+    -H "$AUTH_HEADER" \
+    -H "Accept: application/vnd.github+json" \
+    "$GITHUB_API/repos/$REPO/git/refs" \
+    -d "{\"ref\":\"refs/heads/$BRANCH\",\"sha\":\"$MAIN_SHA\"}" > /dev/null
+
+log "Created branch: $BRANCH"
+
+sleep 2
+
+curl -sf -X PUT \
+    -H "$AUTH_HEADER" \
+    -H "Accept: application/vnd.github+json" \
+    "$GITHUB_API/repos/$REPO/contents/src/calculator.py" \
+    -d "{
+        \"message\":\"test: add buggy calculator\",
+        \"content\":\"$BUGGY_CONTENT_B64\",
+        \"branch\":\"$BRANCH\"
+    }" > /dev/null
+
+log "Pushed buggy calculator file"
+
+PR_RESPONSE=$(curl -sf -X POST \
+    -H "$AUTH_HEADER" \
+    -H "Accept: application/vnd.github+json" \
+    "$GITHUB_API/repos/$REPO/pulls" \
+    -d "{
+        \"title\":\"test: k8s e2e $(date +%s)\",
+        \"head\":\"$BRANCH\",
+        \"base\":\"main\",
+        \"body\":\"Automated K8s E2E test PR. Will be cleaned up automatically.\"
+    }")
+
+PR_NUMBER=$(echo "$PR_RESPONSE" | jq -r '.number')
+log "Created PR #$PR_NUMBER"
+
+if [ "$PR_NUMBER" = "null" ] || [ -z "$PR_NUMBER" ]; then
+    echo "$PR_RESPONSE" >&2
+    fail "Failed to create PR"
+fi
 
 log "Applying Kubernetes manifests"
 kubectl apply -f "$DEPLOY_DIR/namespace.yaml"
 
-# Create secret with known webhook secret
 kubectl apply -f - <<EOF
 apiVersion: v1
 kind: Secret
@@ -54,27 +204,26 @@ metadata:
   namespace: $NAMESPACE
 type: Opaque
 stringData:
-  GITHUB_TOKEN: "ghp_fake_for_e2e"
+  GITHUB_TOKEN: "$TEST_GITHUB_TOKEN"
   GITHUB_WEBHOOK_SECRET: "$WEBHOOK_SECRET"
-  ANTHROPIC_API_KEY: "sk-ant-fake-for-e2e"
+  GOOGLE_API_KEY: "$GOOGLE_API_KEY"
+  AGENT_PROVIDER: "google"
+  AGENT_MODEL: "gemini-2.5-flash-lite"
+  AGENT_MAX_TURNS: "1"
 EOF
 
 kubectl apply -f "$DEPLOY_DIR/rbac.yaml"
 
-# Apply deployment with test-specific env overrides
 kubectl apply -f "$DEPLOY_DIR/deployment.yaml"
 kubectl set image -n "$NAMESPACE" deployment/nominal-code-controller \
     controller="$CONTROLLER_IMAGE"
 kubectl set env -n "$NAMESPACE" deployment/nominal-code-controller \
     REVIEWER_BOT_USERNAME="$REVIEWER_BOT" \
     ALLOWED_USERS="$ALLOWED_USER" \
-    K8S_IMAGE="$JOB_IMAGE"
+    K8S_IMAGE="$JOB_IMAGE" \
+    AGENT_PROVIDER="google"
 
 kubectl apply -f "$DEPLOY_DIR/service.yaml"
-
-# --------------------------------------------------------------------------- #
-# 2. Wait for the controller pod to be ready
-# --------------------------------------------------------------------------- #
 
 log "Waiting for controller pod to be ready (timeout: ${TIMEOUT}s)"
 if ! kubectl rollout status deployment/nominal-code-controller \
@@ -84,41 +233,32 @@ if ! kubectl rollout status deployment/nominal-code-controller \
     fail "Controller deployment did not become ready"
 fi
 
-# --------------------------------------------------------------------------- #
-# 3. Port-forward the controller service
-# --------------------------------------------------------------------------- #
-
 log "Setting up port-forward to controller (localhost:$LOCAL_PORT)"
 kubectl port-forward -n "$NAMESPACE" svc/nominal-code-controller "$LOCAL_PORT:80" &
 PORT_FORWARD_PID=$!
 sleep 2
 
-# Verify health endpoint
 if ! curl -sf "http://localhost:$LOCAL_PORT/health" > /dev/null; then
     fail "Controller health check failed"
 fi
 
 log "Controller is healthy"
 
-# --------------------------------------------------------------------------- #
-# 4. Send a synthetic GitHub webhook
-# --------------------------------------------------------------------------- #
-
-PAYLOAD=$(cat <<'PAYLOAD_EOF'
+PAYLOAD=$(cat <<PAYLOAD_EOF
 {
   "action": "created",
   "issue": {
-    "number": 999,
-    "title": "test: e2e kubernetes dispatch",
-    "pull_request": {"url": "https://api.github.com/repos/test-org/test-repo/pulls/999"}
+    "number": $PR_NUMBER,
+    "title": "test: k8s e2e",
+    "pull_request": {"url": "$GITHUB_API/repos/$REPO/pulls/$PR_NUMBER"}
   },
   "comment": {
-    "id": 12345,
+    "id": 99999999,
     "body": "@nominal-bot review this PR",
     "user": {"login": "e2e-tester"}
   },
   "repository": {
-    "full_name": "test-org/test-repo"
+    "full_name": "$REPO"
   }
 }
 PAYLOAD_EOF
@@ -126,7 +266,7 @@ PAYLOAD_EOF
 
 SIGNATURE="sha256=$(echo -n "$PAYLOAD" | openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" | sed 's/^.* //')"
 
-log "Sending webhook payload"
+log "Sending webhook payload for PR #$PR_NUMBER"
 HTTP_CODE=$(curl -s -o /tmp/webhook-response.json -w "%{http_code}" \
     -X POST "http://localhost:$LOCAL_PORT/webhooks/github" \
     -H "Content-Type: application/json" \
@@ -141,17 +281,13 @@ if [ "$HTTP_CODE" != "200" ]; then
     fail "Expected HTTP 200, got $HTTP_CODE"
 fi
 
-# --------------------------------------------------------------------------- #
-# 5. Wait for a Kubernetes Job to be created
-# --------------------------------------------------------------------------- #
-
 log "Waiting for Kubernetes Job to be created"
 JOB_FOUND=false
 ELAPSED=0
 
 while [ "$ELAPSED" -lt 30 ]; do
     JOBS=$(kubectl get jobs -n "$NAMESPACE" \
-        -l "nominal-code/platform=github,nominal-code/pr-number=999" \
+        -l "nominal-code/platform=github,nominal-code/pr-number=$PR_NUMBER" \
         -o json 2>/dev/null)
 
     JOB_COUNT=$(echo "$JOBS" | jq '.items | length')
@@ -175,16 +311,11 @@ fi
 
 log "Kubernetes Job created successfully"
 
-# --------------------------------------------------------------------------- #
-# 6. Verify Job spec
-# --------------------------------------------------------------------------- #
-
 JOB_JSON=$(echo "$JOBS" | jq '.items[0]')
 JOB_NAME=$(echo "$JOB_JSON" | jq -r '.metadata.name')
 
 log "Verifying Job spec for: $JOB_NAME"
 
-# Check labels
 LABEL_APP=$(echo "$JOB_JSON" | jq -r '.metadata.labels["app.kubernetes.io/name"]')
 LABEL_PLATFORM=$(echo "$JOB_JSON" | jq -r '.metadata.labels["nominal-code/platform"]')
 LABEL_PR=$(echo "$JOB_JSON" | jq -r '.metadata.labels["nominal-code/pr-number"]')
@@ -192,10 +323,9 @@ LABEL_REPO=$(echo "$JOB_JSON" | jq -r '.metadata.labels["nominal-code/repo"]')
 
 [ "$LABEL_APP" = "nominal-code" ] || fail "Label app.kubernetes.io/name: expected 'nominal-code', got '$LABEL_APP'"
 [ "$LABEL_PLATFORM" = "github" ] || fail "Label nominal-code/platform: expected 'github', got '$LABEL_PLATFORM'"
-[ "$LABEL_PR" = "999" ] || fail "Label nominal-code/pr-number: expected '999', got '$LABEL_PR'"
-[ "$LABEL_REPO" = "test-org-test-repo" ] || fail "Label nominal-code/repo: expected 'test-org-test-repo', got '$LABEL_REPO'"
+[ "$LABEL_PR" = "$PR_NUMBER" ] || fail "Label nominal-code/pr-number: expected '$PR_NUMBER', got '$LABEL_PR'"
+[ "$LABEL_REPO" = "gauthierdmn-nominal-code-test" ] || fail "Label nominal-code/repo: expected 'gauthierdmn-nominal-code-test', got '$LABEL_REPO'"
 
-# Check container spec
 CONTAINER=$(echo "$JOB_JSON" | jq '.spec.template.spec.containers[0]')
 IMAGE=$(echo "$CONTAINER" | jq -r '.image')
 COMMAND=$(echo "$CONTAINER" | jq -r '.command | join(" ")')
@@ -203,28 +333,74 @@ COMMAND=$(echo "$CONTAINER" | jq -r '.command | join(" ")')
 [ "$IMAGE" = "$JOB_IMAGE" ] || fail "Image: expected '$JOB_IMAGE', got '$IMAGE'"
 [ "$COMMAND" = "uv run --no-sync nominal-code run-job" ] || fail "Command: expected 'uv run --no-sync nominal-code run-job', got '$COMMAND'"
 
-# Check REVIEW_JOB_PAYLOAD env var exists
 PAYLOAD_ENV=$(echo "$CONTAINER" | jq -r '.env[] | select(.name == "REVIEW_JOB_PAYLOAD") | .value')
 [ -n "$PAYLOAD_ENV" ] || fail "REVIEW_JOB_PAYLOAD env var not found"
 
-# Verify the payload is valid JSON and contains expected fields
 PAYLOAD_PLATFORM=$(echo "$PAYLOAD_ENV" | jq -r '.platform')
 PAYLOAD_PR=$(echo "$PAYLOAD_ENV" | jq -r '.pr_number')
 PAYLOAD_REPO=$(echo "$PAYLOAD_ENV" | jq -r '.repo_full_name')
 PAYLOAD_BOT_TYPE=$(echo "$PAYLOAD_ENV" | jq -r '.bot_type')
 
 [ "$PAYLOAD_PLATFORM" = "github" ] || fail "Payload platform: expected 'github', got '$PAYLOAD_PLATFORM'"
-[ "$PAYLOAD_PR" = "999" ] || fail "Payload pr_number: expected '999', got '$PAYLOAD_PR'"
-[ "$PAYLOAD_REPO" = "test-org/test-repo" ] || fail "Payload repo: expected 'test-org/test-repo', got '$PAYLOAD_REPO'"
+[ "$PAYLOAD_PR" = "$PR_NUMBER" ] || fail "Payload pr_number: expected '$PR_NUMBER', got '$PAYLOAD_PR'"
+[ "$PAYLOAD_REPO" = "$REPO" ] || fail "Payload repo: expected '$REPO', got '$PAYLOAD_REPO'"
 [ "$PAYLOAD_BOT_TYPE" = "reviewer" ] || fail "Payload bot_type: expected 'reviewer', got '$PAYLOAD_BOT_TYPE'"
 
-# Check envFrom secrets reference
 SECRET_REF=$(echo "$CONTAINER" | jq -r '.envFrom[0].secretRef.name')
 [ "$SECRET_REF" = "nominal-code-secrets" ] || fail "envFrom secret: expected 'nominal-code-secrets', got '$SECRET_REF'"
 
-# Check job-level spec fields
 BACKOFF=$(echo "$JOB_JSON" | jq -r '.spec.backoffLimit')
 [ "$BACKOFF" = "0" ] || fail "backoffLimit: expected '0', got '$BACKOFF'"
+
+log "Job spec assertions passed"
+
+log "Waiting for Job to complete (timeout: 300s)"
+if ! kubectl wait --for=condition=complete job/"$JOB_NAME" \
+    -n "$NAMESPACE" --timeout=300s; then
+    log "Job did not complete. Pod logs:"
+    kubectl logs -n "$NAMESPACE" -l "job-name=$JOB_NAME" --tail=100 || true
+    log "Job status:"
+    kubectl get job "$JOB_NAME" -n "$NAMESPACE" -o yaml || true
+    fail "Job did not complete within 300 seconds"
+fi
+
+log "Job completed successfully"
+
+log "Verifying review was posted to PR #$PR_NUMBER"
+
+REVIEW_FOUND=false
+
+REVIEWS=$(curl -sf \
+    -H "$AUTH_HEADER" \
+    -H "Accept: application/vnd.github+json" \
+    "$GITHUB_API/repos/$REPO/pulls/$PR_NUMBER/reviews")
+
+REVIEW_COUNT=$(echo "$REVIEWS" | jq '[.[] | select(.body != null and .body != "")] | length')
+
+if [ "$REVIEW_COUNT" -gt 0 ]; then
+    REVIEW_FOUND=true
+    log "Found $REVIEW_COUNT review(s) with body on PR #$PR_NUMBER"
+fi
+
+if [ "$REVIEW_FOUND" != "true" ]; then
+    COMMENTS=$(curl -sf \
+        -H "$AUTH_HEADER" \
+        -H "Accept: application/vnd.github+json" \
+        "$GITHUB_API/repos/$REPO/issues/$PR_NUMBER/comments")
+
+    COMMENT_COUNT=$(echo "$COMMENTS" | jq 'length')
+
+    if [ "$COMMENT_COUNT" -gt 0 ]; then
+        REVIEW_FOUND=true
+        log "Found $COMMENT_COUNT comment(s) on PR #$PR_NUMBER (fallback check)"
+    fi
+fi
+
+if [ "$REVIEW_FOUND" != "true" ]; then
+    log "Reviews response:"
+    echo "$REVIEWS" | jq . || true
+    fail "No review or comment found on PR #$PR_NUMBER"
+fi
 
 log ""
 log "All assertions passed!"
@@ -234,5 +410,7 @@ log "  - Container command: uv run --no-sync nominal-code run-job"
 log "  - REVIEW_JOB_PAYLOAD: valid JSON with correct fields"
 log "  - envFrom: references nominal-code-secrets"
 log "  - backoffLimit: 0"
+log "  - Job completed successfully"
+log "  - Review posted to PR #$PR_NUMBER"
 log ""
 log "E2E test PASSED"

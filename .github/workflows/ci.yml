@@ -201,6 +201,10 @@ jobs:
           docker build -t nominal-code:job --target job -f ci/Dockerfile .
 
       - name: Run E2E test
+        env:
+          TEST_GITHUB_TOKEN: ${{ secrets.TEST_GITHUB_TOKEN }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          TEST_PIPELINE_ID: ${{ github.sha }}
         run: scripts/ci/minikube-e2e.sh
 
   integration-test-webhook-server:
