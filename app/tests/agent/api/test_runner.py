@@ -14,6 +14,7 @@ from nominal_code.agent.providers.types import (
     ToolUseBlock,
 )
 from nominal_code.agent.result import AgentResult
+from nominal_code.models import ProviderName
 
 
 def _make_text_response(text, usage=None):
@@ -276,7 +277,7 @@ class TestRunAgentApiCost:
             cwd=tmp_path,
             model="gpt-4.1",
             provider=mock_provider,
-            provider_name="openai",
+            provider_name=ProviderName.OPENAI,
         )
 
         assert result.cost is not None
@@ -312,7 +313,7 @@ class TestRunAgentApiCost:
             cwd=tmp_path,
             model="gpt-4.1",
             provider=mock_provider,
-            provider_name="openai",
+            provider_name=ProviderName.OPENAI,
         )
 
         assert result.cost is not None
@@ -335,7 +336,7 @@ class TestRunAgentApiCost:
             cwd=tmp_path,
             model="gpt-4.1",
             provider=mock_provider,
-            provider_name="openai",
+            provider_name=ProviderName.OPENAI,
         )
 
         assert result.is_error is True
@@ -358,7 +359,7 @@ class TestRunAgentApiCost:
             cwd=tmp_path,
             model="gpt-4.1",
             provider=mock_provider,
-            provider_name="openai",
+            provider_name=ProviderName.OPENAI,
         )
 
         assert result.cost is not None

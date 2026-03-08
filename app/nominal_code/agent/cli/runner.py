@@ -135,21 +135,25 @@ async def run_agent_cli(
             returned_conversation_id = message.session_id or returned_conversation_id
 
             cli_cost: CostSummary | None = None
-            usage_dict: dict[str, Any] | None = getattr(message, "usage", None)
+            usage_dict: dict[str, Any] | None = (
+                message.usage if isinstance(message.usage, dict) else None
+            )
 
             if message.total_cost_usd is not None or usage_dict:
                 cli_cost = CostSummary(
                     total_input_tokens=(usage_dict or {}).get("input_tokens", 0),
                     total_output_tokens=(usage_dict or {}).get("output_tokens", 0),
                     total_cache_creation_tokens=(usage_dict or {}).get(
-                        "cache_creation_input_tokens", 0
+                        "cache_creation_input_tokens",
+                        0,
                     ),
                     total_cache_read_tokens=(usage_dict or {}).get(
-                        "cache_read_input_tokens", 0
+                        "cache_read_input_tokens",
+                        0,
                     ),
                     total_cost_usd=message.total_cost_usd,
                     provider=ProviderName.ANTHROPIC,
-                    model="",
+                    model=options.model or "",
                 )
 
             result = AgentResult(

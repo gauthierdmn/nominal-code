@@ -248,6 +248,7 @@ include:
 3. The platform module builds the event, platform client, and workspace path from CI environment variables.
 4. The review runs using the configured LLM provider API directly (tool use loop with Read, Glob, Grep, and Bash).
 5. Structured findings are posted as native inline comments on the PR/MR.
+6. A cost summary is logged with token usage and dollar cost (when pricing is available for the model).
 
 CI mode uses the same review logic as CLI and webhook modes — the same diff fetching, prompt composition, JSON parsing, and finding filtering. The only difference is the agent runner: CI uses the LLM provider API directly, while CLI and webhook modes use the Claude Code CLI.
 

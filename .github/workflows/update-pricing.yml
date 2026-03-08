@@ -40,6 +40,6 @@ jobs:
           commit-message: "chore: update model pricing from LiteLLM"
           title: "chore: update model pricing from LiteLLM"
           body: |
-            Automated update of `app/nominal_code/agent/pricing.json` from the
+            Automated update of `app/nominal_code/agent/data/pricing.json` from the
             [LiteLLM pricing database](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json).
           labels: dependencies

@@ -458,6 +458,8 @@ def _to_llm_response(response: ChatCompletion) -> LLMResponse:
         if prompt_details is not None and prompt_details.cached_tokens is not None:
             cached_tokens = prompt_details.cached_tokens
 
+        # cache_creation_input_tokens is left at 0 because OpenAI does not
+        # report cache write tokens separately — only cached_tokens (reads).
         usage = TokenUsage(
             input_tokens=response.usage.prompt_tokens or 0,
             output_tokens=response.usage.completion_tokens or 0,

@@ -38,7 +38,9 @@ OUTPUT_PATH: Path = (
 PROVIDER_PREFIXES: dict[str, str] = {
     "anthropic": "",
     "openai": "",
+    # Google Gemini models are listed under vertex_ai and gemini in LiteLLM
     "vertex_ai-language-models": "",
+    "gemini": "",
     "deepseek": "",
     "groq": "groq/",
     "together_ai": "together_ai/",
@@ -128,7 +130,9 @@ def build_pricing(
             model_id = litellm_key
 
         result[model_id] = _to_pricing_entry(entry)
-        provider_counts[litellm_provider] = provider_counts.get(litellm_provider, 0) + 1
+        provider_counts[litellm_provider] = (
+            provider_counts.get(litellm_provider, 0) + 1
+        )
 
     for provider, count in sorted(provider_counts.items()):
         logger.info("  %s: %d models", provider, count)

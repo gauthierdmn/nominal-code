@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -14,9 +15,12 @@ logger: logging.Logger = logging.getLogger(__name__)
 PRICING_PATH: Path = Path(__file__).parent / "data" / "pricing.json"
 
 
-def _load_pricing() -> dict[str, ModelPricing]:
+@lru_cache(maxsize=1)
+def _get_pricing() -> dict[str, ModelPricing]:
     """
     Load model pricing from the bundled JSON file.
+
+    Results are cached so the file is read at most once.
 
     Returns:
         dict[str, ModelPricing]: Model ID to pricing mapping.
@@ -41,9 +45,6 @@ def _load_pricing() -> dict[str, ModelPricing]:
         )
 
     return result
-
-
-PRICING: dict[str, ModelPricing] = _load_pricing()
 
 
 @dataclass(frozen=True)
@@ -75,15 +76,15 @@ class CostSummary:
     num_api_calls: int = 0
 
 
-def compute_turn_cost(usage: TokenUsage, model: str) -> float | None:
+def compute_cost(usage: TokenUsage, model: str) -> float | None:
     """
-    Compute the dollar cost for a single turn's token usage.
+    Compute the dollar cost for the given token usage.
 
     Delegates to ``TokenUsage.compute_cost`` which handles
     provider-specific token categories via polymorphism.
 
     Args:
-        usage (TokenUsage): Token counts for the turn.
+        usage (TokenUsage): Token counts (single turn or accumulated).
         model (str): Model identifier to look up in the pricing table.
 
     Returns:
@@ -91,7 +92,7 @@ def compute_turn_cost(usage: TokenUsage, model: str) -> float | None:
             pricing table.
     """
 
-    pricing: ModelPricing | None = PRICING.get(model)
+    pricing: ModelPricing | None = _get_pricing().get(model)
 
     if pricing is None:
         return None
@@ -131,7 +132,7 @@ def build_cost_summary(
         total_output_tokens=usage.output_tokens,
         total_cache_creation_tokens=usage.cache_creation_input_tokens,
         total_cache_read_tokens=usage.cache_read_input_tokens,
-        total_cost_usd=compute_turn_cost(usage, model),
+        total_cost_usd=compute_cost(usage, model),
         provider=provider,
         model=model,
         num_api_calls=num_api_calls,
