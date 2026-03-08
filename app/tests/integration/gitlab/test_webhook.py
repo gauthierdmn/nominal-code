@@ -322,7 +322,7 @@ async def test_webhook_unauthorized_user_ignored(
 
     assert response.status == 200
     data = await response.json()
-    assert data["status"] == "accepted"
+    assert data["status"] == "unauthorized"
 
     assert not job_queue._consumers, "Unauthorized user should not trigger a job"
 

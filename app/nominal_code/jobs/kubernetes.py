@@ -225,7 +225,7 @@ def _build_job_name(
     timestamp: str = str(int(time.time()))
     raw_name: str = f"nominal-review-{platform}-{repo_slug}-{pr_number}-{timestamp}"
 
-    return raw_name[:JOB_NAME_MAX_LENGTH]
+    return raw_name[:JOB_NAME_MAX_LENGTH].rstrip("-")
 
 
 def _slugify(text: str) -> str:

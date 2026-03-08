@@ -206,7 +206,7 @@ class InProcessRunner:
             pr_title=job.pr_title,
             event_type=EventType(job.event_type),
             pr_author=job.pr_author,
-            clone_url=reviewer_platform.build_clone_url(job.repo_full_name),
+            clone_url=reviewer_platform.build_reviewer_clone_url(job.repo_full_name),
         )
 
         async def _lifecycle_job() -> None:

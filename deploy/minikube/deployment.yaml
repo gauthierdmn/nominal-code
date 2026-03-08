@@ -21,7 +21,7 @@ spec:
       serviceAccountName: nominal-code-controller
       containers:
         - name: controller
-          image: nominal-code:dev
+          image: nominal-code:controller
           imagePullPolicy: Never
           ports:
             - containerPort: 8080
@@ -34,7 +34,7 @@ spec:
             - name: K8S_NAMESPACE
               value: "nominal-code"
             - name: K8S_IMAGE
-              value: "nominal-code:dev"
+              value: "nominal-code:job"
             - name: K8S_IMAGE_PULL_POLICY
               value: "Never"
             - name: K8S_ENV_FROM_SECRETS
