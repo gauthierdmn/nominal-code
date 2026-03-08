@@ -22,6 +22,7 @@ Nominal Code is configured via environment variables, `.env` files, CLI flags, a
 | **Server** | Not needed | Not needed | aiohttp server required |
 | **Auth check** | None (CI handles it) | None (you are the user) | `ALLOWED_USERS` allowlist |
 | **Conversation continuity** | No (one-shot) | No (one-shot) | Yes (multi-turn per PR) |
+| **Cost tracking** | Yes (logged + CI output) | Yes (logged) | Yes (logged) |
 | **Workspace** | CI runner checkout | Cloned to temp dir | Cloned to `WORKSPACE_BASE_DIR` |
 | **Workspace cleanup** | N/A (CI runner) | Manual | Automatic periodic cleanup |
 | **Bot username** | Not needed | Not needed | Required for `@mention` |

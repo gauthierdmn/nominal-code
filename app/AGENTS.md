@@ -10,6 +10,7 @@ AI-powered code review bot that monitors GitHub PRs and GitLab MRs. When a user 
 - **Multi-turn conversations** — `ConversationStore` maps (platform, repo, PR, bot) to conversation IDs and message histories so conversations resume across comments.
 - **Workspace isolation** — each PR gets its own shallow clone; a shared `.deps/` directory is available for cross-PR dependencies.
 - **Dual agent runners** — CLI and webhook modes use the Claude Code CLI (supports subscriptions); CI mode calls the LLM provider API directly (requires a provider API key).
+- **LLM cost tracking** — both runners capture token usage and compute dollar costs using a bundled pricing table. Cost summaries are logged after each review and surfaced in CI output.
 
 ## Entry points
 

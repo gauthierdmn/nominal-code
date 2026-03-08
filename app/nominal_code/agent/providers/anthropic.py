@@ -15,6 +15,7 @@ from nominal_code.agent.providers.types import (
     Message,
     StopReason,
     TextBlock,
+    TokenUsage,
     ToolDefinition,
     ToolResultBlock,
     ToolUseBlock,
@@ -30,6 +31,9 @@ if TYPE_CHECKING:
         ToolParam,
         ToolResultBlockParam,
         ToolUseBlockParam,
+    )
+    from anthropic.types import (
+        Message as AnthropicMessage,
     )
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -67,6 +71,13 @@ class AnthropicProvider:
             ) from exc
 
         self._client: anthropic.AsyncAnthropic = _anthropic.AsyncAnthropic()
+
+    async def close(self) -> None:
+        """
+        Close the underlying Anthropic HTTP client.
+        """
+
+        await self._client.close()
 
     async def send(
         self,
@@ -211,12 +222,12 @@ def _to_api_tools(tools: list[ToolDefinition]) -> list[ToolParam]:
     return api_tools
 
 
-def _to_llm_response(response: Any) -> LLMResponse:
+def _to_llm_response(response: AnthropicMessage) -> LLMResponse:
     """
     Convert an Anthropic response to canonical LLMResponse.
 
     Args:
-        response (Any): The Anthropic API response.
+        response (AnthropicMessage): The Anthropic API response.
 
     Returns:
         LLMResponse: Canonical response.
@@ -244,4 +255,11 @@ def _to_llm_response(response: Any) -> LLMResponse:
         StopReason.END_TURN,
     )
 
-    return LLMResponse(content=content, stop_reason=stop_reason)
+    usage: TokenUsage = TokenUsage(
+        input_tokens=response.usage.input_tokens,
+        output_tokens=response.usage.output_tokens,
+        cache_creation_input_tokens=response.usage.cache_creation_input_tokens or 0,
+        cache_read_input_tokens=response.usage.cache_read_input_tokens or 0,
+    )
+
+    return LLMResponse(content=content, stop_reason=stop_reason, usage=usage)

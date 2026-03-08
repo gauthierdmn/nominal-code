@@ -4,8 +4,10 @@ import pytest
 from nominal_code.agent.providers.types import (
     LLMResponse,
     Message,
+    ModelPricing,
     StopReason,
     TextBlock,
+    TokenUsage,
     ToolDefinition,
     ToolResultBlock,
     ToolUseBlock,
@@ -133,3 +135,98 @@ class TestStopReason:
         assert StopReason.END_TURN.value == "end_turn"
         assert StopReason.TOOL_USE.value == "tool_use"
         assert StopReason.MAX_TOKENS.value == "max_tokens"
+
+
+class TestModelPricing:
+    def test_create_with_defaults(self):
+        pricing = ModelPricing(input_per_token=0.003, output_per_token=0.015)
+
+        assert pricing.input_per_token == 0.003
+        assert pricing.output_per_token == 0.015
+        assert pricing.cache_write_per_token == 0.0
+        assert pricing.cache_read_per_token == 0.0
+
+    def test_create_with_cache_pricing(self):
+        pricing = ModelPricing(
+            input_per_token=0.003,
+            output_per_token=0.015,
+            cache_write_per_token=0.00375,
+            cache_read_per_token=0.0003,
+        )
+
+        assert pricing.cache_write_per_token == 0.00375
+        assert pricing.cache_read_per_token == 0.0003
+
+    def test_is_frozen(self):
+        pricing = ModelPricing(input_per_token=0.003, output_per_token=0.015)
+
+        with pytest.raises(AttributeError):
+            pricing.input_per_token = 0.005
+
+
+class TestTokenUsageComputeCost:
+    def test_base_cost(self):
+        usage = TokenUsage(input_tokens=1_000_000, output_tokens=1_000_000)
+        pricing = ModelPricing(input_per_token=3e-6, output_per_token=15e-6)
+
+        cost = usage.compute_cost(pricing)
+
+        assert cost == pytest.approx(3.0 + 15.0)
+
+    def test_includes_cache_write_cost(self):
+        usage = TokenUsage(
+            input_tokens=0,
+            output_tokens=0,
+            cache_creation_input_tokens=1_000_000,
+        )
+        pricing = ModelPricing(
+            input_per_token=0.0,
+            output_per_token=0.0,
+            cache_write_per_token=3.75e-6,
+        )
+
+        cost = usage.compute_cost(pricing)
+
+        assert cost == pytest.approx(3.75)
+
+    def test_includes_cache_read_cost(self):
+        usage = TokenUsage(
+            input_tokens=0,
+            output_tokens=0,
+            cache_read_input_tokens=1_000_000,
+        )
+        pricing = ModelPricing(
+            input_per_token=0.0,
+            output_per_token=0.0,
+            cache_read_per_token=0.3e-6,
+        )
+
+        cost = usage.compute_cost(pricing)
+
+        assert cost == pytest.approx(0.3)
+
+    def test_zero_usage(self):
+        usage = TokenUsage()
+        pricing = ModelPricing(input_per_token=3e-6, output_per_token=15e-6)
+
+        cost = usage.compute_cost(pricing)
+
+        assert cost == 0.0
+
+    def test_full_cost_with_all_fields(self):
+        usage = TokenUsage(
+            input_tokens=1_000_000,
+            output_tokens=1_000_000,
+            cache_creation_input_tokens=1_000_000,
+            cache_read_input_tokens=1_000_000,
+        )
+        pricing = ModelPricing(
+            input_per_token=3e-6,
+            output_per_token=15e-6,
+            cache_write_per_token=3.75e-6,
+            cache_read_per_token=0.3e-6,
+        )
+
+        cost = usage.compute_cost(pricing)
+
+        assert cost == pytest.approx(3.0 + 15.0 + 3.75 + 0.3)

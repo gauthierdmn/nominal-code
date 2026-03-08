@@ -10,24 +10,28 @@ from nominal_code.agent.providers.types import (
     Message,
     StopReason,
     TextBlock,
+    TokenUsage,
     ToolUseBlock,
 )
 from nominal_code.agent.result import AgentResult
+from nominal_code.models import ProviderName
 
 
-def _make_text_response(text):
+def _make_text_response(text, usage=None):
     return LLMResponse(
         content=[TextBlock(text=text)],
         stop_reason=StopReason.END_TURN,
+        usage=usage,
     )
 
 
-def _make_tool_use_response(tool_id, name, tool_input):
+def _make_tool_use_response(tool_id, name, tool_input, usage=None):
     return LLMResponse(
         content=[
             ToolUseBlock(id=tool_id, name=name, input=tool_input),
         ],
         stop_reason=StopReason.TOOL_USE,
+        usage=usage,
     )
 
 
@@ -257,3 +261,107 @@ class TestRunAgentApi:
 
         assert result.is_error is True
         assert result.messages == ()
+
+
+class TestRunAgentApiCost:
+    @pytest.mark.asyncio
+    async def test_cost_summary_present_on_simple_response(self, tmp_path):
+        usage = TokenUsage(input_tokens=100, output_tokens=50)
+        mock_provider = AsyncMock()
+        mock_provider.send = AsyncMock(
+            return_value=_make_text_response("done", usage=usage),
+        )
+
+        result = await run_agent_api(
+            prompt="test",
+            cwd=tmp_path,
+            model="gpt-4.1",
+            provider=mock_provider,
+            provider_name=ProviderName.OPENAI,
+        )
+
+        assert result.cost is not None
+        assert result.cost.total_input_tokens == 100
+        assert result.cost.total_output_tokens == 50
+        assert result.cost.provider == "openai"
+        assert result.cost.model == "gpt-4.1"
+        assert result.cost.num_api_calls == 1
+
+    @pytest.mark.asyncio
+    async def test_cost_accumulates_across_turns(self, tmp_path):
+        test_file = tmp_path / "hello.py"
+        test_file.write_text("print('hello')")
+
+        usage1 = TokenUsage(input_tokens=100, output_tokens=50)
+        usage2 = TokenUsage(input_tokens=200, output_tokens=80)
+
+        mock_provider = AsyncMock()
+        mock_provider.send = AsyncMock(
+            side_effect=[
+                _make_tool_use_response(
+                    "t1",
+                    "Read",
+                    {"file_path": str(test_file)},
+                    usage=usage1,
+                ),
+                _make_text_response("The file prints hello.", usage=usage2),
+            ],
+        )
+
+        result = await run_agent_api(
+            prompt="Read hello.py",
+            cwd=tmp_path,
+            model="gpt-4.1",
+            provider=mock_provider,
+            provider_name=ProviderName.OPENAI,
+        )
+
+        assert result.cost is not None
+        assert result.cost.total_input_tokens == 300
+        assert result.cost.total_output_tokens == 130
+        assert result.cost.num_api_calls == 2
+        assert result.cost.total_cost_usd is not None
+
+    @pytest.mark.asyncio
+    async def test_cost_present_on_error(self, tmp_path):
+        from nominal_code.agent.providers.base import ProviderError
+
+        mock_provider = AsyncMock()
+        mock_provider.send = AsyncMock(
+            side_effect=ProviderError("fail"),
+        )
+
+        result = await run_agent_api(
+            prompt="test",
+            cwd=tmp_path,
+            model="gpt-4.1",
+            provider=mock_provider,
+            provider_name=ProviderName.OPENAI,
+        )
+
+        assert result.is_error is True
+        assert result.cost is not None
+        assert result.cost.num_api_calls == 0
+
+    @pytest.mark.asyncio
+    async def test_cost_with_no_usage_from_provider(self, tmp_path):
+        mock_provider = AsyncMock()
+        mock_provider.send = AsyncMock(
+            return_value=LLMResponse(
+                content=[TextBlock(text="done")],
+                stop_reason=StopReason.END_TURN,
+                usage=None,
+            ),
+        )
+
+        result = await run_agent_api(
+            prompt="test",
+            cwd=tmp_path,
+            model="gpt-4.1",
+            provider=mock_provider,
+            provider_name=ProviderName.OPENAI,
+        )
+
+        assert result.cost is not None
+        assert result.cost.total_input_tokens == 0
+        assert result.cost.total_cost_usd is None

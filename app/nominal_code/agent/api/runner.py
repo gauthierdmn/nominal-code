@@ -10,6 +10,7 @@ from nominal_code.agent.api.tools import (
     execute_tool,
     get_tool_definitions,
 )
+from nominal_code.agent.cost import build_cost_summary
 from nominal_code.agent.memory import truncate_messages
 from nominal_code.agent.providers.base import LLMProvider, ProviderError
 from nominal_code.agent.providers.types import (
@@ -17,11 +18,13 @@ from nominal_code.agent.providers.types import (
     LLMResponse,
     Message,
     TextBlock,
+    TokenUsage,
     ToolDefinition,
     ToolResultBlock,
     ToolUseBlock,
 )
 from nominal_code.agent.result import AgentResult
+from nominal_code.models import ProviderName
 
 MAX_RESPONSE_TOKENS: int = 16384
 
@@ -37,6 +40,7 @@ async def run_agent_api(
     system_prompt: str = "",
     allowed_tools: list[str] | None = None,
     prior_messages: list[Message] | None = None,
+    provider_name: ProviderName = ProviderName.ANTHROPIC,
 ) -> AgentResult:
     """
     Run the agent using an LLM provider with tool use.
@@ -59,6 +63,7 @@ async def run_agent_api(
         allowed_tools (list[str] | None): Restrict which tools the agent may use.
         prior_messages (list[Message] | None): Prior conversation messages
             for multi-turn continuity. Prepended before the new user message.
+        provider_name (ProviderName): Provider identifier for cost tracking.
 
     Returns:
         AgentResult: The parsed result from the agent.
@@ -73,6 +78,8 @@ async def run_agent_api(
     turns: int = 0
     start_time: int = _now_ms()
     conversation_id: str | None = None
+    token_usage: TokenUsage | None = None
+    api_call_count: int = 0
 
     try:
         while True:
@@ -85,6 +92,14 @@ async def run_agent_api(
                 previous_response_id=conversation_id,
             )
             conversation_id = response.response_id
+            api_call_count += 1
+
+            if response.usage is not None:
+                token_usage = (
+                    response.usage
+                    if token_usage is None
+                    else token_usage + response.usage
+                )
 
             messages.append(
                 Message(role="assistant", content=list(response.content)),
@@ -105,6 +120,12 @@ async def run_agent_api(
                     duration_ms=duration_ms,
                     messages=tuple(messages),
                     conversation_id=conversation_id,
+                    cost=build_cost_summary(
+                        token_usage,
+                        model,
+                        provider_name,
+                        api_call_count,
+                    ),
                 )
 
             for block in tool_use_blocks:
@@ -125,6 +146,12 @@ async def run_agent_api(
                         duration_ms=duration_ms,
                         messages=tuple(messages),
                         conversation_id=conversation_id,
+                        cost=build_cost_summary(
+                            token_usage,
+                            model,
+                            provider_name,
+                            api_call_count,
+                        ),
                     )
 
             tool_results: list[ContentBlock] = []
@@ -180,6 +207,12 @@ async def run_agent_api(
                     duration_ms=duration_ms,
                     messages=tuple(messages),
                     conversation_id=conversation_id,
+                    cost=build_cost_summary(
+                        token_usage,
+                        model,
+                        provider_name,
+                        api_call_count,
+                    ),
                 )
 
     except ProviderError as exc:
@@ -192,6 +225,12 @@ async def run_agent_api(
             is_error=True,
             num_turns=turns,
             duration_ms=duration_ms,
+            cost=build_cost_summary(
+                token_usage,
+                model,
+                provider_name,
+                api_call_count,
+            ),
         )
     except Exception as exc:
         duration_ms = _now_ms() - start_time
@@ -203,6 +242,12 @@ async def run_agent_api(
             is_error=True,
             num_turns=turns,
             duration_ms=duration_ms,
+            cost=build_cost_summary(
+                token_usage,
+                model,
+                provider_name,
+                api_call_count,
+            ),
         )
 
 

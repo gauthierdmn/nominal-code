@@ -15,6 +15,7 @@ from nominal_code.agent.providers.types import (
     Message,
     StopReason,
     TextBlock,
+    TokenUsage,
     ToolDefinition,
     ToolResultBlock,
     ToolUseBlock,
@@ -59,6 +60,13 @@ class GoogleProvider:
             ) from exc
 
         self._client: genai.Client = genai.Client()
+
+    async def close(self) -> None:
+        """
+        Close the underlying Google GenAI client.
+        """
+
+        await self._client.aio.aclose()
 
     async def send(
         self,
@@ -258,4 +266,15 @@ def _to_llm_response(
         finish_reason: str = str(candidate.finish_reason or "")
         stop_reason = STOP_REASON_MAP.get(finish_reason, StopReason.END_TURN)
 
-    return LLMResponse(content=content, stop_reason=stop_reason)
+    usage: TokenUsage | None = None
+
+    if response.usage_metadata is not None:
+        usage = TokenUsage(
+            input_tokens=response.usage_metadata.prompt_token_count or 0,
+            output_tokens=response.usage_metadata.candidates_token_count or 0,
+            cache_read_input_tokens=(
+                response.usage_metadata.cached_content_token_count or 0
+            ),
+        )
+
+    return LLMResponse(content=content, stop_reason=stop_reason, usage=usage)

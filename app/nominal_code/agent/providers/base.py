@@ -94,3 +94,13 @@ class LLMProvider(Protocol):
         """
 
         ...
+
+    async def close(self) -> None:
+        """
+        Release resources held by the provider.
+
+        Default implementation is a no-op. Providers that hold open
+        connections (e.g. Google GenAI) should override this to clean up.
+        """
+
+        ...

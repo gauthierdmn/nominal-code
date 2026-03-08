@@ -25,10 +25,60 @@ from nominal_code.agent.providers.types import (
     Message,
     StopReason,
     TextBlock,
+    TokenUsage,
     ToolDefinition,
     ToolResultBlock,
     ToolUseBlock,
 )
+
+
+class TestTokenUsageAdd:
+    def test_sums_base_fields(self):
+        first = TokenUsage(input_tokens=100, output_tokens=50)
+        second = TokenUsage(input_tokens=200, output_tokens=100)
+
+        result = first + second
+
+        assert result.input_tokens == 300
+        assert result.output_tokens == 150
+        assert type(result) is TokenUsage
+
+    def test_sums_cache_fields(self):
+        first = TokenUsage(
+            input_tokens=100,
+            output_tokens=50,
+            cache_creation_input_tokens=20,
+            cache_read_input_tokens=10,
+        )
+        second = TokenUsage(
+            input_tokens=200,
+            output_tokens=100,
+            cache_creation_input_tokens=30,
+            cache_read_input_tokens=40,
+        )
+
+        result = first + second
+
+        assert result.input_tokens == 300
+        assert result.output_tokens == 150
+        assert result.cache_creation_input_tokens == 50
+        assert result.cache_read_input_tokens == 50
+
+    def test_cache_defaults_to_zero(self):
+        with_cache = TokenUsage(
+            input_tokens=100,
+            output_tokens=50,
+            cache_creation_input_tokens=20,
+            cache_read_input_tokens=10,
+        )
+        without_cache = TokenUsage(input_tokens=200, output_tokens=100)
+
+        result = with_cache + without_cache
+
+        assert result.input_tokens == 300
+        assert result.output_tokens == 150
+        assert result.cache_creation_input_tokens == 20
+        assert result.cache_read_input_tokens == 10
 
 
 class TestToApiMessages:
@@ -202,6 +252,65 @@ class TestToLlmResponse:
         result = _to_llm_response(mock_response)
 
         assert result.stop_reason == StopReason.END_TURN
+
+
+class TestToLlmResponseUsage:
+    def test_extracts_anthropic_usage(self):
+        mock_response = MagicMock()
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "Hello!"
+        mock_response.content = [text_block]
+        mock_response.stop_reason = "end_turn"
+        mock_response.usage.input_tokens = 100
+        mock_response.usage.output_tokens = 50
+        mock_response.usage.cache_creation_input_tokens = 20
+        mock_response.usage.cache_read_input_tokens = 10
+
+        result = _to_llm_response(mock_response)
+
+        assert result.usage is not None
+        assert isinstance(result.usage, TokenUsage)
+        assert result.usage.input_tokens == 100
+        assert result.usage.output_tokens == 50
+        assert result.usage.cache_creation_input_tokens == 20
+        assert result.usage.cache_read_input_tokens == 10
+
+    def test_extracts_usage_with_null_cache_fields(self):
+        mock_response = MagicMock()
+        mock_response.content = []
+        mock_response.stop_reason = "end_turn"
+        mock_response.usage.input_tokens = 100
+        mock_response.usage.output_tokens = 50
+        mock_response.usage.cache_creation_input_tokens = None
+        mock_response.usage.cache_read_input_tokens = None
+
+        result = _to_llm_response(mock_response)
+
+        assert result.usage is not None
+        assert isinstance(result.usage, TokenUsage)
+        assert result.usage.input_tokens == 100
+        assert result.usage.output_tokens == 50
+        assert result.usage.cache_creation_input_tokens == 0
+        assert result.usage.cache_read_input_tokens == 0
+
+    def test_no_cache_fields_defaults_to_zero(self):
+        mock_response = MagicMock()
+        mock_response.content = []
+        mock_response.stop_reason = "end_turn"
+        mock_response.usage.input_tokens = 50
+        mock_response.usage.output_tokens = 25
+        mock_response.usage.cache_creation_input_tokens = None
+        mock_response.usage.cache_read_input_tokens = None
+
+        result = _to_llm_response(mock_response)
+
+        assert result.usage is not None
+        assert isinstance(result.usage, TokenUsage)
+        assert result.usage.input_tokens == 50
+        assert result.usage.output_tokens == 25
+        assert result.usage.cache_creation_input_tokens == 0
+        assert result.usage.cache_read_input_tokens == 0
 
 
 class TestAnthropicProviderSend:

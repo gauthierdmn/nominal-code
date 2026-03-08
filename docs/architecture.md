@@ -121,6 +121,7 @@ Used by **CLI mode** and **webhook server mode**. Wraps the [Claude Code SDK](ht
 - Supports conversation resumption via stored conversation IDs.
 - Requires the Claude Code CLI to be installed and on `PATH` (or set via `AGENT_CLI_PATH`).
 - Uses the CLI's configured login method — supports Claude Pro and Claude Max subscriptions as an alternative to per-token API billing.
+- Captures token usage and cost from the SDK's `ResultMessage` when available.
 
 ### LLM Provider API Runner
 
@@ -130,6 +131,7 @@ Used by **CI mode**. Calls the LLM provider API directly with tool use. Supports
 - Provides four tools: `Read` (file contents), `Glob` (file search), `Grep` (content search), and `Bash` (shell commands with allowlist validation).
 - Does not require the Claude Code CLI — only a provider API key (per-token billing).
 - Does not support conversation continuity (each run is stateless).
+- Accumulates token usage across all turns and computes dollar cost using a bundled pricing table.
 
 ### Runner Selection
 
@@ -214,6 +216,15 @@ Bridges the conversation store and the agent runner. Looks up the existing conve
 - **ConversationStore** — a unified in-memory store with two parallel dicts keyed by `(platform, repo, pr_number, bot_type)`: lightweight conversation IDs and full message histories (API mode only). Used to resume conversations across multiple interactions on the same PR.
 - **JobQueue** — per-PR async job queue. Each PR key gets its own `asyncio.Queue` with a single consumer task, ensuring that agent invocations on the same PR run serially (no race conditions). The consumer and queue are cleaned up when drained.
 
+### Cost Tracking (`agent/cost.py`)
+
+Both agent runners capture token usage and compute dollar costs per invocation:
+
+- **Pricing data** — a bundled `data/pricing.json` file maps model IDs to per-token rates (input, output, cache write, cache read). Generated from the [LiteLLM community pricing database](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json) by `scripts/update_pricing.py` and auto-updated weekly via a GitHub Actions workflow.
+- **API runner** — accumulates `TokenUsage` from each provider response across the agentic loop, then calls `build_cost_summary()` to compute the total cost.
+- **CLI runner** — extracts `total_cost_usd` and token usage from the SDK's `ResultMessage`.
+- **Output** — cost is attached to `AgentResult.cost` and `ReviewResult.cost`, logged by the review handler, and formatted for CI output.
+
 ### Git Workspace (`workspace/git.py`)
 
 Manages per-PR cloned repositories. Handles initial cloning, updating (fetch + reset), pushing changes, and provides a shared `.deps/` directory for private dependency cloning.
@@ -278,7 +289,10 @@ nominal_code/
 ├── models.py            # Shared enums (EventType, BotType, FileStatus) and dataclasses
 ├── agent/
 │   ├── runner.py        # Dispatcher: routes to API or CLI runner based on config
-│   ├── result.py        # AgentResult dataclass (output, turns, conversation ID)
+│   ├── result.py        # AgentResult dataclass (output, turns, conversation ID, cost)
+│   ├── cost.py          # CostSummary, pricing loader, cost computation
+│   ├── data/
+│   │   └── pricing.json # Bundled model pricing (auto-updated from LiteLLM)
 │   ├── prompts.py       # Guideline loading, language detection, system prompt composition
 │   ├── errors.py        # Async context manager for handler error handling
 │   ├── api/

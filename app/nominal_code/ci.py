@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 from types import ModuleType
 
+from nominal_code.agent.cost import CostSummary
 from nominal_code.agent.providers.registry import PROVIDERS
 from nominal_code.config import DEFAULT_AGENT_MAX_TURNS, Config, ProviderConfig
 from nominal_code.models import ProviderName
@@ -47,40 +48,14 @@ async def run_ci_review(platform_name: str) -> int:
     platform: ReviewerPlatform = platform_ci.build_platform()
     workspace_path: str = platform_ci.resolve_workspace()
 
-    custom_prompt: str = os.environ.get("INPUT_PROMPT", "")
-    model: str = os.environ.get("INPUT_MODEL", "")
-    max_turns_raw: str = os.environ.get(
-        "INPUT_MAX_TURNS",
-        str(DEFAULT_AGENT_MAX_TURNS),
-    )
-
     try:
-        max_turns: int = int(max_turns_raw)
-    except ValueError:
-        max_turns = 0
-
-    provider: str = os.environ.get("AGENT_PROVIDER", DEFAULT_AGENT_PROVIDER)
-
-    try:
-        provider_name: ProviderName = ProviderName(provider)
-    except ValueError:
-        available: str = ", ".join(p.value for p in ProviderName)
-        logger.error(
-            "Unknown AGENT_PROVIDER: %r. Available: %s",
-            provider,
-            available,
-        )
+        config: Config = _build_ci_config()
+    except ValueError as exc:
+        logger.error("%s", exc)
 
         return 1
 
-    provider_config: ProviderConfig = PROVIDERS[provider_name]
-    guidelines: str = os.environ.get("INPUT_CODING_GUIDELINES", "")
-    config: Config = Config.for_ci(
-        provider=provider_config,
-        model=model,
-        max_turns=max_turns,
-        guidelines_path=Path(guidelines) if guidelines else Path(),
-    )
+    custom_prompt: str = os.environ.get("INPUT_PROMPT", "")
 
     logger.info(
         "Running CI review for %s#%d on %s (workspace=%s)",
@@ -130,14 +105,103 @@ async def run_ci_review(platform_name: str) -> int:
             reply=CommentReply(body=result.effective_summary),
         )
 
+    cost_info: str = _format_cost_summary(result.cost)
+
     logger.info(
-        "CI review posted for %s#%d (findings=%d)",
+        "CI review posted for %s#%d (findings=%d)%s",
         event.repo_full_name,
         event.pr_number,
         len(result.valid_findings),
+        cost_info,
     )
 
     return 0
+
+
+def _build_ci_config() -> Config:
+    """
+    Build a CI Config from environment variables.
+
+    Reads ``INPUT_MODEL``, ``INPUT_MAX_TURNS``, ``AGENT_PROVIDER``,
+    and ``INPUT_CODING_GUIDELINES`` from the environment.
+
+    Returns:
+        Config: The resolved CI configuration.
+
+    Raises:
+        ValueError: If ``AGENT_PROVIDER`` is not a recognised provider.
+    """
+
+    model: str = os.environ.get("INPUT_MODEL", "")
+    max_turns_raw: str = os.environ.get(
+        "INPUT_MAX_TURNS",
+        str(DEFAULT_AGENT_MAX_TURNS),
+    )
+
+    try:
+        max_turns: int = int(max_turns_raw)
+    except ValueError:
+        max_turns = 0
+
+    provider: str = os.environ.get("AGENT_PROVIDER", DEFAULT_AGENT_PROVIDER)
+
+    try:
+        provider_name: ProviderName = ProviderName(provider)
+    except ValueError:
+        available: str = ", ".join(p.value for p in ProviderName)
+
+        raise ValueError(
+            f"Unknown AGENT_PROVIDER: {provider!r}. Available: {available}"
+        ) from None
+
+    provider_config: ProviderConfig = PROVIDERS[provider_name]
+    guidelines: str = os.environ.get("INPUT_CODING_GUIDELINES", "")
+
+    return Config.for_ci(
+        provider=provider_config,
+        model=model,
+        max_turns=max_turns,
+        guidelines_path=Path(guidelines) if guidelines else Path(),
+    )
+
+
+def _format_cost_summary(cost: CostSummary | None) -> str:
+    """
+    Format a cost summary for log output.
+
+    Args:
+        cost (CostSummary | None): The cost summary, or ``None`` if
+            cost tracking was not available.
+
+    Returns:
+        str: Formatted multi-line string prefixed with a newline,
+            or empty string if no cost data is available.
+    """
+
+    if cost is None:
+        return ""
+
+    parts: list[str] = []
+
+    if cost.model:
+        parts.append(f"  Model: {cost.model} ({cost.provider})")
+
+    tokens_in: int = cost.total_input_tokens
+    tokens_out: int = cost.total_output_tokens
+    tokens_line: str = f"  Tokens: {tokens_in:,} in / {tokens_out:,} out"
+
+    if cost.total_cache_read_tokens > 0:
+        tokens_line += f" (cache read: {cost.total_cache_read_tokens:,})"
+
+    parts.append(tokens_line)
+
+    if cost.total_cost_usd is not None:
+        parts.append(f"  Cost: ${cost.total_cost_usd:.4f}")
+
+    if cost.num_api_calls > 0:
+        parts.append(f"  API calls: {cost.num_api_calls}")
+
+    return "\n" + "\n".join(parts)
 
 
 def _load_platform_ci(platform_name: PlatformName) -> ModuleType:

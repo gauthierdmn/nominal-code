@@ -51,16 +51,20 @@ async def run_agent(
     if isinstance(agent_config, ApiAgentConfig):
         provider = create_provider(agent_config.provider.name)
 
-        return await run_agent_api(
-            prompt=prompt,
-            cwd=cwd,
-            model=agent_config.provider.model,
-            provider=provider,
-            max_turns=agent_config.max_turns,
-            system_prompt=system_prompt,
-            allowed_tools=allowed_tools,
-            prior_messages=prior_messages,
-        )
+        try:
+            return await run_agent_api(
+                prompt=prompt,
+                cwd=cwd,
+                model=agent_config.provider.model,
+                provider=provider,
+                max_turns=agent_config.max_turns,
+                system_prompt=system_prompt,
+                allowed_tools=allowed_tools,
+                prior_messages=prior_messages,
+                provider_name=agent_config.provider.name,
+            )
+        finally:
+            await provider.close()
 
     return await run_agent_cli(
         prompt=prompt,
