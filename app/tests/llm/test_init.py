@@ -27,7 +27,7 @@ class TestCreateProvider:
     def test_create_anthropic_provider(self):
         from nominal_code.llm.anthropic import AnthropicProvider
 
-        provider = create_provider("anthropic")
+        provider = create_provider(name="anthropic")
 
         assert isinstance(provider, AnthropicProvider)
 
@@ -37,7 +37,7 @@ class TestCreateProvider:
             OpenAIProvider,
         )
 
-        provider = create_provider("openai", api_key="test-key")
+        provider = create_provider(name="openai", api_key="test-key")
 
         assert isinstance(provider, OpenAIProvider)
 
@@ -46,13 +46,13 @@ class TestCreateProvider:
         from nominal_code.llm.google import GoogleProvider
 
         with patch("google.genai.Client"):
-            provider = create_provider("google")
+            provider = create_provider(name="google")
 
         assert isinstance(provider, GoogleProvider)
 
     def test_create_unknown_provider_raises(self):
         with pytest.raises(ValueError, match="Unknown provider"):
-            create_provider("nonexistent")
+            create_provider(name="nonexistent")
 
     def test_default_models_has_anthropic(self):
         assert "anthropic" in DEFAULT_MODELS
@@ -83,7 +83,7 @@ class TestCreateProvider:
         try:
             with patch("builtins.__import__", side_effect=_block_anthropic):
                 with pytest.raises(MissingProviderError, match="anthropic"):
-                    create_provider("anthropic")
+                    create_provider(name="anthropic")
         finally:
             sys.modules.update(cached_modules)
 
@@ -104,7 +104,7 @@ class TestCreateProvider:
         try:
             with patch("builtins.__import__", side_effect=_block_google):
                 with pytest.raises(MissingProviderError, match="google"):
-                    create_provider("google")
+                    create_provider(name="google")
         finally:
             sys.modules.update(cached_modules)
 
@@ -125,6 +125,6 @@ class TestCreateProvider:
         try:
             with patch("builtins.__import__", side_effect=_block_openai):
                 with pytest.raises(MissingProviderError, match="openai"):
-                    create_provider("openai")
+                    create_provider(name="openai")
         finally:
             sys.modules.update(cached_modules)

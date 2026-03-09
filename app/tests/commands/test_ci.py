@@ -336,7 +336,7 @@ class TestRunCiReview:
         assert exit_code == 0
         mock_platform.post_reply.assert_called_once()
         call_args = mock_platform.post_reply.call_args
-        assert "broken json" in call_args[0][1].body
+        assert "broken json" in call_args.kwargs["reply"].body
 
     @pytest.mark.asyncio
     async def test_run_ci_review_returns_one_on_runtime_error(
@@ -441,4 +441,4 @@ class TestRunCiReview:
             exit_code = await run_ci_review("gitlab")
 
         assert exit_code == 0
-        mock_load.assert_called_once_with(PlatformName.GITLAB)
+        mock_load.assert_called_once_with(platform_name=PlatformName.GITLAB)

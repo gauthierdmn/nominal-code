@@ -119,7 +119,7 @@ class TestReviewerProcessComment:
         )
 
         with patch(
-            "nominal_code.agent.cli.session.run_agent",
+            "nominal_code.agent.cli.runner.run",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -166,7 +166,7 @@ class TestReviewerProcessComment:
         )
 
         with patch(
-            "nominal_code.agent.cli.session.run_agent",
+            "nominal_code.agent.cli.runner.run",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -214,7 +214,7 @@ class TestReviewerProcessComment:
         )
 
         with patch(
-            "nominal_code.agent.cli.session.run_agent",
+            "nominal_code.agent.cli.runner.run",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -285,7 +285,7 @@ class TestReviewerProcessComment:
         )
 
         with patch(
-            "nominal_code.agent.cli.session.run_agent",
+            "nominal_code.agent.cli.runner.run",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -335,11 +335,11 @@ class TestReviewerProcessComment:
 
         with (
             patch(
-                "nominal_code.agent.cli.session.run_agent",
+                "nominal_code.agent.cli.runner.run",
                 new_callable=AsyncMock,
             ) as mock_tracking_run,
             patch(
-                "nominal_code.handlers.review.run_agent",
+                "nominal_code.handlers.review.run",
                 new_callable=AsyncMock,
             ) as mock_repair_run,
         ):
@@ -395,11 +395,11 @@ class TestReviewerProcessComment:
 
         with (
             patch(
-                "nominal_code.agent.cli.session.run_agent",
+                "nominal_code.agent.cli.runner.run",
                 new_callable=AsyncMock,
             ) as mock_tracking_run,
             patch(
-                "nominal_code.handlers.review.run_agent",
+                "nominal_code.handlers.review.run",
                 new_callable=AsyncMock,
             ) as mock_repair_run,
         ):
@@ -447,7 +447,9 @@ class TestBuildReviewerPrompt:
                 patch="@@ -0,0 +1 @@\n+line",
             ),
         ]
-        result = _build_reviewer_prompt(comment, "focus on security", changed_files)
+        result = _build_reviewer_prompt(
+            event=comment, user_prompt="focus on security", changed_files=changed_files
+        )
 
         assert "src/main.py" in result
         assert "modified" in result
@@ -467,9 +469,9 @@ class TestBuildReviewerPrompt:
             ),
         ]
         result = _build_reviewer_prompt(
-            comment,
-            "",
-            changed_files,
+            event=comment,
+            user_prompt="",
+            changed_files=changed_files,
             deps_path=Path("/tmp/.deps"),
         )
 
@@ -486,7 +488,9 @@ class TestBuildReviewerPrompt:
                 patch="+new",
             ),
         ]
-        result = _build_reviewer_prompt(comment, "", changed_files)
+        result = _build_reviewer_prompt(
+            event=comment, user_prompt="", changed_files=changed_files
+        )
 
         assert "Dependencies directory" not in result
 
@@ -495,7 +499,9 @@ class TestBuildReviewerPrompt:
         changed_files = [
             ChangedFile(file_path="binary.png", status=FileStatus.ADDED, patch=""),
         ]
-        result = _build_reviewer_prompt(comment, "", changed_files)
+        result = _build_reviewer_prompt(
+            event=comment, user_prompt="", changed_files=changed_files
+        )
 
         assert "binary.png" in result
         assert "no patch available" in result
@@ -512,7 +518,7 @@ class TestParseReviewOutput:
                 ],
             }
         )
-        result = parse_review_output(output)
+        result = parse_review_output(output=output)
 
         assert result is not None
         assert result.summary == "Looks good overall"
@@ -528,20 +534,20 @@ class TestParseReviewOutput:
                 "comments": [],
             }
         )
-        result = parse_review_output(output)
+        result = parse_review_output(output=output)
 
         assert result is not None
         assert result.summary == "No issues found"
         assert result.findings == []
 
     def test_parse_review_output_malformed_json(self):
-        result = parse_review_output("not json at all")
+        result = parse_review_output(output="not json at all")
 
         assert result is None
 
     def test_parse_review_output_missing_summary(self):
         output = json.dumps({"comments": []})
-        result = parse_review_output(output)
+        result = parse_review_output(output=output)
 
         assert result is None
 
@@ -552,7 +558,7 @@ class TestParseReviewOutput:
                 "comments": [{"line": 10, "body": "test"}],
             }
         )
-        result = parse_review_output(output)
+        result = parse_review_output(output=output)
 
         assert result is None
 
@@ -563,19 +569,19 @@ class TestParseReviewOutput:
                 "comments": [{"path": "a.py", "line": -1, "body": "test"}],
             }
         )
-        result = parse_review_output(output)
+        result = parse_review_output(output=output)
 
         assert result is None
 
     def test_parse_review_output_strips_markdown_fences(self):
         output = '```json\n{"summary": "Good", "comments": []}\n```'
-        result = parse_review_output(output)
+        result = parse_review_output(output=output)
 
         assert result is not None
         assert result.summary == "Good"
 
     def test_parse_review_output_not_a_dict(self):
-        result = parse_review_output("[1, 2, 3]")
+        result = parse_review_output(output="[1, 2, 3]")
 
         assert result is None
 
@@ -585,7 +591,7 @@ class TestParseReviewOutput:
             '[{"path": "f.py", "line": 1, "body": "use "foo" here"}]}'
         )
 
-        result = parse_review_output(broken)
+        result = parse_review_output(output=broken)
 
         assert result is not None
         assert result.summary == "ok"
@@ -594,7 +600,7 @@ class TestParseReviewOutput:
     def test_parse_review_output_extracts_json_from_prose(self):
         output = 'Here is my review:\n{"summary": "Looks good", "comments": []}\nDone!'
 
-        result = parse_review_output(output)
+        result = parse_review_output(output=output)
 
         assert result is not None
         assert result.summary == "Looks good"
@@ -605,13 +611,13 @@ class TestParseReviewOutput:
             '[{"path": "a.py", "line": 1, "body": "fix",}],}'
         )
 
-        result = parse_review_output(broken)
+        result = parse_review_output(output=broken)
 
         assert result is not None
         assert result.summary == "ok"
 
     def test_parse_review_output_empty_string(self):
-        result = parse_review_output("")
+        result = parse_review_output(output="")
 
         assert result is None
 
@@ -622,7 +628,7 @@ class TestParseReviewOutput:
             '"suggestion": "query = "SELECT * FROM users WHERE id = ?""}]}'
         )
 
-        result = parse_review_output(broken)
+        result = parse_review_output(output=broken)
 
         assert result is not None
         assert result.findings[0].suggestion is not None
@@ -642,7 +648,7 @@ class TestParseReviewOutput:
                 ],
             }
         )
-        result = parse_review_output(output)
+        result = parse_review_output(output=output)
 
         assert result is not None
         assert result.findings[0].side == DiffSide.LEFT
@@ -656,7 +662,7 @@ class TestParseReviewOutput:
                 ],
             }
         )
-        result = parse_review_output(output)
+        result = parse_review_output(output=output)
 
         assert result is None
 
@@ -677,9 +683,9 @@ class TestBuildReviewerPromptWithExistingComments:
             ),
         ]
         result = _build_reviewer_prompt(
-            comment,
-            "",
-            changed_files,
+            event=comment,
+            user_prompt="",
+            changed_files=changed_files,
             existing_comments=existing,
         )
 
@@ -693,7 +699,9 @@ class TestBuildReviewerPromptWithExistingComments:
         changed_files = [
             ChangedFile(file_path="a.py", status=FileStatus.MODIFIED, patch="+new"),
         ]
-        result = _build_reviewer_prompt(comment, "", changed_files)
+        result = _build_reviewer_prompt(
+            event=comment, user_prompt="", changed_files=changed_files
+        )
 
         assert "Existing discussions" not in result
 
@@ -703,9 +711,9 @@ class TestBuildReviewerPromptWithExistingComments:
             ChangedFile(file_path="a.py", status=FileStatus.MODIFIED, patch="+new"),
         ]
         result = _build_reviewer_prompt(
-            comment,
-            "",
-            changed_files,
+            event=comment,
+            user_prompt="",
+            changed_files=changed_files,
             existing_comments=[],
         )
 
@@ -725,9 +733,9 @@ class TestBuildReviewerPromptWithExistingComments:
             ),
         ]
         result = _build_reviewer_prompt(
-            comment,
-            "",
-            changed_files,
+            event=comment,
+            user_prompt="",
+            changed_files=changed_files,
             existing_comments=existing,
         )
 
@@ -746,9 +754,9 @@ class TestBuildReviewerPromptWithExistingComments:
             ),
         ]
         result = _build_reviewer_prompt(
-            comment,
-            "",
-            changed_files,
+            event=comment,
+            user_prompt="",
+            changed_files=changed_files,
             existing_comments=existing,
         )
 
@@ -786,7 +794,7 @@ class TestBotCommentFiltering:
         )
 
         with patch(
-            "nominal_code.agent.cli.session.run_agent",
+            "nominal_code.agent.cli.runner.run",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -844,7 +852,7 @@ class TestBotCommentFiltering:
         )
 
         with patch(
-            "nominal_code.agent.cli.session.run_agent",
+            "nominal_code.agent.cli.runner.run",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -908,7 +916,7 @@ class TestBotCommentFiltering:
         platform.fetch_pr_comments = AsyncMock(side_effect=track_fetch_comments)
 
         with patch(
-            "nominal_code.agent.cli.session.run_agent",
+            "nominal_code.agent.cli.runner.run",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -971,7 +979,9 @@ class TestFilterFindings:
         findings = [
             ReviewFinding(file_path="src/main.py", line=2, body="Issue here"),
         ]
-        valid, rejected = _filter_findings(findings, changed_files)
+        valid, rejected = _filter_findings(
+            findings=findings, changed_files=changed_files
+        )
 
         assert len(valid) == 1
         assert len(rejected) == 0
@@ -987,7 +997,9 @@ class TestFilterFindings:
         findings = [
             ReviewFinding(file_path="src/main.py", line=100, body="Not in diff"),
         ]
-        valid, rejected = _filter_findings(findings, changed_files)
+        valid, rejected = _filter_findings(
+            findings=findings, changed_files=changed_files
+        )
 
         assert len(valid) == 0
         assert len(rejected) == 1
@@ -1003,7 +1015,9 @@ class TestFilterFindings:
         findings = [
             ReviewFinding(file_path="src/other.py", line=5, body="Not in PR"),
         ]
-        valid, rejected = _filter_findings(findings, changed_files)
+        valid, rejected = _filter_findings(
+            findings=findings, changed_files=changed_files
+        )
 
         assert len(valid) == 0
         assert len(rejected) == 1
@@ -1021,7 +1035,9 @@ class TestFilterFindings:
             ReviewFinding(file_path="src/main.py", line=999, body="Invalid line"),
             ReviewFinding(file_path="src/other.py", line=5, body="Invalid file"),
         ]
-        valid, rejected = _filter_findings(findings, changed_files)
+        valid, rejected = _filter_findings(
+            findings=findings, changed_files=changed_files
+        )
 
         assert len(valid) == 1
         assert valid[0].body == "Valid"
@@ -1035,7 +1051,7 @@ class TestFilterFindings:
                 patch="@@ -1 +1 @@\n+new",
             ),
         ]
-        valid, rejected = _filter_findings([], changed_files)
+        valid, rejected = _filter_findings(findings=[], changed_files=changed_files)
 
         assert valid == []
         assert rejected == []
@@ -1053,7 +1069,9 @@ class TestFilterFindings:
             ReviewFinding(file_path="a.py", line=21, body="In second hunk"),
             ReviewFinding(file_path="a.py", line=10, body="Between hunks"),
         ]
-        valid, rejected = _filter_findings(findings, changed_files)
+        valid, rejected = _filter_findings(
+            findings=findings, changed_files=changed_files
+        )
 
         assert len(valid) == 2
         assert len(rejected) == 1
@@ -1075,7 +1093,9 @@ class TestFilterFindings:
                 side=DiffSide.LEFT,
             ),
         ]
-        valid, rejected = _filter_findings(findings, changed_files)
+        valid, rejected = _filter_findings(
+            findings=findings, changed_files=changed_files
+        )
 
         assert len(valid) == 1
         assert len(rejected) == 0
@@ -1096,7 +1116,9 @@ class TestFilterFindings:
                 side=DiffSide.LEFT,
             ),
         ]
-        valid, rejected = _filter_findings(findings, changed_files)
+        valid, rejected = _filter_findings(
+            findings=findings, changed_files=changed_files
+        )
 
         assert len(valid) == 0
         assert len(rejected) == 1
@@ -1118,7 +1140,9 @@ class TestFilterFindings:
                 start_line=2,
             ),
         ]
-        valid, rejected = _filter_findings(findings, changed_files)
+        valid, rejected = _filter_findings(
+            findings=findings, changed_files=changed_files
+        )
 
         assert len(valid) == 1
         assert len(rejected) == 0
@@ -1140,7 +1164,9 @@ class TestFilterFindings:
                 start_line=8,
             ),
         ]
-        valid, rejected = _filter_findings(findings, changed_files)
+        valid, rejected = _filter_findings(
+            findings=findings, changed_files=changed_files
+        )
 
         assert len(valid) == 0
         assert len(rejected) == 1
@@ -1148,7 +1174,7 @@ class TestFilterFindings:
 
 class TestBuildEffectiveSummary:
     def test_build_effective_summary_no_rejected(self):
-        result = _build_effective_summary("All good", [])
+        result = _build_effective_summary(summary="All good", rejected_findings=[])
 
         assert result == "All good"
 
@@ -1157,7 +1183,9 @@ class TestBuildEffectiveSummary:
             ReviewFinding(file_path="src/other.py", line=5, body="Missing update"),
             ReviewFinding(file_path="src/utils.py", line=20, body="Stale reference"),
         ]
-        result = _build_effective_summary("Found issues", rejected)
+        result = _build_effective_summary(
+            summary="Found issues", rejected_findings=rejected
+        )
 
         assert result.startswith("Found issues")
         assert "Additional notes" in result
@@ -1171,7 +1199,7 @@ class TestBuildEffectiveSummary:
         rejected = [
             ReviewFinding(file_path="a.py", line=1, body="Needs change"),
         ]
-        result = _build_effective_summary("Summary", rejected)
+        result = _build_effective_summary(summary="Summary", rejected_findings=rejected)
 
         assert "**a.py:1**" in result
         assert "Needs change" in result
@@ -1203,7 +1231,7 @@ class TestReview:
         )
 
         with patch(
-            "nominal_code.agent.cli.session.run_agent",
+            "nominal_code.agent.cli.runner.run",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -1252,12 +1280,12 @@ class TestReview:
 
         with (
             patch(
-                "nominal_code.agent.cli.session.run_agent",
+                "nominal_code.agent.cli.runner.run",
                 new_callable=AsyncMock,
                 return_value=bad_result,
             ),
             patch(
-                "nominal_code.handlers.review.run_agent",
+                "nominal_code.handlers.review.run",
                 new_callable=AsyncMock,
                 return_value=bad_result,
             ),
@@ -1294,7 +1322,7 @@ class TestReview:
         )
 
         with patch(
-            "nominal_code.agent.cli.session.run_agent",
+            "nominal_code.agent.cli.runner.run",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -1348,7 +1376,7 @@ class TestReview:
         )
 
         with patch(
-            "nominal_code.agent.cli.session.run_agent",
+            "nominal_code.agent.cli.runner.run",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -1385,7 +1413,7 @@ class TestParseFinding:
     def test_parse_finding_valid(self):
         item = {"path": "src/main.py", "line": 10, "body": "Fix this"}
 
-        result = _parse_finding(item)
+        result = _parse_finding(item=item)
 
         assert result.file_path == "src/main.py"
         assert result.line == 10
@@ -1394,57 +1422,62 @@ class TestParseFinding:
     def test_parse_finding_defaults_side_to_right(self):
         item = {"path": "src/main.py", "line": 5, "body": "Note"}
 
-        result = _parse_finding(item)
+        result = _parse_finding(item=item)
 
         assert result.side == DiffSide.RIGHT
 
     def test_parse_finding_explicit_left_side(self):
         item = {"path": "src/main.py", "line": 5, "body": "Note", "side": "LEFT"}
 
-        result = _parse_finding(item)
+        result = _parse_finding(item=item)
 
         assert result.side == DiffSide.LEFT
 
     def test_parse_finding_non_dict_raises(self):
         with pytest.raises(ValueError, match="not a dict"):
-            _parse_finding("not a dict")
+            _parse_finding(item="not a dict")
 
     def test_parse_finding_missing_path_raises(self):
         with pytest.raises(ValueError, match="invalid path"):
-            _parse_finding({"line": 5, "body": "text"})
+            _parse_finding(item={"line": 5, "body": "text"})
 
     def test_parse_finding_empty_path_raises(self):
         with pytest.raises(ValueError, match="invalid path"):
-            _parse_finding({"path": "", "line": 5, "body": "text"})
+            _parse_finding(item={"path": "", "line": 5, "body": "text"})
 
     def test_parse_finding_non_string_path_raises(self):
         with pytest.raises(ValueError, match="invalid path"):
-            _parse_finding({"path": 123, "line": 5, "body": "text"})
+            _parse_finding(item={"path": 123, "line": 5, "body": "text"})
 
     def test_parse_finding_boolean_line_raises(self):
         with pytest.raises(ValueError, match="invalid line"):
-            _parse_finding({"path": "src/main.py", "line": True, "body": "text"})
+            _parse_finding(item={"path": "src/main.py", "line": True, "body": "text"})
 
     def test_parse_finding_line_zero_raises(self):
         with pytest.raises(ValueError, match="invalid line"):
-            _parse_finding({"path": "src/main.py", "line": 0, "body": "text"})
+            _parse_finding(item={"path": "src/main.py", "line": 0, "body": "text"})
 
     def test_parse_finding_negative_line_raises(self):
         with pytest.raises(ValueError, match="invalid line"):
-            _parse_finding({"path": "src/main.py", "line": -1, "body": "text"})
+            _parse_finding(item={"path": "src/main.py", "line": -1, "body": "text"})
 
     def test_parse_finding_missing_body_raises(self):
         with pytest.raises(ValueError, match="invalid body"):
-            _parse_finding({"path": "src/main.py", "line": 5})
+            _parse_finding(item={"path": "src/main.py", "line": 5})
 
     def test_parse_finding_empty_body_raises(self):
         with pytest.raises(ValueError, match="invalid body"):
-            _parse_finding({"path": "src/main.py", "line": 5, "body": ""})
+            _parse_finding(item={"path": "src/main.py", "line": 5, "body": ""})
 
     def test_parse_finding_invalid_side_raises(self):
         with pytest.raises(ValueError, match="invalid side"):
             _parse_finding(
-                {"path": "src/main.py", "line": 5, "body": "text", "side": "MIDDLE"}
+                item={
+                    "path": "src/main.py",
+                    "line": 5,
+                    "body": "text",
+                    "side": "MIDDLE",
+                }
             )
 
     def test_parse_finding_with_suggestion(self):
@@ -1455,7 +1488,7 @@ class TestParseFinding:
             "suggestion": "user_count = len(users)",
         }
 
-        result = _parse_finding(item)
+        result = _parse_finding(item=item)
 
         assert result.suggestion == "user_count = len(users)"
         assert result.start_line is None
@@ -1469,7 +1502,7 @@ class TestParseFinding:
             "start_line": 18,
         }
 
-        result = _parse_finding(item)
+        result = _parse_finding(item=item)
 
         assert result.suggestion == "if items:\n    process(items)"
         assert result.start_line == 18
@@ -1477,7 +1510,7 @@ class TestParseFinding:
     def test_parse_finding_suggestion_empty_string_raises(self):
         with pytest.raises(ValueError, match="invalid suggestion"):
             _parse_finding(
-                {
+                item={
                     "path": "src/main.py",
                     "line": 10,
                     "body": "Fix",
@@ -1488,7 +1521,7 @@ class TestParseFinding:
     def test_parse_finding_boolean_start_line_raises(self):
         with pytest.raises(ValueError, match="invalid start_line"):
             _parse_finding(
-                {
+                item={
                     "path": "src/main.py",
                     "line": 10,
                     "body": "Fix",
@@ -1500,7 +1533,7 @@ class TestParseFinding:
     def test_parse_finding_suggestion_start_line_greater_than_line_raises(self):
         with pytest.raises(ValueError, match="start_line must be <= line"):
             _parse_finding(
-                {
+                item={
                     "path": "src/main.py",
                     "line": 5,
                     "body": "Fix",
@@ -1517,7 +1550,7 @@ class TestParseFinding:
             "start_line": 20,
         }
 
-        result = _parse_finding(item)
+        result = _parse_finding(item=item)
 
         assert result.start_line == 20
         assert result.suggestion is None
@@ -1525,7 +1558,7 @@ class TestParseFinding:
     def test_parse_finding_suggestion_on_left_side_raises(self):
         with pytest.raises(ValueError, match="suggestion not allowed on LEFT side"):
             _parse_finding(
-                {
+                item={
                     "path": "src/main.py",
                     "line": 5,
                     "body": "Fix",
@@ -1558,7 +1591,7 @@ class TestParseReviewOutputWithSuggestions:
             }
         )
 
-        result = parse_review_output(output)
+        result = parse_review_output(output=output)
 
         assert result is not None
         assert len(result.findings) == 2
@@ -1572,41 +1605,41 @@ class TestExtractJsonSubstring:
     def test_extracts_json_from_prose(self):
         text = 'Here is the JSON: {"summary": "ok", "comments": []} done.'
 
-        result = _extract_json_substring(text)
+        result = _extract_json_substring(text=text)
 
         assert result == '{"summary": "ok", "comments": []}'
 
     def test_returns_original_when_no_braces(self):
-        result = _extract_json_substring("no json here")
+        result = _extract_json_substring(text="no json here")
 
         assert result == "no json here"
 
     def test_returns_original_when_only_open_brace(self):
-        result = _extract_json_substring("just { open")
+        result = _extract_json_substring(text="just { open")
 
         assert result == "just { open"
 
     def test_handles_nested_braces(self):
         text = '{"outer": {"inner": 1}}'
 
-        result = _extract_json_substring(text)
+        result = _extract_json_substring(text=text)
 
         assert result == '{"outer": {"inner": 1}}'
 
     def test_strips_markdown_around_json(self):
         text = 'Sure, here is the review:\n```json\n{"summary": "ok"}\n```'
 
-        result = _extract_json_substring(text)
+        result = _extract_json_substring(text=text)
 
         assert result == '{"summary": "ok"}'
 
     def test_returns_original_for_empty_string(self):
-        result = _extract_json_substring("")
+        result = _extract_json_substring(text="")
 
         assert result == ""
 
     def test_returns_original_when_closing_before_opening(self):
-        result = _extract_json_substring("} before {")
+        result = _extract_json_substring(text="} before {")
 
         assert result == "} before {"
 
@@ -1618,7 +1651,7 @@ class TestRepairReviewOutput:
         valid_json = json.dumps({"summary": "Fixed", "comments": []})
 
         with patch(
-            "nominal_code.handlers.review.run_agent",
+            "nominal_code.handlers.review.run",
             new_callable=AsyncMock,
             return_value=AgentResult(
                 output=valid_json,
@@ -1627,7 +1660,9 @@ class TestRepairReviewOutput:
                 duration_ms=100,
             ),
         ) as mock_run:
-            result = await _repair_review_output("bad json", config, Path("/tmp"))
+            result = await _repair_review_output(
+                broken_output="bad json", config=config, cwd=Path("/tmp")
+            )
 
         assert result is not None
         assert result.summary == "Fixed"
@@ -1639,7 +1674,7 @@ class TestRepairReviewOutput:
         valid_json = json.dumps({"summary": "Fixed", "comments": []})
 
         with patch(
-            "nominal_code.handlers.review.run_agent",
+            "nominal_code.handlers.review.run",
             new_callable=AsyncMock,
             side_effect=[
                 AgentResult(
@@ -1656,7 +1691,9 @@ class TestRepairReviewOutput:
                 ),
             ],
         ) as mock_run:
-            result = await _repair_review_output("bad json", config, Path("/tmp"))
+            result = await _repair_review_output(
+                broken_output="bad json", config=config, cwd=Path("/tmp")
+            )
 
         assert result is not None
         assert result.summary == "Fixed"
@@ -1669,7 +1706,7 @@ class TestRepairReviewOutput:
         wrapped = 'Here is the review:\n{"summary": "broken}\nDone.'
 
         with patch(
-            "nominal_code.handlers.review.run_agent",
+            "nominal_code.handlers.review.run",
             new_callable=AsyncMock,
             return_value=AgentResult(
                 output=valid_json,
@@ -1678,7 +1715,9 @@ class TestRepairReviewOutput:
                 duration_ms=100,
             ),
         ) as mock_run:
-            await _repair_review_output(wrapped, config, Path("/tmp"))
+            await _repair_review_output(
+                broken_output=wrapped, config=config, cwd=Path("/tmp")
+            )
 
         prompt_sent = mock_run.call_args.kwargs["prompt"]
 
@@ -1690,7 +1729,7 @@ class TestRepairReviewOutput:
         config = _make_config()
 
         with patch(
-            "nominal_code.handlers.review.run_agent",
+            "nominal_code.handlers.review.run",
             new_callable=AsyncMock,
             return_value=AgentResult(
                 output="gibberish",
@@ -1699,7 +1738,9 @@ class TestRepairReviewOutput:
                 duration_ms=100,
             ),
         ):
-            result = await _repair_review_output("total nonsense", config, Path("/tmp"))
+            result = await _repair_review_output(
+                broken_output="total nonsense", config=config, cwd=Path("/tmp")
+            )
 
         assert result is None
 
@@ -1708,7 +1749,7 @@ class TestBuildFallbackComment:
     def test_extracts_summary_from_broken_json(self):
         broken = '{"summary": "This PR has issues", "comments": [bad stuff}'
 
-        result = _build_fallback_comment(broken)
+        result = _build_fallback_comment(raw_output=broken)
 
         assert "This PR has issues" in result
         assert "unable to produce inline review comments" in result
@@ -1716,24 +1757,24 @@ class TestBuildFallbackComment:
     def test_handles_escaped_quotes_in_summary(self):
         broken = '{"summary": "Found \\"critical\\" bugs", "comments": []bad'
 
-        result = _build_fallback_comment(broken)
+        result = _build_fallback_comment(raw_output=broken)
 
         assert 'Found "critical" bugs' in result
 
     def test_summary_variant_includes_contact_admin(self):
         broken = '{"summary": "Has bugs", "comments": [bad}'
 
-        result = _build_fallback_comment(broken)
+        result = _build_fallback_comment(raw_output=broken)
 
         assert "contact your administrator" in result
 
     def test_returns_generic_message_when_no_summary(self):
-        result = _build_fallback_comment("total nonsense")
+        result = _build_fallback_comment(raw_output="total nonsense")
 
         assert result == FALLBACK_MESSAGE
 
     def test_returns_generic_message_for_empty_output(self):
-        result = _build_fallback_comment("")
+        result = _build_fallback_comment(raw_output="")
 
         assert result == FALLBACK_MESSAGE
 
@@ -1742,7 +1783,7 @@ class TestParseDiffLines:
     def test_parse_diff_lines_addition_lines_in_right(self):
         patch_text = "@@ -0,0 +1,3 @@\n+line one\n+line two\n+line three\n"
 
-        result = _parse_diff_lines(patch_text)
+        result = _parse_diff_lines(patch=patch_text)
 
         assert 1 in result[DiffSide.RIGHT]
         assert 2 in result[DiffSide.RIGHT]
@@ -1751,7 +1792,7 @@ class TestParseDiffLines:
     def test_parse_diff_lines_deletion_lines_in_left(self):
         patch_text = "@@ -1,2 +1,0 @@\n-removed line 1\n-removed line 2\n"
 
-        result = _parse_diff_lines(patch_text)
+        result = _parse_diff_lines(patch=patch_text)
 
         assert 1 in result[DiffSide.LEFT]
         assert 2 in result[DiffSide.LEFT]
@@ -1759,13 +1800,13 @@ class TestParseDiffLines:
     def test_parse_diff_lines_context_lines_in_both(self):
         patch_text = "@@ -5,3 +5,3 @@\n context one\n context two\n"
 
-        result = _parse_diff_lines(patch_text)
+        result = _parse_diff_lines(patch=patch_text)
 
         assert 5 in result[DiffSide.LEFT]
         assert 5 in result[DiffSide.RIGHT]
 
     def test_parse_diff_lines_empty_patch_returns_empty_sets(self):
-        result = _parse_diff_lines("")
+        result = _parse_diff_lines(patch="")
 
         assert result[DiffSide.LEFT] == set()
         assert result[DiffSide.RIGHT] == set()
@@ -1773,7 +1814,7 @@ class TestParseDiffLines:
     def test_parse_diff_lines_returns_both_sides(self):
         patch_text = "@@ -1,1 +1,1 @@\n-old\n+new\n"
 
-        result = _parse_diff_lines(patch_text)
+        result = _parse_diff_lines(patch=patch_text)
 
         assert DiffSide.LEFT in result
         assert DiffSide.RIGHT in result
@@ -1789,7 +1830,7 @@ class TestBuildDiffIndex:
             )
         ]
 
-        result = _build_diff_index(changed_files)
+        result = _build_diff_index(changed_files=changed_files)
 
         assert "src/main.py" in result
 
@@ -1802,12 +1843,12 @@ class TestBuildDiffIndex:
             )
         ]
 
-        result = _build_diff_index(changed_files)
+        result = _build_diff_index(changed_files=changed_files)
 
         assert "src/main.py" not in result
 
     def test_build_diff_index_empty_list_returns_empty_dict(self):
-        result = _build_diff_index([])
+        result = _build_diff_index(changed_files=[])
 
         assert result == {}
 
@@ -1820,7 +1861,7 @@ class TestBuildDiffIndex:
             )
         ]
 
-        result = _build_diff_index(changed_files)
+        result = _build_diff_index(changed_files=changed_files)
 
         assert DiffSide.LEFT in result["a.py"]
         assert DiffSide.RIGHT in result["a.py"]
@@ -1829,7 +1870,7 @@ class TestBuildDiffIndex:
 class TestFormatExistingComments:
     def test_format_existing_comments_empty_list(self):
 
-        result = _format_existing_comments([])
+        result = _format_existing_comments(comments=[])
 
         assert "## Existing discussions" in result
 
@@ -1838,7 +1879,7 @@ class TestFormatExistingComments:
 
         comments = [ExistingComment(author="alice", body="Looks good!", created_at="")]
 
-        result = _format_existing_comments(comments)
+        result = _format_existing_comments(comments=comments)
 
         assert "alice" in result
         assert "Looks good!" in result
@@ -1856,7 +1897,7 @@ class TestFormatExistingComments:
             )
         ]
 
-        result = _format_existing_comments(comments)
+        result = _format_existing_comments(comments=comments)
 
         assert "src/main.py" in result
         assert "10" in result
@@ -1873,7 +1914,7 @@ class TestFormatExistingComments:
             )
         ]
 
-        result = _format_existing_comments(comments)
+        result = _format_existing_comments(comments=comments)
 
         assert "resolved" in result
 
@@ -1884,7 +1925,7 @@ class TestFormatExistingComments:
             ExistingComment(author="alice", body="LGTM", file_path="", created_at="")
         ]
 
-        result = _format_existing_comments(comments)
+        result = _format_existing_comments(comments=comments)
 
         assert "alice" in result
         assert "LGTM" in result

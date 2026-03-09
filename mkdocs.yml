@@ -45,7 +45,10 @@ nav:
       - Environment Variables: reference/env-vars.md
   - Architecture: architecture.md
   - Security: security.md
-  - Deployment: deployment.md
+  - Deployment:
+      - Overview: deployment/index.md
+      - Standalone: deployment/standalone.md
+      - Kubernetes: deployment/kubernetes.md
 
 plugins:
   - search

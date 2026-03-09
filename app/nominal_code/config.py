@@ -106,8 +106,8 @@ class KubernetesConfig:
     Configuration for the Kubernetes job runner.
 
     Attributes:
+        image (str): Docker image for review pods.
         namespace (str): Kubernetes namespace for review Jobs.
-        image (str): Docker image for review pods (required).
         service_account (str): ServiceAccount name for review pods.
         image_pull_policy (str): Image pull policy override.
         backoff_limit (int): Job retry count (0 = no retries).
@@ -120,8 +120,8 @@ class KubernetesConfig:
         resource_limits_memory (str): Memory limit.
     """
 
+    image: str
     namespace: str = "default"
-    image: str = ""
     service_account: str = ""
     image_pull_policy: str = ""
     backoff_limit: int = 0
@@ -400,14 +400,14 @@ class Config:
         webhook_port: int = env.int("WEBHOOK_PORT", DEFAULT_WEBHOOK_PORT)
 
         try:
-            users_raw: str = env.str("ALLOWED_USERS")
+            allowed_users_env: str = env.str("ALLOWED_USERS")
         except EnvError as exc:
             raise ValueError(
                 "Required environment variable 'ALLOWED_USERS' is not set"
             ) from exc
 
         allowed_users: frozenset[str] = frozenset(
-            user.strip() for user in users_raw.split(",") if user.strip()
+            user.strip() for user in allowed_users_env.split(",") if user.strip()
         )
 
         if not allowed_users:
@@ -618,9 +618,10 @@ def _parse_kubernetes_config() -> KubernetesConfig | None:
             "K8S_IMAGE is required when JOB_RUNNER=kubernetes",
         )
 
-    secrets_raw: str = env.str("K8S_ENV_FROM_SECRETS", "")
     env_from_secrets: tuple[str, ...] = tuple(
-        secret.strip() for secret in secrets_raw.split(",") if secret.strip()
+        secret.strip()
+        for secret in env.str("K8S_ENV_FROM_SECRETS", "").split(",")
+        if secret.strip()
     )
 
     return KubernetesConfig(

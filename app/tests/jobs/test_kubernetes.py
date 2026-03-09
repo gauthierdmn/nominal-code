@@ -11,6 +11,7 @@ from nominal_code.jobs.kubernetes import (
     _slugify,
 )
 from nominal_code.jobs.payload import JobPayload
+from nominal_code.jobs.redis_queue import RedisJobQueue
 from nominal_code.models import EventType
 from nominal_code.platforms.base import CommentEvent, PlatformName
 
@@ -45,7 +46,16 @@ def _make_job():
         body="@bot review",
     )
 
-    return JobPayload(event=event, prompt="review", bot_type="reviewer")
+    return JobPayload(event=event, bot_type="reviewer")
+
+
+def _make_mock_queue():
+    mock_queue = MagicMock(spec=RedisJobQueue)
+    mock_queue.enqueue = AsyncMock()
+    mock_queue.await_job_completion = AsyncMock(return_value="succeeded")
+    mock_queue.set_job_callback = MagicMock()
+
+    return mock_queue
 
 
 class TestSlugify:
@@ -61,24 +71,54 @@ class TestSlugify:
 
 class TestBuildJobName:
     def test_format(self):
-        name = _build_job_name("github", "owner/repo", 42)
+        name = _build_job_name(
+            platform="github", repo_full_name="owner/repo", pr_number=42
+        )
 
-        assert name.startswith("nominal-review-github-owner-repo-42-")
+        assert name.startswith("nominal-code-")
+        parts = name.split("-")
+        assert len(parts[2]) == 8
+        assert "owner-repo" in name
+        assert "42" in name
+
+    def test_uuid_uniqueness(self):
+        name_a = _build_job_name(
+            platform="github", repo_full_name="owner/repo", pr_number=42
+        )
+        name_b = _build_job_name(
+            platform="github", repo_full_name="owner/repo", pr_number=42
+        )
+
+        assert name_a != name_b
 
     def test_max_length(self):
         name = _build_job_name(
-            "github",
-            "very-long-organization-name/very-long-repository-name",
-            99999,
+            platform="github",
+            repo_full_name="very-long-organization-name/very-long-repository-name",
+            pr_number=99999,
         )
 
         assert len(name) <= 63
+
+    def test_uniqueness_survives_truncation(self):
+        name_a = _build_job_name(
+            platform="github",
+            repo_full_name="very-long-organization-name/very-long-repository-name",
+            pr_number=99999,
+        )
+        name_b = _build_job_name(
+            platform="github",
+            repo_full_name="very-long-organization-name/very-long-repository-name",
+            pr_number=99999,
+        )
+
+        assert name_a != name_b
 
 
 class TestKubernetesRunnerBuildJobSpec:
     def test_spec_structure(self):
         config = _make_config()
-        runner = KubernetesRunner(config)
+        runner = KubernetesRunner(config=config, queue=_make_mock_queue())
         job = _make_job()
 
         spec = runner._build_job_spec(
@@ -94,7 +134,7 @@ class TestKubernetesRunnerBuildJobSpec:
 
     def test_labels(self):
         config = _make_config()
-        runner = KubernetesRunner(config)
+        runner = KubernetesRunner(config=config, queue=_make_mock_queue())
         job = _make_job()
 
         spec = runner._build_job_spec(
@@ -110,7 +150,7 @@ class TestKubernetesRunnerBuildJobSpec:
 
     def test_container_command(self):
         config = _make_config()
-        runner = KubernetesRunner(config)
+        runner = KubernetesRunner(config=config, queue=_make_mock_queue())
         job = _make_job()
 
         spec = runner._build_job_spec(
@@ -128,9 +168,9 @@ class TestKubernetesRunnerBuildJobSpec:
             "run-job",
         ]
 
-    def test_env_vars(self):
+    def test_env_vars_include_job_name(self):
         config = _make_config()
-        runner = KubernetesRunner(config)
+        runner = KubernetesRunner(config=config, queue=_make_mock_queue())
         job = _make_job()
 
         spec = runner._build_job_spec(
@@ -143,10 +183,11 @@ class TestKubernetesRunnerBuildJobSpec:
 
         assert "REVIEW_JOB_PAYLOAD" in env_vars
         assert env_vars["REVIEW_JOB_PAYLOAD"] == '{"data": "value"}'
+        assert env_vars["K8S_JOB_NAME"] == "test-job"
 
     def test_env_from_secrets(self):
         config = _make_config()
-        runner = KubernetesRunner(config)
+        runner = KubernetesRunner(config=config, queue=_make_mock_queue())
         job = _make_job()
 
         spec = runner._build_job_spec(
@@ -162,7 +203,7 @@ class TestKubernetesRunnerBuildJobSpec:
 
     def test_resource_limits(self):
         config = _make_config()
-        runner = KubernetesRunner(config)
+        runner = KubernetesRunner(config=config, queue=_make_mock_queue())
         job = _make_job()
 
         spec = runner._build_job_spec(
@@ -177,7 +218,7 @@ class TestKubernetesRunnerBuildJobSpec:
 
     def test_image_pull_policy(self):
         config = _make_config()
-        runner = KubernetesRunner(config)
+        runner = KubernetesRunner(config=config, queue=_make_mock_queue())
         job = _make_job()
 
         spec = runner._build_job_spec(
@@ -191,7 +232,7 @@ class TestKubernetesRunnerBuildJobSpec:
 
     def test_service_account(self):
         config = _make_config()
-        runner = KubernetesRunner(config)
+        runner = KubernetesRunner(config=config, queue=_make_mock_queue())
         job = _make_job()
 
         spec = runner._build_job_spec(
@@ -205,7 +246,7 @@ class TestKubernetesRunnerBuildJobSpec:
 
     def test_job_spec_fields(self):
         config = _make_config()
-        runner = KubernetesRunner(config)
+        runner = KubernetesRunner(config=config, queue=_make_mock_queue())
         job = _make_job()
 
         spec = runner._build_job_spec(
@@ -222,7 +263,7 @@ class TestKubernetesRunnerBuildJobSpec:
         config = KubernetesConfig(
             image="nominal-code:dev",
         )
-        runner = KubernetesRunner(config)
+        runner = KubernetesRunner(config=config, queue=_make_mock_queue())
         job = _make_job()
 
         spec = runner._build_job_spec(
@@ -236,7 +277,7 @@ class TestKubernetesRunnerBuildJobSpec:
 
     def test_redis_url_forwarded_when_set(self):
         config = _make_config()
-        runner = KubernetesRunner(config)
+        runner = KubernetesRunner(config=config, queue=_make_mock_queue())
         job = _make_job()
 
         with patch.dict("os.environ", {"REDIS_URL": "redis://redis:6379/0"}):
@@ -253,7 +294,7 @@ class TestKubernetesRunnerBuildJobSpec:
 
     def test_redis_url_and_ttl_forwarded(self):
         config = _make_config()
-        runner = KubernetesRunner(config)
+        runner = KubernetesRunner(config=config, queue=_make_mock_queue())
         job = _make_job()
 
         with patch.dict(
@@ -274,7 +315,7 @@ class TestKubernetesRunnerBuildJobSpec:
 
     def test_redis_url_not_set(self):
         config = _make_config()
-        runner = KubernetesRunner(config)
+        runner = KubernetesRunner(config=config, queue=_make_mock_queue())
         job = _make_job()
 
         with patch.dict("os.environ", {}, clear=False):
@@ -294,11 +335,34 @@ class TestKubernetesRunnerBuildJobSpec:
         assert "REDIS_URL" not in env_names
 
 
-class TestKubernetesRunnerRun:
+class TestKubernetesRunnerEnqueue:
     @pytest.mark.asyncio
-    async def test_successful_job_creation(self):
+    async def test_enqueue_delegates_to_queue(self):
         config = _make_config()
-        runner = KubernetesRunner(config)
+        mock_queue = _make_mock_queue()
+        runner = KubernetesRunner(config=config, queue=mock_queue)
+        job = _make_job()
+
+        await runner.enqueue(job)
+
+        mock_queue.enqueue.assert_called_once_with(job)
+
+    @pytest.mark.asyncio
+    async def test_init_registers_callback(self):
+        config = _make_config()
+        mock_queue = _make_mock_queue()
+        KubernetesRunner(config=config, queue=mock_queue)
+
+        mock_queue.set_job_callback.assert_called_once()
+
+
+class TestKubernetesRunnerExecute:
+    @pytest.mark.asyncio
+    async def test_create_and_await_success(self):
+        config = _make_config()
+        mock_queue = _make_mock_queue()
+        mock_queue.await_job_completion = AsyncMock(return_value="succeeded")
+        runner = KubernetesRunner(config=config, queue=mock_queue)
         job = _make_job()
 
         mock_response = AsyncMock()
@@ -320,24 +384,88 @@ class TestKubernetesRunnerRun:
                 return_value=mock_client,
             ),
         ):
-            await runner.run(job)
+            await runner._execute(job)
 
         mock_client.post.assert_called_once()
-        call_kwargs = mock_client.post.call_args
-        assert "Authorization" in call_kwargs.kwargs["headers"]
-        assert call_kwargs.kwargs["headers"]["Authorization"] == "Bearer test-token"
+        mock_queue.await_job_completion.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_create_and_await_timeout(self):
+        config = _make_config()
+        mock_queue = _make_mock_queue()
+        mock_queue.await_job_completion = AsyncMock(
+            side_effect=TimeoutError("timed out"),
+        )
+        runner = KubernetesRunner(config=config, queue=mock_queue)
+        job = _make_job()
+
+        mock_response = AsyncMock()
+        mock_response.status_code = 201
+        mock_response.text = '{"metadata": {"name": "test-job"}}'
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+
+        with (
+            patch(
+                "nominal_code.jobs.kubernetes._read_service_account_token",
+                return_value="test-token",
+            ),
+            patch(
+                "nominal_code.jobs.kubernetes.httpx.AsyncClient",
+                return_value=mock_client,
+            ),
+        ):
+            await runner._execute(job)
+
+    @pytest.mark.asyncio
+    async def test_create_and_await_uses_correct_timeout(self):
+        config = KubernetesConfig(
+            image="nominal-code:dev",
+            active_deadline_seconds=300,
+        )
+        mock_queue = _make_mock_queue()
+        runner = KubernetesRunner(config=config, queue=mock_queue)
+        job = _make_job()
+
+        mock_response = AsyncMock()
+        mock_response.status_code = 201
+        mock_response.text = "{}"
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+
+        with (
+            patch(
+                "nominal_code.jobs.kubernetes._read_service_account_token",
+                return_value="test-token",
+            ),
+            patch(
+                "nominal_code.jobs.kubernetes.httpx.AsyncClient",
+                return_value=mock_client,
+            ),
+        ):
+            await runner._execute(job)
+
+        call_args = mock_queue.await_job_completion.call_args
+        assert call_args[0][1] == 310.0
 
     @pytest.mark.asyncio
     async def test_failed_job_creation_raises(self):
         config = _make_config()
-        runner = KubernetesRunner(config)
+        mock_queue = _make_mock_queue()
+        runner = KubernetesRunner(config=config, queue=mock_queue)
         job = _make_job()
 
         mock_response = AsyncMock()
         mock_response.status_code = 403
         mock_response.text = "Forbidden"
         mock_response.raise_for_status = MagicMock(
-            side_effect=Exception("403 Forbidden")
+            side_effect=Exception("403 Forbidden"),
         )
 
         mock_client = AsyncMock()
@@ -356,4 +484,4 @@ class TestKubernetesRunnerRun:
             ),
             pytest.raises(Exception, match="403"),
         ):
-            await runner.run(job)
+            await runner._execute(job)

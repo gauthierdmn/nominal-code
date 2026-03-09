@@ -28,10 +28,9 @@ def build_event() -> PullRequestEvent:
         SystemExit: If required environment variables are missing.
     """
 
-    event_path_raw: str = os.environ.get("GITHUB_EVENT_PATH", "")
-    event_path: Path = Path(event_path_raw)
+    event_path: Path = Path(os.environ.get("GITHUB_EVENT_PATH", ""))
 
-    if not event_path_raw or not event_path.is_file():
+    if not event_path.is_file():
         logger.error("GITHUB_EVENT_PATH is not set or file does not exist")
         sys.exit(1)
 

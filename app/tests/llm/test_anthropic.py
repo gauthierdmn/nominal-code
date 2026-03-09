@@ -453,9 +453,9 @@ class TestAnthropicProviderMissingSdk:
 
     def test_missing_provider_error_includes_install_instructions(self):
         error = MissingProviderError(
-            "anthropic",
-            "anthropic",
-            'pip install "nominal-code[anthropic]"',
+            provider="anthropic",
+            library="anthropic",
+            instruction='pip install "nominal-code[anthropic]"',
         )
 
         assert "nominal-code[anthropic]" in str(error)

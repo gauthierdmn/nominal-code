@@ -88,7 +88,7 @@ def _build_cli_parser() -> argparse.ArgumentParser:
     )
 
     review_parser: argparse.ArgumentParser = subparsers.add_parser(
-        "review",
+        name="review",
         help="Run a one-off code review on a pull request.",
     )
 
@@ -279,7 +279,7 @@ async def _run_review(args: argparse.Namespace) -> int:
     )
 
     platform_name: PlatformName = PlatformName(args.platform)
-    platform: ReviewerPlatform = _build_platform(platform_name=platform_name)
+    platform: ReviewerPlatform = _build_platform(platform_name)
 
     await platform.ensure_auth()
 

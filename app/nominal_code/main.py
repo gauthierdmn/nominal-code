@@ -8,9 +8,9 @@ from datetime import timedelta
 from aiohttp import web
 from environs import Env
 
-from nominal_code.agent.cli.queue import JobQueue
 from nominal_code.config import Config
 from nominal_code.conversation.memory import MemoryConversationStore
+from nominal_code.jobs.queue import AsyncioJobQueue
 from nominal_code.platforms import build_platforms
 from nominal_code.platforms.base import Platform
 from nominal_code.server.app import create_app
@@ -61,13 +61,23 @@ async def _async_main() -> None:
         sys.exit(1)
 
     conversation_store: MemoryConversationStore = MemoryConversationStore()
-    job_queue: JobQueue = JobQueue()
+    job_queue: AsyncioJobQueue = AsyncioJobQueue()
 
     if config.kubernetes is not None:
+        redis_url: str = env.str("REDIS_URL", "")
+
+        if not redis_url:
+            logger.error("REDIS_URL is required when JOB_RUNNER=kubernetes")
+            sys.exit(1)
+
         from nominal_code.jobs.kubernetes import KubernetesRunner
+        from nominal_code.jobs.redis_queue import RedisJobQueue
+
+        redis_queue: RedisJobQueue = RedisJobQueue(redis_url)
 
         runner: KubernetesRunner | ProcessRunner = KubernetesRunner(
-            config.kubernetes,
+            config=config.kubernetes,
+            queue=redis_queue,
         )
     else:
         from nominal_code.jobs.process import ProcessRunner
@@ -76,7 +86,7 @@ async def _async_main() -> None:
             config=config,
             platforms=platforms,
             conversation_store=conversation_store,
-            job_queue=job_queue,
+            queue=job_queue,
         )
 
     app: web.Application = create_app(
@@ -121,9 +131,9 @@ async def _async_main() -> None:
     await web_runner.setup()
 
     site: web.TCPSite = web.TCPSite(
-        web_runner,
-        config.webhook_host,
-        config.webhook_port,
+        runner=web_runner,
+        host=config.webhook_host,
+        port=config.webhook_port,
     )
 
     try:
@@ -147,7 +157,9 @@ async def _async_main() -> None:
 
 
 def main() -> None:
-    """Entry point: dispatch to run-job, CLI review, CI, or start the webhook server."""
+    """
+    Entry point: dispatch to run-job, CLI review, CI, or start the webhook server.
+    """
 
     if len(sys.argv) > 1 and sys.argv[1] == "run-job":
         from nominal_code.commands.job import run_job_main

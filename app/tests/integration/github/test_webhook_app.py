@@ -10,7 +10,6 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from aiohttp.pytest_plugin import AiohttpClient
 
-from nominal_code.agent.cli.queue import JobQueue
 from nominal_code.config import (
     CliAgentConfig,
     Config,
@@ -19,6 +18,7 @@ from nominal_code.config import (
 )
 from nominal_code.conversation.memory import MemoryConversationStore
 from nominal_code.jobs.process import ProcessRunner
+from nominal_code.jobs.queue import AsyncioJobQueue
 from nominal_code.models import EventType
 from nominal_code.platforms.github import GitHubPlatform
 from nominal_code.platforms.github.auth import GitHubAppAuth
@@ -70,9 +70,9 @@ def github_app_credentials() -> tuple[str, str, int]:
 
 def _sign_payload(payload: bytes, secret: str = WEBHOOK_SECRET) -> str:
     signature = hmac.new(
-        secret.encode(),
-        payload,
-        hashlib.sha256,
+        key=secret.encode(),
+        msg=payload,
+        digestmod=hashlib.sha256,
     ).hexdigest()
 
     return f"sha256={signature}"
@@ -163,7 +163,7 @@ async def test_app_auth_reviewer_mention_posts_review(
 
     config = _build_webhook_config()
     conversation_store = MemoryConversationStore()
-    job_queue = JobQueue()
+    job_queue = AsyncioJobQueue()
     platforms = {"github": platform}
     runner = ProcessRunner(
         config=config,
@@ -187,7 +187,7 @@ async def test_app_auth_reviewer_mention_posts_review(
     signature = _sign_payload(payload_bytes)
 
     with patch(
-        "nominal_code.agent.cli.session.run_agent",
+        "nominal_code.agent.cli.runner.run",
         new_callable=AsyncMock,
         return_value=BUGGY_AGENT_RESULT,
     ):
@@ -209,7 +209,11 @@ async def test_app_auth_reviewer_mention_posts_review(
     assert auth.installation_id == installation_id
     assert auth._cached_token, "App auth should have obtained an installation token"
 
-    reviews = await fetch_pr_reviews(github_token, GITHUB_TEST_REPO, buggy_pr.number)
+    reviews = await fetch_pr_reviews(
+        token=github_token,
+        repo=GITHUB_TEST_REPO,
+        pr_number=buggy_pr.number,
+    )
     assert len(reviews) >= 1
     assert "Found issues" in reviews[-1]["body"]
 
@@ -233,7 +237,7 @@ async def test_app_auth_lifecycle_auto_trigger(
         reviewer_triggers=frozenset({EventType.PR_OPENED}),
     )
     conversation_store = MemoryConversationStore()
-    job_queue = JobQueue()
+    job_queue = AsyncioJobQueue()
     platforms = {"github": platform}
     runner = ProcessRunner(
         config=config,
@@ -258,7 +262,7 @@ async def test_app_auth_lifecycle_auto_trigger(
     signature = _sign_payload(payload_bytes)
 
     with patch(
-        "nominal_code.agent.cli.session.run_agent",
+        "nominal_code.agent.cli.runner.run",
         new_callable=AsyncMock,
         return_value=BUGGY_AGENT_RESULT,
     ):
@@ -279,7 +283,11 @@ async def test_app_auth_lifecycle_auto_trigger(
 
     assert auth.installation_id == installation_id
 
-    reviews = await fetch_pr_reviews(github_token, GITHUB_TEST_REPO, buggy_pr.number)
+    reviews = await fetch_pr_reviews(
+        token=github_token,
+        repo=GITHUB_TEST_REPO,
+        pr_number=buggy_pr.number,
+    )
     assert len(reviews) >= 1
     assert "Found issues" in reviews[-1]["body"]
 

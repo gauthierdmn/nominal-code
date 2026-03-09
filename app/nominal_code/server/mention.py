@@ -20,7 +20,9 @@ def extract_mention(text: str, bot_username: str) -> str | None:
     """
 
     pattern: str = rf"@{re.escape(bot_username)}\b"
-    match_: re.Match[str] | None = re.search(pattern, text, re.IGNORECASE)
+    match_: re.Match[str] | None = re.search(
+        pattern=pattern, string=text, flags=re.IGNORECASE
+    )
 
     if match_ is None:
         return None

@@ -71,7 +71,7 @@ class TestWorkerProcessComment:
         conversation_store = MemoryConversationStore()
 
         with patch(
-            "nominal_code.agent.cli.session.run_agent",
+            "nominal_code.agent.cli.runner.run",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -112,7 +112,7 @@ class TestWorkerProcessComment:
         conversation_store = MemoryConversationStore()
 
         with patch(
-            "nominal_code.agent.cli.session.run_agent",
+            "nominal_code.agent.cli.runner.run",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -158,7 +158,7 @@ class TestWorkerProcessComment:
 class TestBuildPrompt:
     def test__build_prompt_basic(self):
         comment = _make_comment()
-        result = _build_prompt(comment, "fix the bug")
+        result = _build_prompt(event=comment, user_prompt="fix the bug")
 
         assert "fix the bug" in result
         assert "owner/repo" in result
@@ -166,14 +166,16 @@ class TestBuildPrompt:
 
     def test__build_prompt_with_deps_path(self):
         comment = _make_comment()
-        result = _build_prompt(comment, "fix the bug", deps_path=Path("/tmp/.deps"))
+        result = _build_prompt(
+            event=comment, user_prompt="fix the bug", deps_path=Path("/tmp/.deps")
+        )
 
         assert "Dependencies directory: /tmp/.deps" in result
         assert "git clone" in result
 
     def test__build_prompt_without_deps_path(self):
         comment = _make_comment()
-        result = _build_prompt(comment, "fix the bug")
+        result = _build_prompt(event=comment, user_prompt="fix the bug")
 
         assert "Dependencies directory" not in result
 
@@ -182,7 +184,7 @@ class TestBuildPrompt:
             file_path="src/main.py",
             diff_hunk="@@ -1,3 +1,5 @@",
         )
-        result = _build_prompt(comment, "refactor this")
+        result = _build_prompt(event=comment, user_prompt="refactor this")
 
         assert "src/main.py" in result
         assert "@@ -1,3 +1,5 @@" in result

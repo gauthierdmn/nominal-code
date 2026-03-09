@@ -106,6 +106,27 @@ CI mode reads its configuration from action inputs (mapped to `INPUT_*` environm
 
 See [CI Mode](../modes/ci.md) for full setup instructions.
 
+## Kubernetes
+
+| Variable | Modes | Default | Description |
+|---|---|---|---|
+| `JOB_RUNNER` | `webhook` | — | Set to `kubernetes` to dispatch jobs as K8s Jobs instead of running in-process |
+| `K8S_NAMESPACE` | `webhook` | `default` | Namespace for spawned Job pods |
+| `K8S_IMAGE` | `webhook` | — | Container image for Job pods (required when `JOB_RUNNER=kubernetes`) |
+| `K8S_IMAGE_PULL_POLICY` | `webhook` | — | Image pull policy (`Always`, `Never`, `IfNotPresent`) |
+| `K8S_SERVICE_ACCOUNT` | `webhook` | — | ServiceAccount for Job pods |
+| `K8S_ENV_FROM_SECRETS` | `webhook` | — | Comma-separated Secret names to mount as env vars in Job pods |
+| `K8S_BACKOFF_LIMIT` | `webhook` | `0` | Job retry attempts |
+| `K8S_ACTIVE_DEADLINE_SECONDS` | `webhook` | `600` | Per-job timeout in seconds |
+| `K8S_TTL_AFTER_FINISHED` | `webhook` | `3600` | Seconds before completed Jobs are cleaned up |
+| `K8S_RESOURCE_REQUESTS_CPU` | `webhook` | — | CPU request for Job pods |
+| `K8S_RESOURCE_REQUESTS_MEMORY` | `webhook` | — | Memory request for Job pods |
+| `K8S_RESOURCE_LIMITS_CPU` | `webhook` | — | CPU limit for Job pods |
+| `K8S_RESOURCE_LIMITS_MEMORY` | `webhook` | — | Memory limit for Job pods |
+| `REDIS_URL` | `webhook` | — | Redis connection URL (required when `JOB_RUNNER=kubernetes`). Used for job queue serialization, pub/sub completion, and conversation persistence |
+
+See [Kubernetes Deployment](../deployment/kubernetes.md) for the full setup guide.
+
 ## Logging
 
 | Variable | Modes | Default | Description |

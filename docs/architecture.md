@@ -215,10 +215,11 @@ Loads and composes the system prompt from multiple sources: the bot's base promp
 
 Bridges the conversation store and the agent runner. Looks up the existing conversation ID for a PR/bot pair, passes it to the agent for multi-turn continuity, and stores the new conversation ID after execution. Only used in webhook mode (CLI and CI are stateless).
 
-### Conversation Store and Job Queue (`conversation/memory.py`, `agent/cli/queue.py`)
+### Conversation Store and Job Queue (`conversation/memory.py`, `jobs/queue.py`)
 
 - **ConversationStore** — a unified in-memory store with two parallel dicts keyed by `(platform, repo, pr_number, bot_type)`: lightweight conversation IDs and full message histories (API mode only). Used to resume conversations across multiple interactions on the same PR.
-- **JobQueue** — per-PR async job queue. Each PR key gets its own `asyncio.Queue` with a single consumer task, ensuring that agent invocations on the same PR run serially (no race conditions). The consumer and queue are cleaned up when drained.
+- **AsyncioJobQueue** — per-PR async job queue for in-process mode. Each PR key gets its own `asyncio.Queue` with a single consumer task, ensuring that agent invocations on the same PR run serially (no race conditions). The consumer and queue are cleaned up when drained.
+- **RedisJobQueue** — Redis-backed per-PR job queue for Kubernetes mode (`jobs/redis_queue.py`). Uses Redis lists for serial execution and Redis pub/sub for event-driven job completion. Each PR key gets a consumer task that loops with `BRPOP`, creates K8s Jobs, and awaits completion signals — no K8s API polling required.
 
 ### Cost Tracking (`llm/cost.py`)
 
@@ -272,6 +273,13 @@ Jobs are keyed by `(platform_name, repo_full_name, pr_number, bot_type)`. When a
 3. The consumer processes jobs serially, one at a time.
 4. When the queue drains, the consumer task and queue are cleaned up.
 
+In **Kubernetes mode**, the `RedisJobQueue` replaces the in-memory `AsyncioJobQueue`. The flow is:
+
+1. Webhook arrives → `KubernetesRunner.run()` enqueues the job payload to a Redis list keyed by `nc:queue:{platform}:{repo}:{pr}:{bot}`.
+2. A per-PR consumer task `BRPOP`s from the list and creates a K8s Job for each dequeued payload.
+3. The Job pod runs `nominal-code run-job`, performs the review, and publishes a completion signal to `nc:job:{job_name}:done` via Redis pub/sub.
+4. The server receives the signal and the consumer moves on to the next queued job.
+
 ## Cleanup Loop
 
 The workspace cleaner lifecycle:
@@ -314,7 +322,6 @@ nominal_code/
 │   │   └── tools.py     # Tool definitions and execution (Read, Glob, Grep, Bash)
 │   └── cli/
 │       ├── runner.py    # Claude Code CLI subprocess wrapper (SDK integration)
-│       ├── queue.py     # JobQueue (per-PR async queue)
 │       └── session.py   # Bridges conversation store and agent runner for multi-turn continuity
 ├── conversation/
 │   ├── base.py          # Conversation store protocol
@@ -329,9 +336,12 @@ nominal_code/
 │   └── router.py        # Pre-flight checks (auth, reactions, logging)
 ├── jobs/
 │   ├── payload.py       # ReviewJob serializable dataclass
+│   ├── queue.py         # AsyncioJobQueue (per-PR in-memory async queue)
+│   ├── redis_queue.py   # RedisJobQueue (Redis-backed per-PR queue + pub/sub)
+│   ├── signals.py       # Job completion pub/sub signals (used by K8s Job pods)
 │   ├── process.py       # ProcessRunner: job enqueueing and handler dispatch
-│   ├── runner.py        # Job runner CLI entry point
-│   └── kubernetes.py    # Kubernetes Job dispatcher
+│   ├── runner.py        # Job runner protocol
+│   └── kubernetes.py    # Kubernetes Job dispatcher with Redis queue integration
 ├── platforms/
 │   ├── base.py          # Protocol definitions and shared dataclasses
 │   ├── registry.py      # Self-registering platform factory pattern

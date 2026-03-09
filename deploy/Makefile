@@ -30,8 +30,8 @@ logs: ## Tail server logs
 status: ## Show pods, jobs, and services
 	kubectl -n $(NAMESPACE) get pods,jobs,svc
 
-port-forward: ## Forward localhost:9090 to the server service
-	kubectl -n $(NAMESPACE) port-forward svc/nominal-code-server 9090:80
+port-forward: ## Forward localhost:8080 to the server service
+	kubectl -n $(NAMESPACE) port-forward svc/nominal-code-server 8080:80
 
 _ci-secret:
 	@test -n "$${TEST_GITHUB_TOKEN}" || { echo "ERROR: TEST_GITHUB_TOKEN is required"; exit 1; }

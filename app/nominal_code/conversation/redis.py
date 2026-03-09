@@ -71,7 +71,13 @@ class RedisConversationStore:
                 or on Redis error.
         """
 
-        key: str = _build_key("conv", platform, repo, pr_number, bot_type)
+        key: str = _build_key(
+            prefix="conv",
+            platform=platform,
+            repo=repo,
+            pr_number=pr_number,
+            bot_type=bot_type,
+        )
 
         try:
             stored: bytes | None = self._client.get(key)  # type: ignore[assignment]
@@ -104,7 +110,13 @@ class RedisConversationStore:
             value (str): The conversation ID to store.
         """
 
-        key: str = _build_key("conv", platform, repo, pr_number, bot_type)
+        key: str = _build_key(
+            prefix="conv",
+            platform=platform,
+            repo=repo,
+            pr_number=pr_number,
+            bot_type=bot_type,
+        )
 
         try:
             self._client.set(
@@ -136,7 +148,13 @@ class RedisConversationStore:
                 or on Redis error.
         """
 
-        key: str = _build_key("msgs", platform, repo, pr_number, bot_type)
+        key: str = _build_key(
+            prefix="msgs",
+            platform=platform,
+            repo=repo,
+            pr_number=pr_number,
+            bot_type=bot_type,
+        )
 
         try:
             stored: bytes | None = self._client.get(key)  # type: ignore[assignment]
@@ -174,7 +192,13 @@ class RedisConversationStore:
             value (list[Message]): The messages to store.
         """
 
-        key: str = _build_key("msgs", platform, repo, pr_number, bot_type)
+        key: str = _build_key(
+            prefix="msgs",
+            platform=platform,
+            repo=repo,
+            pr_number=pr_number,
+            bot_type=bot_type,
+        )
 
         try:
             serialized: str = _serialize_messages(value)

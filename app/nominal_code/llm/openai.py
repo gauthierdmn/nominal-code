@@ -80,9 +80,9 @@ class OpenAIProvider:
             import openai as _openai
         except ImportError as exc:
             raise MissingProviderError(
-                provider_name,
-                "openai",
-                INSTALL_INSTRUCTIONS[ProviderName.OPENAI],
+                provider=provider_name,
+                library="openai",
+                instruction=INSTALL_INSTRUCTIONS[ProviderName.OPENAI],
             ) from exc
 
         self._client: openai.AsyncOpenAI = _openai.AsyncOpenAI(
@@ -178,10 +178,10 @@ class OpenAIProvider:
         import openai
 
         api_messages: list[ChatCompletionMessageParam] = _to_api_messages(
-            messages,
-            system_prompt,
+            messages=messages,
+            system_prompt=system_prompt,
         )
-        api_tools: list[ChatCompletionToolParam] = _to_api_tools(tools)
+        api_tools: list[ChatCompletionToolParam] = _to_api_tools(tools=tools)
 
         try:
             if api_tools:
@@ -207,7 +207,7 @@ class OpenAIProvider:
 
             raise ProviderError(error_message) from exc
 
-        return _to_llm_response(response)
+        return _to_llm_response(response=response)
 
     async def _send_responses_api(
         self,
@@ -237,10 +237,10 @@ class OpenAIProvider:
         import openai
 
         api_messages: list[ChatCompletionMessageParam] = _to_api_messages(
-            messages,
-            system_prompt,
+            messages=messages,
+            system_prompt=system_prompt,
         )
-        api_tools: list[ChatCompletionToolParam] = _to_api_tools(tools)
+        api_tools: list[ChatCompletionToolParam] = _to_api_tools(tools=tools)
 
         input_items: list[dict[str, Any]] = [dict(msg) for msg in api_messages]
 
@@ -279,7 +279,7 @@ class OpenAIProvider:
 
             raise ProviderError(error_message) from exc
 
-        llm_response: LLMResponse = _responses_to_llm_response(response)
+        llm_response: LLMResponse = _responses_to_llm_response(response=response)
 
         return LLMResponse(
             content=llm_response.content,

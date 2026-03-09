@@ -15,14 +15,14 @@ EYES_REACTION: str = "eyes"
 logger: logging.Logger = logging.getLogger(__name__)
 
 
-async def run_pre_flight(
+async def acknowledge_event(
     event: CommentEvent | LifecycleEvent,
     bot_type: BotType,
     config: Config,
     platform: Platform,
 ) -> bool:
     """
-    Run pre-flight checks before dispatching a job.
+    Authorize and acknowledge an event before dispatching a job.
 
     For comment events: validates the author against allowed users, logs
     the event, posts an eyes reaction on the comment and PR.
@@ -59,7 +59,7 @@ async def run_pre_flight(
 
         await platform.ensure_auth()
 
-        await platform.post_reaction(event, EYES_REACTION)
+        await platform.post_reaction(event=event, reaction=EYES_REACTION)
     else:
         logger.info(
             "Auto-trigger %s reviewer on %s#%d (title=%s, author=%s)",

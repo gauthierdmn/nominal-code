@@ -4,15 +4,15 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 
-from nominal_code.models import BotType, PRKey
-from nominal_code.platforms.base import PlatformName
+from nominal_code.jobs.payload import JobPayload
+from nominal_code.models import PRKey
 
 logger: logging.Logger = logging.getLogger(__name__)
 
 
-class JobQueue:
+class AsyncioJobQueue:
     """
-    Per-PR async job queue ensuring serial execution within a conversation.
+    Per-PR in-memory job queue ensuring serial execution within a conversation.
 
     When a job is enqueued for a PR key that has no active consumer,
     a new consumer task is spawned. The consumer pulls jobs one at a time,
@@ -25,36 +25,41 @@ class JobQueue:
         Initialize an empty queue manager.
         """
 
-        self._queues: dict[
-            PRKey,
-            asyncio.Queue[Callable[[], Awaitable[None]]],
-        ] = {}
+        self._queues: dict[PRKey, asyncio.Queue[JobPayload]] = {}
         self._consumers: dict[PRKey, asyncio.Task[None]] = {}
+        self._on_job: Callable[[JobPayload], Awaitable[None]] | None = None
 
-    async def enqueue(
+    def set_job_callback(
         self,
-        platform: PlatformName,
-        repo: str,
-        pr_number: int,
-        bot_type: BotType,
-        job: Callable[[], Awaitable[None]],
+        callback: Callable[[JobPayload], Awaitable[None]],
     ) -> None:
         """
-        Enqueue an async job for serial execution within a PR conversation.
+        Register the callback invoked for each dequeued job.
+
+        Args:
+            callback (Callable[[JobPayload], Awaitable[None]]): An async
+                callable that receives a ``JobPayload`` to process.
+        """
+
+        self._on_job = callback
+
+    async def enqueue(self, job: JobPayload) -> None:
+        """
+        Enqueue a job for serial execution within its PR key.
 
         If no consumer task exists for the given PR key, one is
         spawned automatically.
 
         Args:
-            platform (PlatformName): The platform name.
-            repo (str): The full repository name.
-            pr_number (int): The pull/merge request number.
-            bot_type (BotType): The type of bot.
-            job (Callable[[], Awaitable[None]]): A zero-argument async
-                callable to execute.
+            job (JobPayload): The job payload to enqueue.
         """
 
-        key: PRKey = (platform.value, repo, pr_number, bot_type.value)
+        key: PRKey = (
+            job.event.platform,
+            job.event.repo_full_name,
+            job.event.pr_number,
+            job.bot_type,
+        )
 
         if key not in self._queues:
             self._queues[key] = asyncio.Queue()
@@ -75,13 +80,14 @@ class JobQueue:
             key (PRKey): The (platform, repo, pr_number, bot_type) key.
         """
 
-        queue: asyncio.Queue[Callable[[], Awaitable[None]]] = self._queues[key]
+        queue: asyncio.Queue[JobPayload] = self._queues[key]
 
         while not queue.empty():
-            job: Callable[[], Awaitable[None]] = await queue.get()
+            job: JobPayload = await queue.get()
 
             try:
-                await job()
+                if self._on_job is not None:
+                    await self._on_job(job)
             except Exception:
                 logger.exception("Job failed for key %s", key)
             finally:

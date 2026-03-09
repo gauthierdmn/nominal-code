@@ -35,7 +35,7 @@ class TestToApiMessages:
             Message(role="user", content=[TextBlock(text="hello")]),
         ]
 
-        result = _to_api_messages(messages, "Be helpful.")
+        result = _to_api_messages(messages=messages, system_prompt="Be helpful.")
 
         assert len(result) == 2
         assert result[0]["role"] == "system"
@@ -47,7 +47,7 @@ class TestToApiMessages:
             Message(role="user", content=[TextBlock(text="hello")]),
         ]
 
-        result = _to_api_messages(messages, "")
+        result = _to_api_messages(messages=messages, system_prompt="")
 
         assert len(result) == 1
         assert result[0]["role"] == "user"
@@ -57,7 +57,7 @@ class TestToApiMessages:
             Message(role="user", content=[TextBlock(text="hello")]),
         ]
 
-        result = _to_api_messages(messages, "")
+        result = _to_api_messages(messages=messages, system_prompt="")
 
         assert result[0]["role"] == "user"
         assert result[0]["content"] == "hello"
@@ -77,7 +77,7 @@ class TestToApiMessages:
             ),
         ]
 
-        result = _to_api_messages(messages, "")
+        result = _to_api_messages(messages=messages, system_prompt="")
 
         assert result[0]["role"] == "assistant"
         assert result[0]["content"] == "Reading..."
@@ -104,7 +104,7 @@ class TestToApiMessages:
             ),
         ]
 
-        result = _to_api_messages(messages, "")
+        result = _to_api_messages(messages=messages, system_prompt="")
 
         assert result[0]["role"] == "tool"
         assert result[0]["tool_call_id"] == "call_1"
@@ -462,9 +462,9 @@ class TestOpenAIProviderMissingSdk:
 
     def test_missing_provider_error_includes_install_instructions(self):
         error = MissingProviderError(
-            "openai",
-            "openai",
-            'pip install "nominal-code[openai]"',
+            provider="openai",
+            library="openai",
+            instruction='pip install "nominal-code[openai]"',
         )
 
         assert "nominal-code[openai]" in str(error)

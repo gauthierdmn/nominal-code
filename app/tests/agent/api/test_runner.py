@@ -1,11 +1,14 @@
 # type: ignore
 import json
-from unittest.mock import AsyncMock
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nominal_code.agent.api.runner import run_agent_api
+from nominal_code.agent.api.runner import handle_event, run
 from nominal_code.agent.result import AgentResult
+from nominal_code.config import ApiAgentConfig, ProviderConfig
+from nominal_code.conversation.memory import MemoryConversationStore
 from nominal_code.llm.messages import (
     LLMResponse,
     Message,
@@ -14,7 +17,8 @@ from nominal_code.llm.messages import (
     TokenUsage,
     ToolUseBlock,
 )
-from nominal_code.models import ProviderName
+from nominal_code.models import BotType, EventType, ProviderName
+from nominal_code.platforms.base import CommentEvent, PlatformName
 
 
 def _make_text_response(text, usage=None):
@@ -40,10 +44,10 @@ class TestRunAgentApi:
     async def test_simple_text_response(self, tmp_path):
         mock_provider = AsyncMock()
         mock_provider.send = AsyncMock(
-            return_value=_make_text_response("All good!"),
+            return_value=_make_text_response(text="All good!"),
         )
 
-        result = await run_agent_api(
+        result = await run(
             prompt="Review this code",
             cwd=tmp_path,
             model="test-model",
@@ -64,7 +68,7 @@ class TestRunAgentApi:
             ),
         )
 
-        result = await run_agent_api(
+        result = await run(
             prompt="test",
             cwd=tmp_path,
             model="test-model",
@@ -82,15 +86,15 @@ class TestRunAgentApi:
         mock_provider.send = AsyncMock(
             side_effect=[
                 _make_tool_use_response(
-                    "t1",
-                    "Read",
-                    {"file_path": str(test_file)},
+                    tool_id="t1",
+                    name="Read",
+                    tool_input={"file_path": str(test_file)},
                 ),
-                _make_text_response("The file prints hello."),
+                _make_text_response(text="The file prints hello."),
             ],
         )
 
-        result = await run_agent_api(
+        result = await run(
             prompt="Read hello.py",
             cwd=tmp_path,
             model="test-model",
@@ -123,7 +127,7 @@ class TestRunAgentApi:
             ),
         )
 
-        result = await run_agent_api(
+        result = await run(
             prompt="Review this",
             cwd=tmp_path,
             model="test-model",
@@ -141,13 +145,13 @@ class TestRunAgentApi:
         mock_provider = AsyncMock()
         mock_provider.send = AsyncMock(
             return_value=_make_tool_use_response(
-                "t1",
-                "Glob",
-                {"pattern": "**/*.py"},
+                tool_id="t1",
+                name="Glob",
+                tool_input={"pattern": "**/*.py"},
             ),
         )
 
-        result = await run_agent_api(
+        result = await run(
             prompt="Find files",
             cwd=tmp_path,
             model="test-model",
@@ -167,7 +171,7 @@ class TestRunAgentApi:
             side_effect=ProviderError("API down"),
         )
 
-        result = await run_agent_api(
+        result = await run(
             prompt="test",
             cwd=tmp_path,
             model="test-model",
@@ -184,7 +188,7 @@ class TestRunAgentApi:
             side_effect=RuntimeError("boom"),
         )
 
-        result = await run_agent_api(
+        result = await run(
             prompt="test",
             cwd=tmp_path,
             model="test-model",
@@ -201,7 +205,7 @@ class TestRunAgentApi:
         async def capture_send(**kwargs):
             captured_messages.extend(list(kwargs["messages"]))
 
-            return _make_text_response("second reply")
+            return _make_text_response(text="second reply")
 
         mock_provider = AsyncMock()
         mock_provider.send = AsyncMock(side_effect=capture_send)
@@ -211,7 +215,7 @@ class TestRunAgentApi:
             Message(role="assistant", content=[TextBlock(text="first reply")]),
         ]
 
-        result = await run_agent_api(
+        result = await run(
             prompt="follow up",
             cwd=tmp_path,
             model="test-model",
@@ -229,10 +233,10 @@ class TestRunAgentApi:
     async def test_result_includes_messages(self, tmp_path):
         mock_provider = AsyncMock()
         mock_provider.send = AsyncMock(
-            return_value=_make_text_response("done"),
+            return_value=_make_text_response(text="done"),
         )
 
-        result = await run_agent_api(
+        result = await run(
             prompt="hello",
             cwd=tmp_path,
             model="test-model",
@@ -252,7 +256,7 @@ class TestRunAgentApi:
             side_effect=ProviderError("fail"),
         )
 
-        result = await run_agent_api(
+        result = await run(
             prompt="test",
             cwd=tmp_path,
             model="test-model",
@@ -269,10 +273,10 @@ class TestRunAgentApiCost:
         usage = TokenUsage(input_tokens=100, output_tokens=50)
         mock_provider = AsyncMock()
         mock_provider.send = AsyncMock(
-            return_value=_make_text_response("done", usage=usage),
+            return_value=_make_text_response(text="done", usage=usage),
         )
 
-        result = await run_agent_api(
+        result = await run(
             prompt="test",
             cwd=tmp_path,
             model="gpt-4.1",
@@ -299,16 +303,16 @@ class TestRunAgentApiCost:
         mock_provider.send = AsyncMock(
             side_effect=[
                 _make_tool_use_response(
-                    "t1",
-                    "Read",
-                    {"file_path": str(test_file)},
+                    tool_id="t1",
+                    name="Read",
+                    tool_input={"file_path": str(test_file)},
                     usage=usage1,
                 ),
-                _make_text_response("The file prints hello.", usage=usage2),
+                _make_text_response(text="The file prints hello.", usage=usage2),
             ],
         )
 
-        result = await run_agent_api(
+        result = await run(
             prompt="Read hello.py",
             cwd=tmp_path,
             model="gpt-4.1",
@@ -331,7 +335,7 @@ class TestRunAgentApiCost:
             side_effect=ProviderError("fail"),
         )
 
-        result = await run_agent_api(
+        result = await run(
             prompt="test",
             cwd=tmp_path,
             model="gpt-4.1",
@@ -354,7 +358,7 @@ class TestRunAgentApiCost:
             ),
         )
 
-        result = await run_agent_api(
+        result = await run(
             prompt="test",
             cwd=tmp_path,
             model="gpt-4.1",
@@ -365,3 +369,262 @@ class TestRunAgentApiCost:
         assert result.cost is not None
         assert result.cost.total_input_tokens == 0
         assert result.cost.total_cost_usd is None
+
+
+def _make_event():
+    return CommentEvent(
+        platform=PlatformName.GITHUB,
+        repo_full_name="owner/repo",
+        pr_number=42,
+        pr_branch="feature",
+        event_type=EventType.ISSUE_COMMENT,
+        comment_id=10,
+        author_username="alice",
+        body="fix this",
+    )
+
+
+def _make_api_config():
+    config = MagicMock()
+    config.agent = ApiAgentConfig(
+        provider=ProviderConfig(name=ProviderName.OPENAI, model="gpt-4.1"),
+    )
+
+    return config
+
+
+class TestHandleEvent:
+    @pytest.mark.asyncio
+    async def test_loads_prior_messages_from_store(self):
+        event = _make_event()
+        config = _make_api_config()
+        store = MemoryConversationStore()
+        prior_msg = Message(role="user", content=[TextBlock(text="prior")])
+        store.set_messages(
+            platform=PlatformName.GITHUB,
+            repo="owner/repo",
+            pr_number=42,
+            bot_type=BotType.WORKER,
+            value=[prior_msg],
+        )
+        captured = {}
+
+        async def mock_run(**kwargs):
+            captured.update(kwargs)
+
+            return AgentResult(
+                output="Done",
+                is_error=False,
+                num_turns=1,
+                duration_ms=100,
+                messages=(
+                    prior_msg,
+                    Message(
+                        role="assistant",
+                        content=[TextBlock(text="ok")],
+                    ),
+                ),
+            )
+
+        with (
+            patch(
+                "nominal_code.agent.api.runner.run",
+                side_effect=mock_run,
+            ),
+            patch(
+                "nominal_code.agent.api.runner.create_provider",
+                return_value=AsyncMock(),
+            ),
+        ):
+            await handle_event(
+                event=event,
+                bot_type=BotType.WORKER,
+                system_prompt="sys",
+                prompt="fix it",
+                cwd=Path("/tmp"),
+                config=config,
+                conversation_store=store,
+            )
+
+        assert captured["prior_messages"] == [prior_msg]
+
+    @pytest.mark.asyncio
+    async def test_stores_messages_after_success(self):
+        event = _make_event()
+        config = _make_api_config()
+        store = MemoryConversationStore()
+
+        result_messages = (
+            Message(role="user", content=[TextBlock(text="hello")]),
+            Message(role="assistant", content=[TextBlock(text="hi")]),
+        )
+        agent_result = AgentResult(
+            output="hi",
+            is_error=False,
+            num_turns=1,
+            duration_ms=100,
+            messages=result_messages,
+            conversation_id="resp-42",
+        )
+
+        with (
+            patch(
+                "nominal_code.agent.api.runner.run",
+                new=AsyncMock(return_value=agent_result),
+            ),
+            patch(
+                "nominal_code.agent.api.runner.create_provider",
+                return_value=AsyncMock(),
+            ),
+        ):
+            await handle_event(
+                event=event,
+                bot_type=BotType.WORKER,
+                system_prompt="sys",
+                prompt="fix it",
+                cwd=Path("/tmp"),
+                config=config,
+                conversation_store=store,
+            )
+
+        stored_msgs = store.get_messages(
+            platform=PlatformName.GITHUB,
+            repo="owner/repo",
+            pr_number=42,
+            bot_type=BotType.WORKER,
+        )
+
+        assert stored_msgs is not None
+        assert len(stored_msgs) == 2
+
+        stored_id = store.get_conversation_id(
+            platform=PlatformName.GITHUB,
+            repo="owner/repo",
+            pr_number=42,
+            bot_type=BotType.WORKER,
+        )
+
+        assert stored_id == "resp-42"
+
+    @pytest.mark.asyncio
+    async def test_skips_store_on_error(self):
+        event = _make_event()
+        config = _make_api_config()
+        store = MemoryConversationStore()
+
+        agent_result = AgentResult(
+            output="API error: boom",
+            is_error=True,
+            num_turns=0,
+            duration_ms=100,
+        )
+
+        with (
+            patch(
+                "nominal_code.agent.api.runner.run",
+                new=AsyncMock(return_value=agent_result),
+            ),
+            patch(
+                "nominal_code.agent.api.runner.create_provider",
+                return_value=AsyncMock(),
+            ),
+        ):
+            await handle_event(
+                event=event,
+                bot_type=BotType.WORKER,
+                system_prompt="sys",
+                prompt="fix it",
+                cwd=Path("/tmp"),
+                config=config,
+                conversation_store=store,
+            )
+
+        stored = store.get_messages(
+            platform=PlatformName.GITHUB,
+            repo="owner/repo",
+            pr_number=42,
+            bot_type=BotType.WORKER,
+        )
+
+        assert stored is None
+
+    @pytest.mark.asyncio
+    async def test_no_store_skips_memory(self):
+        event = _make_event()
+        config = _make_api_config()
+        captured = {}
+
+        async def mock_run(**kwargs):
+            captured.update(kwargs)
+
+            return AgentResult(
+                output="Done",
+                is_error=False,
+                num_turns=1,
+                duration_ms=100,
+                messages=(Message(role="user", content=[TextBlock(text="x")]),),
+            )
+
+        with (
+            patch(
+                "nominal_code.agent.api.runner.run",
+                side_effect=mock_run,
+            ),
+            patch(
+                "nominal_code.agent.api.runner.create_provider",
+                return_value=AsyncMock(),
+            ),
+        ):
+            await handle_event(
+                event=event,
+                bot_type=BotType.WORKER,
+                system_prompt="sys",
+                prompt="fix it",
+                cwd=Path("/tmp"),
+                config=config,
+            )
+
+        assert captured["prior_messages"] is None
+
+    @pytest.mark.asyncio
+    async def test_stores_conversation_id(self):
+        event = _make_event()
+        config = _make_api_config()
+        store = MemoryConversationStore()
+
+        agent_result = AgentResult(
+            output="Done",
+            is_error=False,
+            num_turns=1,
+            duration_ms=100,
+            conversation_id="api-sess",
+        )
+
+        with (
+            patch(
+                "nominal_code.agent.api.runner.run",
+                new=AsyncMock(return_value=agent_result),
+            ),
+            patch(
+                "nominal_code.agent.api.runner.create_provider",
+                return_value=AsyncMock(),
+            ),
+        ):
+            await handle_event(
+                event=event,
+                bot_type=BotType.WORKER,
+                system_prompt="sys",
+                prompt="fix it",
+                cwd=Path("/tmp"),
+                config=config,
+                conversation_store=store,
+            )
+
+        stored_id = store.get_conversation_id(
+            platform=PlatformName.GITHUB,
+            repo="owner/repo",
+            pr_number=42,
+            bot_type=BotType.WORKER,
+        )
+
+        assert stored_id == "api-sess"

@@ -3,12 +3,15 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import replace
+from datetime import timedelta
 from types import ModuleType
 
 from nominal_code.config import Config, ProviderConfig
 from nominal_code.conversation.base import ConversationStore
 from nominal_code.handlers.review import ReviewResult, post_review_result, review
+from nominal_code.handlers.worker import review_and_fix
 from nominal_code.jobs.payload import JobPayload
+from nominal_code.jobs.signals import publish_job_completion
 from nominal_code.llm.cost import CostSummary
 from nominal_code.llm.registry import PROVIDERS
 from nominal_code.models import BotType, ProviderName
@@ -18,6 +21,8 @@ from nominal_code.platforms.base import (
     PullRequestEvent,
     ReviewerPlatform,
 )
+from nominal_code.platforms.github import ci as github_ci
+from nominal_code.platforms.gitlab import ci as gitlab_ci
 from nominal_code.workspace.setup import resolve_branch
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -37,15 +42,15 @@ async def run_job_main() -> int:
         int: Exit code (0 on success, 1 on failure).
     """
 
-    payload_raw: str = os.environ.get("REVIEW_JOB_PAYLOAD", "")
+    payload: str = os.environ.get("REVIEW_JOB_PAYLOAD", "")
 
-    if not payload_raw:
+    if not payload:
         logger.error("REVIEW_JOB_PAYLOAD environment variable is not set")
 
         return 1
 
     try:
-        job: JobPayload = JobPayload.deserialize(payload_raw)
+        job: JobPayload = JobPayload.deserialize(payload)
     except (TypeError, ValueError, KeyError) as exc:
         logger.error("Failed to deserialize job payload: %s", exc)
 
@@ -60,15 +65,29 @@ async def run_job_main() -> int:
 
     conversation_store: ConversationStore | None = _build_conversation_store()
 
-    platform_name: PlatformName = PlatformName(job.platform)
+    platform_name: PlatformName = PlatformName(job.event.platform)
     platform: ReviewerPlatform = _build_platform(platform_name)
 
     bot_type: BotType = BotType(job.bot_type)
 
     if bot_type == BotType.REVIEWER:
-        return await _run_reviewer_job(job, config, platform, conversation_store)
+        exit_code: int = await _run_reviewer_job(
+            job=job,
+            config=config,
+            platform=platform,
+            conversation_store=conversation_store,
+        )
+    else:
+        exit_code = await _run_worker_job(
+            job=job,
+            config=config,
+            platform=platform,
+            conversation_store=conversation_store,
+        )
 
-    return await _run_worker_job(job, config, platform, conversation_store)
+    _publish_completion(exit_code)
+
+    return exit_code
 
 
 async def _run_reviewer_job(
@@ -93,7 +112,9 @@ async def _run_reviewer_job(
 
     await platform.ensure_auth()
 
-    clone_url: str = platform.build_reviewer_clone_url(job.repo_full_name)
+    clone_url: str = platform.build_reviewer_clone_url(
+        repo_full_name=job.event.repo_full_name
+    )
     event: PullRequestEvent = replace(job.event, clone_url=clone_url)
 
     resolved_event: PullRequestEvent | None = await resolve_branch(
@@ -104,23 +125,28 @@ async def _run_reviewer_job(
     if resolved_event is None:
         logger.error(
             "Cannot resolve branch for %s#%d",
-            job.repo_full_name,
-            job.pr_number,
+            job.event.repo_full_name,
+            job.event.pr_number,
         )
 
         return 1
 
     logger.info(
         "Running job review for %s#%d on %s",
-        job.repo_full_name,
-        job.pr_number,
-        job.platform,
+        job.event.repo_full_name,
+        job.event.pr_number,
+        job.event.platform,
     )
 
     try:
+        mention_prompt: str = ""
+
+        if isinstance(resolved_event, CommentEvent) and resolved_event.mention_prompt:
+            mention_prompt = resolved_event.mention_prompt
+
         result: ReviewResult = await review(
             event=resolved_event,
-            prompt=job.prompt,
+            prompt=mention_prompt,
             config=config,
             platform=platform,
             conversation_store=conversation_store,
@@ -128,20 +154,20 @@ async def _run_reviewer_job(
     except Exception:
         logger.exception(
             "Review failed for %s#%d",
-            job.repo_full_name,
-            job.pr_number,
+            job.event.repo_full_name,
+            job.event.pr_number,
         )
 
         return 1
 
-    await post_review_result(event, result, platform)
+    await post_review_result(event=resolved_event, result=result, platform=platform)
 
     cost_info: str = _format_cost_summary(result.cost)
 
     logger.info(
         "Job review posted for %s#%d (findings=%d)%s",
-        job.repo_full_name,
-        job.pr_number,
+        job.event.repo_full_name,
+        job.event.pr_number,
         len(result.valid_findings),
         cost_info,
     )
@@ -169,8 +195,6 @@ async def _run_worker_job(
         int: Exit code (0 on success, 1 on failure).
     """
 
-    from nominal_code.handlers.worker import review_and_fix
-
     if not isinstance(job.event, CommentEvent):
         logger.error("Worker job requires a comment event")
 
@@ -178,7 +202,7 @@ async def _run_worker_job(
 
     await platform.ensure_auth()
 
-    clone_url: str = platform.build_clone_url(job.repo_full_name)
+    clone_url: str = platform.build_clone_url(repo_full_name=job.event.repo_full_name)
     comment_event: CommentEvent = replace(job.event, clone_url=clone_url)
 
     resolved_event = await resolve_branch(
@@ -189,23 +213,23 @@ async def _run_worker_job(
     if resolved_event is None:
         logger.error(
             "Cannot resolve branch for %s#%d",
-            job.repo_full_name,
-            job.pr_number,
+            job.event.repo_full_name,
+            job.event.pr_number,
         )
 
         return 1
 
     logger.info(
         "Running worker job for %s#%d on %s",
-        job.repo_full_name,
-        job.pr_number,
-        job.platform,
+        job.event.repo_full_name,
+        job.event.pr_number,
+        job.event.platform,
     )
 
     try:
         await review_and_fix(
             event=resolved_event,
-            prompt=job.prompt,
+            prompt=comment_event.mention_prompt or "",
             config=config,
             platform=platform,
             conversation_store=conversation_store,
@@ -213,16 +237,16 @@ async def _run_worker_job(
     except Exception:
         logger.exception(
             "Worker job failed for %s#%d",
-            job.repo_full_name,
-            job.pr_number,
+            job.event.repo_full_name,
+            job.event.pr_number,
         )
 
         return 1
 
     logger.info(
         "Worker job completed for %s#%d",
-        job.repo_full_name,
-        job.pr_number,
+        job.event.repo_full_name,
+        job.event.pr_number,
     )
 
     return 0
@@ -245,8 +269,6 @@ def _build_conversation_store() -> ConversationStore | None:
         return None
 
     try:
-        from datetime import timedelta
-
         import redis
 
         from nominal_code.conversation.redis import (
@@ -254,17 +276,20 @@ def _build_conversation_store() -> ConversationStore | None:
             RedisConversationStore,
         )
 
-        ttl_raw: str = os.environ.get("REDIS_KEY_TTL_SECONDS", "")
+        ttl_env: str = os.environ.get("REDIS_KEY_TTL_SECONDS", "")
         key_ttl: timedelta = (
-            timedelta(seconds=int(ttl_raw)) if ttl_raw else DEFAULT_KEY_TTL
+            timedelta(seconds=int(ttl_env)) if ttl_env else DEFAULT_KEY_TTL
         )
 
-        client: redis.Redis = redis.Redis.from_url(redis_url)
-        store: RedisConversationStore = RedisConversationStore(client, key_ttl)
+        client: redis.Redis = redis.Redis.from_url(url=redis_url)
+        store: RedisConversationStore = RedisConversationStore(
+            client=client, key_ttl=key_ttl
+        )
 
         logger.info("Using Redis conversation store at %s", redis_url)
 
         return store
+
     except Exception:
         logger.warning(
             "Failed to create Redis conversation store, continuing without it",
@@ -287,7 +312,7 @@ def _build_platform(platform_name: PlatformName) -> ReviewerPlatform:
         ReviewerPlatform: The constructed platform client.
     """
 
-    platform_ci: ModuleType = _load_platform_ci(platform_name)
+    platform_ci: ModuleType = _load_platform_ci(platform_name=platform_name)
     result: ReviewerPlatform = platform_ci.build_platform()
 
     return result
@@ -308,26 +333,25 @@ def _build_job_config() -> Config:
         ValueError: If ``AGENT_PROVIDER`` is not a recognised provider.
     """
 
-    provider_name_raw: str = os.environ.get(
+    provider_env: str = os.environ.get(
         "AGENT_PROVIDER",
         DEFAULT_AGENT_PROVIDER,
     )
 
     try:
-        provider_name: ProviderName = ProviderName(provider_name_raw)
+        provider_name: ProviderName = ProviderName(provider_env)
     except ValueError:
         available: str = ", ".join(p.value for p in ProviderName)
 
         raise ValueError(
-            f"Unknown AGENT_PROVIDER: {provider_name_raw!r}. Available: {available}",
+            f"Unknown AGENT_PROVIDER: {provider_env!r}. Available: {available}",
         ) from None
 
     provider_config: ProviderConfig = PROVIDERS[provider_name]
     model: str = os.environ.get("AGENT_MODEL", "")
-    max_turns_raw: str = os.environ.get("AGENT_MAX_TURNS", "0")
 
     try:
-        max_turns: int = int(max_turns_raw)
+        max_turns: int = int(os.environ.get("AGENT_MAX_TURNS", "0"))
     except ValueError:
         max_turns = 0
 
@@ -375,6 +399,28 @@ def _format_cost_summary(cost: CostSummary | None) -> str:
     return "\n" + "\n".join(parts)
 
 
+def _publish_completion(exit_code: int) -> None:
+    """
+    Publish a job completion signal to Redis if running as a K8s Job.
+
+    Checks for ``K8S_JOB_NAME`` and ``REDIS_URL`` environment variables.
+    When both are set, publishes a completion message so the server
+    can move on to the next queued job.
+
+    Args:
+        exit_code (int): The job exit code (0 = succeeded).
+    """
+
+    job_name: str = os.environ.get("K8S_JOB_NAME", "")
+    redis_url: str = os.environ.get("REDIS_URL", "")
+
+    if not job_name or not redis_url:
+        return
+
+    status: str = "succeeded" if exit_code == 0 else "failed"
+    publish_job_completion(redis_url=redis_url, job_name=job_name, status=status)
+
+
 def _load_platform_ci(platform_name: PlatformName) -> ModuleType:
     """
     Import and return the platform-specific CI module.
@@ -387,8 +433,6 @@ def _load_platform_ci(platform_name: PlatformName) -> ModuleType:
     """
 
     if platform_name == PlatformName.GITHUB:
-        from nominal_code.platforms.github import ci as _ci
-    else:
-        from nominal_code.platforms.gitlab import ci as _ci  # type: ignore[no-redef]
+        return github_ci
 
-    return _ci
+    return gitlab_ci

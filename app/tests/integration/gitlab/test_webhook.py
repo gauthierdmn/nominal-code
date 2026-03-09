@@ -8,7 +8,6 @@ import pytest
 from aiohttp import web
 from aiohttp.pytest_plugin import AiohttpClient
 
-from nominal_code.agent.cli.queue import JobQueue
 from nominal_code.config import (
     CliAgentConfig,
     Config,
@@ -17,6 +16,7 @@ from nominal_code.config import (
 )
 from nominal_code.conversation.memory import MemoryConversationStore
 from nominal_code.jobs.process import ProcessRunner
+from nominal_code.jobs.queue import AsyncioJobQueue
 from nominal_code.models import EventType
 from nominal_code.platforms.gitlab import GitLabPlatform
 from nominal_code.server.app import create_app
@@ -106,13 +106,13 @@ def _build_merge_request_hook_payload(
 def _create_test_app(
     token: str,
     config: Config,
-) -> tuple[web.Application, MemoryConversationStore, JobQueue]:
+) -> tuple[web.Application, MemoryConversationStore, AsyncioJobQueue]:
     platform = GitLabPlatform(
         token=token,
         webhook_secret=WEBHOOK_SECRET,
     )
     conversation_store = MemoryConversationStore()
-    job_queue = JobQueue()
+    job_queue = AsyncioJobQueue()
     platforms = {"gitlab": platform}
     runner = ProcessRunner(
         config=config,
@@ -136,7 +136,9 @@ async def test_webhook_reviewer_mention_posts_review(
     aiohttp_client: AiohttpClient,
 ) -> None:
     config = _build_webhook_config()
-    app, conversation_store, job_queue = _create_test_app(gitlab_token, config)
+    app, conversation_store, job_queue = _create_test_app(
+        token=gitlab_token, config=config
+    )
     client = await aiohttp_client(app)
 
     payload = _build_note_hook_payload(
@@ -147,7 +149,7 @@ async def test_webhook_reviewer_mention_posts_review(
     payload_bytes = json.dumps(payload).encode()
 
     with patch(
-        "nominal_code.agent.cli.session.run_agent",
+        "nominal_code.agent.cli.runner.run",
         new_callable=AsyncMock,
         return_value=BUGGY_AGENT_RESULT,
     ):
@@ -166,7 +168,11 @@ async def test_webhook_reviewer_mention_posts_review(
 
         await wait_for_queue_drain(job_queue)
 
-    notes = await fetch_mr_notes(gitlab_token, GITLAB_TEST_REPO, buggy_mr.number)
+    notes = await fetch_mr_notes(
+        token=gitlab_token,
+        repo=GITLAB_TEST_REPO,
+        mr_iid=buggy_mr.number,
+    )
     note_bodies = [note["body"] for note in notes]
     assert any("Found issues" in body for body in note_bodies)
 
@@ -178,7 +184,9 @@ async def test_webhook_worker_mention_posts_reply(
     aiohttp_client: AiohttpClient,
 ) -> None:
     config = _build_webhook_config()
-    app, conversation_store, job_queue = _create_test_app(gitlab_token, config)
+    app, conversation_store, job_queue = _create_test_app(
+        token=gitlab_token, config=config
+    )
     client = await aiohttp_client(app)
 
     payload = _build_note_hook_payload(
@@ -190,7 +198,7 @@ async def test_webhook_worker_mention_posts_reply(
 
     with (
         patch(
-            "nominal_code.agent.cli.session.run_agent",
+            "nominal_code.agent.cli.runner.run",
             new_callable=AsyncMock,
             return_value=BUGGY_AGENT_RESULT,
         ),
@@ -214,7 +222,11 @@ async def test_webhook_worker_mention_posts_reply(
 
         await wait_for_queue_drain(job_queue)
 
-    notes = await fetch_mr_notes(gitlab_token, GITLAB_TEST_REPO, buggy_mr.number)
+    notes = await fetch_mr_notes(
+        token=gitlab_token,
+        repo=GITLAB_TEST_REPO,
+        mr_iid=buggy_mr.number,
+    )
     assert mock_review_and_fix.called or len(notes) >= 0
 
 
@@ -227,7 +239,9 @@ async def test_webhook_lifecycle_auto_trigger(
     config = _build_webhook_config(
         reviewer_triggers=frozenset({EventType.PR_OPENED}),
     )
-    app, conversation_store, job_queue = _create_test_app(gitlab_token, config)
+    app, conversation_store, job_queue = _create_test_app(
+        token=gitlab_token, config=config
+    )
     client = await aiohttp_client(app)
 
     payload = _build_merge_request_hook_payload(
@@ -238,7 +252,7 @@ async def test_webhook_lifecycle_auto_trigger(
     payload_bytes = json.dumps(payload).encode()
 
     with patch(
-        "nominal_code.agent.cli.session.run_agent",
+        "nominal_code.agent.cli.runner.run",
         new_callable=AsyncMock,
         return_value=BUGGY_AGENT_RESULT,
     ):
@@ -257,7 +271,11 @@ async def test_webhook_lifecycle_auto_trigger(
 
         await wait_for_queue_drain(job_queue)
 
-    notes = await fetch_mr_notes(gitlab_token, GITLAB_TEST_REPO, buggy_mr.number)
+    notes = await fetch_mr_notes(
+        token=gitlab_token,
+        repo=GITLAB_TEST_REPO,
+        mr_iid=buggy_mr.number,
+    )
     note_bodies = [note["body"] for note in notes]
     assert any("Found issues" in body for body in note_bodies)
 
@@ -269,7 +287,7 @@ async def test_webhook_invalid_token_returns_401(
     aiohttp_client: AiohttpClient,
 ) -> None:
     config = _build_webhook_config()
-    app, _, _ = _create_test_app(gitlab_token, config)
+    app, _, _ = _create_test_app(token=gitlab_token, config=config)
     client = await aiohttp_client(app)
 
     payload = _build_note_hook_payload(
@@ -299,7 +317,7 @@ async def test_webhook_unauthorized_user_ignored(
     aiohttp_client: AiohttpClient,
 ) -> None:
     config = _build_webhook_config()
-    app, _, job_queue = _create_test_app(gitlab_token, config)
+    app, _, job_queue = _create_test_app(token=gitlab_token, config=config)
     client = await aiohttp_client(app)
 
     payload = _build_note_hook_payload(
@@ -326,7 +344,11 @@ async def test_webhook_unauthorized_user_ignored(
 
     assert not job_queue._consumers, "Unauthorized user should not trigger a job"
 
-    notes = await fetch_mr_notes(gitlab_token, GITLAB_TEST_REPO, buggy_mr.number)
+    notes = await fetch_mr_notes(
+        token=gitlab_token,
+        repo=GITLAB_TEST_REPO,
+        mr_iid=buggy_mr.number,
+    )
     user_notes = [
         note
         for note in notes

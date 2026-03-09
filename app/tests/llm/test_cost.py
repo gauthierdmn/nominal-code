@@ -25,7 +25,7 @@ class TestComputeCost:
             output_tokens=1_000_000,
         )
 
-        cost = compute_cost(usage, "gpt-4.1")
+        cost = compute_cost(usage=usage, model="gpt-4.1")
 
         assert cost is not None
         assert cost == pytest.approx(2.00 + 8.00)
@@ -33,7 +33,7 @@ class TestComputeCost:
     def test_unknown_model(self):
         usage = TokenUsage(input_tokens=100, output_tokens=50)
 
-        cost = compute_cost(usage, "nonexistent-model-xyz")
+        cost = compute_cost(usage=usage, model="nonexistent-model-xyz")
 
         assert cost is None
 
@@ -45,7 +45,7 @@ class TestComputeCost:
             cache_read_input_tokens=1_000_000,
         )
 
-        cost = compute_cost(usage, "claude-sonnet-4-20250514")
+        cost = compute_cost(usage=usage, model="claude-sonnet-4-20250514")
 
         assert cost is not None
         expected = 3.00 + 15.00 + 3.75 + 0.30
@@ -57,7 +57,7 @@ class TestComputeCost:
             output_tokens=1_000_000,
         )
 
-        cost = compute_cost(usage, "claude-sonnet-4-20250514")
+        cost = compute_cost(usage=usage, model="claude-sonnet-4-20250514")
 
         assert cost is not None
         expected = 3.00 + 15.00
@@ -66,14 +66,19 @@ class TestComputeCost:
     def test_zero_usage(self):
         usage = TokenUsage()
 
-        cost = compute_cost(usage, "gpt-4.1")
+        cost = compute_cost(usage=usage, model="gpt-4.1")
 
         assert cost == 0.0
 
 
 class TestBuildCostSummary:
     def test_no_usage(self):
-        result = build_cost_summary(None, "gpt-4.1", ProviderName.OPENAI, 3)
+        result = build_cost_summary(
+            usage=None,
+            model="gpt-4.1",
+            provider=ProviderName.OPENAI,
+            num_api_calls=3,
+        )
 
         assert isinstance(result, CostSummary)
         assert result.total_input_tokens == 0
@@ -88,7 +93,12 @@ class TestBuildCostSummary:
     def test_with_base_usage(self):
         usage = TokenUsage(input_tokens=500, output_tokens=200)
 
-        result = build_cost_summary(usage, "gpt-4.1", ProviderName.OPENAI, 1)
+        result = build_cost_summary(
+            usage=usage,
+            model="gpt-4.1",
+            provider=ProviderName.OPENAI,
+            num_api_calls=1,
+        )
 
         assert result.total_input_tokens == 500
         assert result.total_output_tokens == 200
@@ -106,10 +116,10 @@ class TestBuildCostSummary:
         )
 
         result = build_cost_summary(
-            usage,
-            "claude-sonnet-4-20250514",
-            ProviderName.ANTHROPIC,
-            1,
+            usage=usage,
+            model="claude-sonnet-4-20250514",
+            provider=ProviderName.ANTHROPIC,
+            num_api_calls=1,
         )
 
         assert result.total_cache_creation_tokens == 100

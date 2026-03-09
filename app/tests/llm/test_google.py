@@ -342,7 +342,9 @@ class TestGoogleProviderSend:
         provider = _make_provider()
         provider._client = MagicMock()
 
-        exc = genai_errors.ClientError(429, {"error": {"message": "rate limited"}})
+        exc = genai_errors.ClientError(
+            code=429, response_json={"error": {"message": "rate limited"}}
+        )
 
         provider._client.aio.models.generate_content = AsyncMock(
             side_effect=exc,
@@ -366,7 +368,9 @@ class TestGoogleProviderSend:
         provider = _make_provider()
         provider._client = MagicMock()
 
-        exc = genai_errors.ServerError(500, {"error": {"message": "server error"}})
+        exc = genai_errors.ServerError(
+            code=500, response_json={"error": {"message": "server error"}}
+        )
 
         provider._client.aio.models.generate_content = AsyncMock(
             side_effect=exc,
@@ -391,8 +395,8 @@ class TestGoogleProviderSend:
         provider._client = MagicMock()
 
         exc = genai_errors.ClientError(
-            400,
-            {"error": {"message": "token limit exceeded"}},
+            code=400,
+            response_json={"error": {"message": "token limit exceeded"}},
         )
 
         provider._client.aio.models.generate_content = AsyncMock(
@@ -435,9 +439,9 @@ class TestGoogleProviderMissingSdk:
 
     def test_missing_provider_error_includes_install_instructions(self):
         error = MissingProviderError(
-            "google",
-            "google-genai",
-            'pip install "nominal-code[google]"',
+            provider="google",
+            library="google-genai",
+            instruction='pip install "nominal-code[google]"',
         )
 
         assert "nominal-code[google]" in str(error)

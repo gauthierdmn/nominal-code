@@ -65,9 +65,9 @@ class AnthropicProvider:
             import anthropic as _anthropic
         except ImportError as exc:
             raise MissingProviderError(
-                ProviderName.ANTHROPIC,
-                "anthropic",
-                INSTALL_INSTRUCTIONS[ProviderName.ANTHROPIC],
+                provider=ProviderName.ANTHROPIC,
+                library="anthropic",
+                instruction=INSTALL_INSTRUCTIONS[ProviderName.ANTHROPIC],
             ) from exc
 
         self._client: anthropic.AsyncAnthropic = _anthropic.AsyncAnthropic()
@@ -111,8 +111,8 @@ class AnthropicProvider:
 
         import anthropic
 
-        api_messages: list[MessageParam] = _to_api_messages(messages)
-        api_tools: list[ToolParam] = _to_api_tools(tools)
+        api_messages: list[MessageParam] = _to_api_messages(messages=messages)
+        api_tools: list[ToolParam] = _to_api_tools(tools=tools)
         cache: CacheControlEphemeralParam = {"type": "ephemeral"}
 
         try:
@@ -132,7 +132,7 @@ class AnthropicProvider:
 
             raise ProviderError(exc.message) from exc
 
-        return _to_llm_response(response)
+        return _to_llm_response(response=response)
 
 
 def _to_api_messages(messages: list[Message]) -> list[MessageParam]:
