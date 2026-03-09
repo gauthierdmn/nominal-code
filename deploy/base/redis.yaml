@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: nominal-code
+  labels:
+    app.kubernetes.io/name: nominal-code
+    app.kubernetes.io/component: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nominal-code
+      app.kubernetes.io/component: redis
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: nominal-code
+        app.kubernetes.io/component: redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: nominal-code
+  labels:
+    app.kubernetes.io/name: nominal-code
+    app.kubernetes.io/component: redis
+spec:
+  selector:
+    app.kubernetes.io/name: nominal-code
+    app.kubernetes.io/component: redis
+  ports:
+    - port: 6379
+      targetPort: 6379

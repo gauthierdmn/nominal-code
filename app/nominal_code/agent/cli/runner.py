@@ -23,8 +23,8 @@ from claude_agent_sdk.types import (
     ToolUseBlock,
 )
 
-from nominal_code.agent.cost import CostSummary
 from nominal_code.agent.result import AgentResult
+from nominal_code.llm.cost import CostSummary
 from nominal_code.models import ProviderName
 
 CONVERSATION_ID_INIT_SUBTYPE: str = "init"

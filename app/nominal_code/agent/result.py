@@ -3,10 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from nominal_code.agent.providers.types import Message
+from nominal_code.llm.messages import Message
 
 if TYPE_CHECKING:
-    from nominal_code.agent.cost import CostSummary
+    from nominal_code.llm.cost import CostSummary
 
 
 @dataclass(frozen=True)

@@ -1,0 +1,15 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nominal-code-server
+  namespace: nominal-code
+spec:
+  template:
+    spec:
+      containers:
+        - name: server
+          env:
+            - name: ALLOWED_USERS
+              value: "test-user"
+            - name: AGENT_PROVIDER
+              value: "google"

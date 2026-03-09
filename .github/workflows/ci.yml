@@ -181,6 +181,41 @@ jobs:
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
         run: uv run pytest tests/integration/ -m integration_pipeline -v
 
+  integration-test-kubernetes:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start minikube
+        uses: medyagh/setup-minikube@v0.0.19
+        with:
+          minikube-version: latest
+          kubernetes-version: v1.31.0
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+
+      - run: uv sync
+
+      - name: Deploy to minikube
+        working-directory: deploy
+        env:
+          TEST_GITHUB_TOKEN: ${{ secrets.TEST_GITHUB_TOKEN }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+        run: make deploy-ci
+
+      - name: Run k8s integration test
+        env:
+          TEST_GITHUB_TOKEN: ${{ secrets.TEST_GITHUB_TOKEN }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          TEST_PIPELINE_ID: ${{ github.sha }}
+        run: uv run pytest tests/integration/github/test_kubernetes.py -m integration_kubernetes -v
+
   integration-test-webhook-server:
     needs: [build-image]
     runs-on: ubuntu-latest
@@ -208,7 +243,7 @@ jobs:
         run: uv run pytest tests/integration/ -m integration_webhook_server -v
 
   cleanup:
-    needs: [integration-test-local, integration-test-pipeline, integration-test-webhook-server]
+    needs: [integration-test-local, integration-test-pipeline, integration-test-webhook-server, integration-test-kubernetes]
     if: always() && github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
@@ -240,6 +275,7 @@ jobs:
       - build-image
       - integration-test-pipeline
       - integration-test-webhook-server
+      - integration-test-kubernetes
     if: always()
     runs-on: ubuntu-latest
     steps:

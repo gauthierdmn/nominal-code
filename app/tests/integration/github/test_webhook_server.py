@@ -6,18 +6,19 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from aiohttp import web
 
-from nominal_code.agent.cli.job import JobQueue
-from nominal_code.agent.memory import ConversationStore
+from nominal_code.agent.cli.queue import JobQueue
 from nominal_code.config import (
     CliAgentConfig,
     Config,
     ReviewerConfig,
     WorkerConfig,
 )
+from nominal_code.conversation.memory import MemoryConversationStore
+from nominal_code.jobs.process import ProcessRunner
 from nominal_code.models import EventType
 from nominal_code.platforms.github import GitHubPlatform
 from nominal_code.platforms.github.auth import GitHubPatAuth
-from nominal_code.webhooks.server import create_app
+from nominal_code.server.app import create_app
 from tests.integration.conftest import (
     BranchInfo,
     install_enqueue_hook,
@@ -81,14 +82,20 @@ async def test_webhook_server_posts_review(
         auth=GitHubPatAuth(token=github_token),
         webhook_secret=WEBHOOK_SECRET,
     )
-    conversation_store = ConversationStore()
+    conversation_store = MemoryConversationStore()
     job_queue = JobQueue()
+    platforms = {"github": platform}
+    in_process_runner = ProcessRunner(
+        config=config,
+        platforms=platforms,
+        conversation_store=conversation_store,
+        job_queue=job_queue,
+    )
 
     app = create_app(
         config=config,
-        platforms={"github": platform},
-        conversation_store=conversation_store,
-        job_queue=job_queue,
+        platforms=platforms,
+        runner=in_process_runner,
     )
 
     runner = web.AppRunner(app)
@@ -122,7 +129,7 @@ async def test_webhook_server_posts_review(
         job_enqueued = install_enqueue_hook(job_queue)
 
         with patch(
-            "nominal_code.agent.cli.tracking.run_agent",
+            "nominal_code.agent.cli.session.run_agent",
             new_callable=AsyncMock,
             return_value=BUGGY_AGENT_RESULT,
         ):

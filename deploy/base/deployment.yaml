@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nominal-code-server
+  namespace: nominal-code
+  labels:
+    app.kubernetes.io/name: nominal-code
+    app.kubernetes.io/component: server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nominal-code
+      app.kubernetes.io/component: server
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: nominal-code
+        app.kubernetes.io/component: server
+    spec:
+      serviceAccountName: nominal-code-server
+      containers:
+        - name: server
+          image: nominal-code
+          imagePullPolicy: Never
+          command: ["uv", "run", "--no-sync", "nominal-code"]
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - secretRef:
+                name: nominal-code-secrets
+          env:
+            - name: JOB_RUNNER
+              value: "kubernetes"
+            - name: K8S_NAMESPACE
+              value: "nominal-code"
+            - name: K8S_IMAGE
+              value: "nominal-code"
+            - name: K8S_IMAGE_PULL_POLICY
+              value: "Never"
+            - name: K8S_ENV_FROM_SECRETS
+              value: "nominal-code-secrets"
+            - name: K8S_ACTIVE_DEADLINE_SECONDS
+              value: "600"
+            - name: REVIEWER_BOT_USERNAME
+              value: "nominal-bot"
+            - name: ALLOWED_USERS
+              value: ""
+            - name: AGENT_PROVIDER
+              value: "google"
+            - name: REDIS_URL
+              value: "redis://redis.nominal-code.svc.cluster.local:6379/0"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 256Mi

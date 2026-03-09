@@ -24,9 +24,9 @@ AI-powered code review bot that monitors GitHub PRs and GitLab MRs. When a user 
 |------|--------|-------------|
 | Webhook server | Claude Code CLI (`agent/cli/runner.py`) | `CliAgentConfig` |
 | CLI review | Claude Code CLI (`agent/cli/runner.py`) | `CliAgentConfig` |
-| CI (`ci.py`) | LLM provider API (`agent/api/runner.py`) | `ApiAgentConfig` |
+| CI (`commands/ci.py`) | LLM provider API (`agent/api/runner.py`) | `ApiAgentConfig` |
 
-The dispatcher in `agent/runner.py` routes based on the agent config type (`CliAgentConfig` or `ApiAgentConfig`). The API runner implements its own tool execution (Read, Glob, Grep, Bash with allowlist) and supports multiple providers (Anthropic, OpenAI, Google Gemini, DeepSeek, Groq, Together, Fireworks).
+The dispatcher in `agent/router.py` routes based on the agent config type (`CliAgentConfig` or `ApiAgentConfig`). The API runner implements its own tool execution (Read, Glob, Grep, Bash with allowlist) and supports multiple providers (Anthropic, OpenAI, Google Gemini, DeepSeek, Groq, Together, Fireworks).
 
 ## Bot types
 
@@ -76,15 +76,16 @@ The dispatcher in `agent/runner.py` routes based on the agent config type (`CliA
 ```
 nominal_code/
 ├── main.py              # Entry point: dispatches to webhook server, CLI, or CI
-├── cli.py               # One-shot review CLI (argparse, platform construction)
-├── ci.py                # CI mode dispatcher (delegates to platform-specific CI modules, posts results)
 ├── config.py            # Frozen dataclass config loaded from env vars / files
 ├── models.py            # Shared enums (EventType, BotType, FileStatus) and dataclasses (ReviewFinding, AgentReview, ChangedFile)
 ├── http.py              # request_with_retry(): HTTP request helper with transient error retries
-├── agent/               # Dual agent runners, conversation management, prompt composition
+├── commands/            # Entry points: CLI review, CI mode, job runner
+├── llm/                 # LLM provider abstraction, cost tracking, canonical message types
+├── agent/               # Dual agent runners, prompt composition, error handling
+├── conversation/        # Conversation persistence (memory + Redis stores)
+├── handlers/            # Bot handlers: reviewer (structured review) and worker (code fixes)
+├── server/              # aiohttp webhook server, @mention extraction, job dispatch
+├── jobs/                # Job payload, process runner, Kubernetes runner
 ├── platforms/           # Platform protocol + GitHub/GitLab implementations (subpackages)
-├── review/              # Reviewer bot handler (structured code review)
-├── webhooks/            # aiohttp webhook server, @mention extraction, job dispatch
-├── worker/              # Worker bot handler (code fixes)
 └── workspace/           # Git workspace management and cleanup
 ```

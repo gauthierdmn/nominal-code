@@ -29,3 +29,6 @@ workspaces/
 
 # Claude hook cache
 .claude/.cache/
+
+# Local K8s secrets (user-specific, never commit)
+deploy/overlays/local/secret.yaml

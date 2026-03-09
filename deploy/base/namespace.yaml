@@ -1,0 +1,6 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nominal-code
+  labels:
+    app.kubernetes.io/name: nominal-code

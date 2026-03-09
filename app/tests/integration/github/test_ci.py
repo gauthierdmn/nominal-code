@@ -3,14 +3,14 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from nominal_code.agent.providers.registry import PROVIDERS
 from nominal_code.agent.result import AgentResult
 from nominal_code.config import Config
+from nominal_code.handlers.review import review
+from nominal_code.llm.registry import PROVIDERS
 from nominal_code.models import EventType, ProviderName
 from nominal_code.platforms.base import PlatformName, PullRequestEvent
 from nominal_code.platforms.github import GitHubPlatform
 from nominal_code.platforms.github.auth import GitHubPatAuth
-from nominal_code.review.handler import review
 from tests.integration.conftest import PrInfo
 from tests.integration.github.api import (
     fetch_pr_comments,
@@ -52,7 +52,7 @@ async def _run_ci_review(
     canned_result: AgentResult,
 ) -> int:
     with patch(
-        "nominal_code.agent.cli.tracking.run_agent",
+        "nominal_code.agent.cli.session.run_agent",
         new_callable=AsyncMock,
         return_value=canned_result,
     ):

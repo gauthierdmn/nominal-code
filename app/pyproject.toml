@@ -16,7 +16,8 @@ dependencies = [
 anthropic = ["anthropic==0.84.0"]
 openai = ["openai==2.26.0"]
 google = ["google-genai==1.66.0"]
-all = ["nominal-code[anthropic]", "nominal-code[openai]", "nominal-code[google]"]
+redis = ["redis>=5.0,<6"]
+all = ["nominal-code[anthropic]", "nominal-code[openai]", "nominal-code[google]", "nominal-code[redis]"]
 
 [project.scripts]
 nominal-code = "nominal_code.main:main"
@@ -72,5 +73,6 @@ markers = [
     "integration: local integration tests (mocked agent, in-process server)",
     "integration_pipeline: integration tests that trigger real CI pipelines",
     "integration_webhook_server: integration tests that use a real tunnel and webhook delivery",
+    "integration_kubernetes: end-to-end tests against a real minikube cluster",
 ]
-addopts = "-m 'not integration and not integration_pipeline and not integration_webhook_server'"
+addopts = "-m 'not integration and not integration_pipeline and not integration_webhook_server and not integration_kubernetes'"

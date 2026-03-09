@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: nominal-code-server
+  namespace: nominal-code
+  labels:
+    app.kubernetes.io/name: nominal-code
+    app.kubernetes.io/component: server
+spec:
+  selector:
+    app.kubernetes.io/name: nominal-code
+    app.kubernetes.io/component: server
+  ports:
+    - port: 80
+      targetPort: 8080

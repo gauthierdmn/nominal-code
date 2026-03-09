@@ -141,7 +141,7 @@ Used by **CI mode**. Calls the LLM provider API directly with tool use. Supports
 | CLI (`nominal-code review`) | Claude Code CLI | `CliAgentConfig` |
 | Webhook server | Claude Code CLI | `CliAgentConfig` |
 
-The dispatcher in `agent/runner.py` routes to the appropriate backend based on whether the config is a `CliAgentConfig` or `ApiAgentConfig`.
+The dispatcher in `agent/router.py` routes to the appropriate backend based on whether the config is a `CliAgentConfig` or `ApiAgentConfig`.
 
 ## Components
 
@@ -158,23 +158,27 @@ Each incoming request is verified, parsed, and dispatched. The HTTP response is 
 
 A factory-based registry where each platform module self-registers at import time. At startup, `build_platforms()` calls each factory and returns only the platforms that are configured (i.e. have their required tokens set).
 
-### Webhook Dispatch (`webhooks/dispatch.py`)
+### Pre-flight Checks (`server/router.py`)
 
-- **`enqueue_job()`** — central pre-flight for all events. For comment events: checks authorization against `ALLOWED_USERS`, posts the eyes reaction, and enqueues the job. For lifecycle events: skips authorization and reaction, enqueues a reviewer job with an empty prompt.
+- **`run_pre_flight()`** — central pre-flight for all events. For comment events: validates the author against `ALLOWED_USERS`, logs the event, posts the eyes reaction. For lifecycle events: logs with event type/title/author, posts a PR reaction, and skips auth and comment reaction. Returns whether the job should proceed.
+
+### Job Processing (`jobs/process.py`)
+
+- **`ProcessRunner`** — sets clone URLs on the event, builds the appropriate handler closure, and enqueues jobs for serial execution via the job queue.
 
 ### Handlers
 
-- **`worker.handler.review_and_fix()`** — clones the repo, runs the agent with full tools, posts the reply.
-- **`review.handler.review()`** — core review logic (clone, fetch diff + comments, run agent, parse JSON, filter findings). Returns a `ReviewResult` without posting. Used by webhook, CLI, and CI modes.
-- **`review.handler.review_and_post()`** — webhook entry point. Calls `review()` then posts results to the platform.
+- **`handlers.worker.review_and_fix()`** — clones the repo, runs the agent with full tools, posts the reply.
+- **`handlers.review.review()`** — core review logic (clone, fetch diff + comments, run agent, parse JSON, filter findings). Returns a `ReviewResult` without posting. Used by webhook, CLI, and CI modes.
+- **`handlers.review.review_and_post()`** — webhook entry point. Calls `review()` then posts results to the platform.
 
-### CLI Module (`cli.py`)
+### CLI Module (`commands/cli.py`)
 
 - **`_parse_pr_ref()`** — parses `owner/repo#42` into a repo name and PR number.
 - **`_build_platform()`** — constructs a platform client from environment tokens (no webhook secret needed).
 - **`_run_review()`** — orchestrates the CLI flow: resolve branch, call `review()`, print results, optionally post.
 
-### CI Module (`ci.py`)
+### CI Module (`commands/ci.py`)
 
 - **`run_ci_review()`** — main entry point for CI-triggered reviews. Dispatches to the platform-specific CI module, runs the review, and posts results.
 - **`_load_platform_ci()`** — imports the correct platform CI module (`platforms/github/ci.py` or `platforms/gitlab/ci.py`).
@@ -187,7 +191,7 @@ Each platform provides a `ci.py` module with three functions:
 - **`build_platform()`** — constructs a `ReviewerPlatform` from CI tokens (`$GITHUB_TOKEN` or `$GITLAB_TOKEN`).
 - **`resolve_workspace()`** — returns the CI runner's checkout directory (`$GITHUB_WORKSPACE` or `$CI_PROJECT_DIR`).
 
-### Agent Runner (`agent/runner.py`)
+### Agent Runner (`agent/router.py`)
 
 Dispatcher that routes to the API or CLI runner based on the agent config type (`CliAgentConfig` or `ApiAgentConfig`). See [Agent Runners](#agent-runners) above.
 
@@ -207,20 +211,20 @@ Wraps the Claude Code SDK to stream messages from the CLI subprocess. See [Claud
 
 Loads and composes the system prompt from multiple sources: the bot's base prompt, global coding guidelines, and per-repo/per-language overrides from the `.nominal/` directory. Language detection is based on file extensions in the PR diff.
 
-### Conversation Tracking (`agent/cli/tracking.py`)
+### Conversation Tracking (`agent/cli/session.py`)
 
 Bridges the conversation store and the agent runner. Looks up the existing conversation ID for a PR/bot pair, passes it to the agent for multi-turn continuity, and stores the new conversation ID after execution. Only used in webhook mode (CLI and CI are stateless).
 
-### Conversation Store and Job Queue (`agent/memory.py`, `agent/cli/job.py`)
+### Conversation Store and Job Queue (`conversation/memory.py`, `agent/cli/queue.py`)
 
 - **ConversationStore** — a unified in-memory store with two parallel dicts keyed by `(platform, repo, pr_number, bot_type)`: lightweight conversation IDs and full message histories (API mode only). Used to resume conversations across multiple interactions on the same PR.
 - **JobQueue** — per-PR async job queue. Each PR key gets its own `asyncio.Queue` with a single consumer task, ensuring that agent invocations on the same PR run serially (no race conditions). The consumer and queue are cleaned up when drained.
 
-### Cost Tracking (`agent/cost.py`)
+### Cost Tracking (`llm/cost.py`)
 
 Both agent runners capture token usage and compute dollar costs per invocation:
 
-- **Pricing data** — a bundled `data/pricing.json` file maps model IDs to per-token rates (input, output, cache write, cache read). Generated from the [LiteLLM community pricing database](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json) by `scripts/update_pricing.py` and auto-updated weekly via a GitHub Actions workflow.
+- **Pricing data** — a bundled `llm/data/pricing.json` file maps model IDs to per-token rates (input, output, cache write, cache read). Generated from the [LiteLLM community pricing database](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json) by `scripts/update_pricing.py` and auto-updated weekly via a GitHub Actions workflow.
 - **API runner** — accumulates `TokenUsage` from each provider response across the agentic loop, then calls `build_cost_summary()` to compute the total cost.
 - **CLI runner** — extracts `total_cost_usd` and token usage from the SDK's `ResultMessage`.
 - **Output** — cost is attached to `AgentResult.cost` and `ReviewResult.cost`, logged by the review handler, and formatted for CI output.
@@ -283,16 +287,26 @@ Set `CLEANUP_INTERVAL_HOURS=0` to disable the periodic loop entirely.
 ```
 nominal_code/
 ├── main.py              # Entry point: dispatches to webhook server, CLI, or CI
-├── cli.py               # One-shot review CLI (argparse, platform construction)
-├── ci.py                # CI mode dispatcher (delegates to platform-specific CI modules)
 ├── config.py            # Frozen dataclass config loaded from env vars / files
 ├── models.py            # Shared enums (EventType, BotType, FileStatus) and dataclasses
-├── agent/
-│   ├── runner.py        # Dispatcher: routes to API or CLI runner based on config
-│   ├── result.py        # AgentResult dataclass (output, turns, conversation ID, cost)
+├── http.py              # request_with_retry(): HTTP request helper with transient error retries
+├── commands/
+│   ├── cli.py           # One-shot review CLI (argparse, platform construction)
+│   ├── ci.py            # CI mode dispatcher (delegates to platform-specific CI modules)
+│   └── job.py           # Job runner CLI command
+├── llm/
+│   ├── provider.py      # LLM provider protocol and base classes
+│   ├── registry.py      # Provider registry and factory
+│   ├── messages.py      # Canonical message types (LLMResponse, TokenUsage, etc.)
 │   ├── cost.py          # CostSummary, pricing loader, cost computation
 │   ├── data/
 │   │   └── pricing.json # Bundled model pricing (auto-updated from LiteLLM)
+│   ├── anthropic.py     # Anthropic provider implementation
+│   ├── openai.py        # OpenAI provider implementation (also used by DeepSeek, Groq, Together, Fireworks)
+│   └── google.py        # Google Gemini provider implementation
+├── agent/
+│   ├── router.py        # Dispatcher: routes to API or CLI runner based on config
+│   ├── result.py        # AgentResult dataclass (output, turns, conversation ID, cost)
 │   ├── prompts.py       # Guideline loading, language detection, system prompt composition
 │   ├── errors.py        # Async context manager for handler error handling
 │   ├── api/
@@ -300,8 +314,24 @@ nominal_code/
 │   │   └── tools.py     # Tool definitions and execution (Read, Glob, Grep, Bash)
 │   └── cli/
 │       ├── runner.py    # Claude Code CLI subprocess wrapper (SDK integration)
-│       ├── job.py       # JobQueue (per-PR async queue)
-│       └── tracking.py  # Bridges conversation store and agent runner for multi-turn continuity
+│       ├── queue.py     # JobQueue (per-PR async queue)
+│       └── session.py   # Bridges conversation store and agent runner for multi-turn continuity
+├── conversation/
+│   ├── base.py          # Conversation store protocol
+│   ├── memory.py        # In-memory conversation store
+│   └── redis.py         # Redis-backed conversation store
+├── handlers/
+│   ├── review.py        # Reviewer bot: structured code review with inline comments
+│   └── worker.py        # Worker bot: full-access agent that pushes code changes
+├── server/
+│   ├── app.py           # aiohttp app with /health and /webhooks/{platform} routes
+│   ├── mention.py       # @mention extraction from comment text
+│   └── router.py        # Pre-flight checks (auth, reactions, logging)
+├── jobs/
+│   ├── payload.py       # ReviewJob serializable dataclass
+│   ├── process.py       # ProcessRunner: job enqueueing and handler dispatch
+│   ├── runner.py        # Job runner CLI entry point
+│   └── kubernetes.py    # Kubernetes Job dispatcher
 ├── platforms/
 │   ├── base.py          # Protocol definitions and shared dataclasses
 │   ├── registry.py      # Self-registering platform factory pattern
@@ -312,14 +342,6 @@ nominal_code/
 │   └── gitlab/
 │       ├── ci.py        # CI mode: build event, platform, and workspace from GitLab CI env vars
 │       └── platform.py  # GitLab webhook handler and REST API client
-├── review/
-│   └── handler.py       # Reviewer bot: structured code review with inline comments
-├── webhooks/
-│   ├── server.py        # aiohttp app with /health and /webhooks/{platform} routes
-│   ├── mention.py       # @mention extraction from comment text
-│   └── dispatch.py      # Auth check, reaction posting, job enqueueing
-├── worker/
-│   └── handler.py       # Worker bot: full-access agent that pushes code changes
 └── workspace/
     ├── git.py           # GitWorkspace: clone, update, push per-PR workspaces
     ├── setup.py         # Branch resolution and workspace construction helpers

@@ -6,7 +6,7 @@ Usage:
 
 The script downloads the LiteLLM community pricing database, extracts
 pricing for all chat models from providers supported by nominal-code,
-and writes the result to ``app/nominal_code/agent/data/pricing.json``.
+and writes the result to ``app/nominal_code/llm/data/pricing.json``.
 
 Providers that use a LiteLLM key prefix (e.g. ``groq/``,
 ``together_ai/``) have the prefix stripped so the output keys match
@@ -30,7 +30,7 @@ OUTPUT_PATH: Path = (
     Path(__file__).resolve().parent.parent
     / "app"
     / "nominal_code"
-    / "agent"
+    / "llm"
     / "data"
     / "pricing.json"
 )

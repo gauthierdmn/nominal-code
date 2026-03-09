@@ -30,7 +30,7 @@ jobs:
       - name: Check for changes
         id: diff
         run: |
-          git diff --quiet app/nominal_code/agent/data/pricing.json && echo "changed=false" >> "$GITHUB_OUTPUT" || echo "changed=true" >> "$GITHUB_OUTPUT"
+          git diff --quiet app/nominal_code/llm/data/pricing.json && echo "changed=false" >> "$GITHUB_OUTPUT" || echo "changed=true" >> "$GITHUB_OUTPUT"
 
       - name: Create pull request
         if: steps.diff.outputs.changed == 'true'
@@ -40,6 +40,6 @@ jobs:
           commit-message: "chore: update model pricing from LiteLLM"
           title: "chore: update model pricing from LiteLLM"
           body: |
-            Automated update of `app/nominal_code/agent/data/pricing.json` from the
+            Automated update of `app/nominal_code/llm/data/pricing.json` from the
             [LiteLLM pricing database](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json).
           labels: dependencies

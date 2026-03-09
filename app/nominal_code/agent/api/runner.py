@@ -10,10 +10,10 @@ from nominal_code.agent.api.tools import (
     execute_tool,
     get_tool_definitions,
 )
-from nominal_code.agent.cost import build_cost_summary
-from nominal_code.agent.memory import truncate_messages
-from nominal_code.agent.providers.base import LLMProvider, ProviderError
-from nominal_code.agent.providers.types import (
+from nominal_code.agent.result import AgentResult
+from nominal_code.conversation.base import truncate_messages
+from nominal_code.llm.cost import build_cost_summary
+from nominal_code.llm.messages import (
     ContentBlock,
     LLMResponse,
     Message,
@@ -23,7 +23,7 @@ from nominal_code.agent.providers.types import (
     ToolResultBlock,
     ToolUseBlock,
 )
-from nominal_code.agent.result import AgentResult
+from nominal_code.llm.provider import LLMProvider, ProviderError
 from nominal_code.models import ProviderName
 
 MAX_RESPONSE_TOKENS: int = 16384

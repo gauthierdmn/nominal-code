@@ -5,7 +5,8 @@ from unittest.mock import AsyncMock
 import pytest
 
 from nominal_code.agent.api.runner import run_agent_api
-from nominal_code.agent.providers.types import (
+from nominal_code.agent.result import AgentResult
+from nominal_code.llm.messages import (
     LLMResponse,
     Message,
     StopReason,
@@ -13,7 +14,6 @@ from nominal_code.agent.providers.types import (
     TokenUsage,
     ToolUseBlock,
 )
-from nominal_code.agent.result import AgentResult
 from nominal_code.models import ProviderName
 
 
@@ -160,7 +160,7 @@ class TestRunAgentApi:
 
     @pytest.mark.asyncio
     async def test_provider_error_returns_error_result(self, tmp_path):
-        from nominal_code.agent.providers.base import ProviderError
+        from nominal_code.llm.provider import ProviderError
 
         mock_provider = AsyncMock()
         mock_provider.send = AsyncMock(
@@ -245,7 +245,7 @@ class TestRunAgentApi:
 
     @pytest.mark.asyncio
     async def test_error_result_has_no_messages(self, tmp_path):
-        from nominal_code.agent.providers.base import ProviderError
+        from nominal_code.llm.provider import ProviderError
 
         mock_provider = AsyncMock()
         mock_provider.send = AsyncMock(
@@ -324,7 +324,7 @@ class TestRunAgentApiCost:
 
     @pytest.mark.asyncio
     async def test_cost_present_on_error(self, tmp_path):
-        from nominal_code.agent.providers.base import ProviderError
+        from nominal_code.llm.provider import ProviderError
 
         mock_provider = AsyncMock()
         mock_provider.send = AsyncMock(

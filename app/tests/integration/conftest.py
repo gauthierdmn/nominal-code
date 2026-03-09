@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from nominal_code.agent.cli.job import JobQueue
+from nominal_code.agent.cli.queue import JobQueue
 from nominal_code.models import BotType
 from nominal_code.platforms.base import PlatformName
 from tests.integration.github import api as github_api

@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from nominal_code.agent.providers.types import ToolDefinition
+from nominal_code.llm.messages import ToolDefinition
 
 logger: logging.Logger = logging.getLogger(__name__)
 

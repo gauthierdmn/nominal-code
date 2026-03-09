@@ -8,17 +8,18 @@ import pytest
 from aiohttp import web
 from aiohttp.pytest_plugin import AiohttpClient
 
-from nominal_code.agent.cli.job import JobQueue
-from nominal_code.agent.memory import ConversationStore
+from nominal_code.agent.cli.queue import JobQueue
 from nominal_code.config import (
     CliAgentConfig,
     Config,
     ReviewerConfig,
     WorkerConfig,
 )
+from nominal_code.conversation.memory import MemoryConversationStore
+from nominal_code.jobs.process import ProcessRunner
 from nominal_code.models import EventType
 from nominal_code.platforms.gitlab import GitLabPlatform
-from nominal_code.webhooks.server import create_app
+from nominal_code.server.app import create_app
 from tests.integration.conftest import PrInfo, wait_for_queue_drain
 from tests.integration.gitlab.api import (
     fetch_mr_notes,
@@ -105,18 +106,24 @@ def _build_merge_request_hook_payload(
 def _create_test_app(
     token: str,
     config: Config,
-) -> tuple[web.Application, ConversationStore, JobQueue]:
+) -> tuple[web.Application, MemoryConversationStore, JobQueue]:
     platform = GitLabPlatform(
         token=token,
         webhook_secret=WEBHOOK_SECRET,
     )
-    conversation_store = ConversationStore()
+    conversation_store = MemoryConversationStore()
     job_queue = JobQueue()
-    app = create_app(
+    platforms = {"gitlab": platform}
+    runner = ProcessRunner(
         config=config,
-        platforms={"gitlab": platform},
+        platforms=platforms,
         conversation_store=conversation_store,
         job_queue=job_queue,
+    )
+    app = create_app(
+        config=config,
+        platforms=platforms,
+        runner=runner,
     )
 
     return app, conversation_store, job_queue
@@ -140,7 +147,7 @@ async def test_webhook_reviewer_mention_posts_review(
     payload_bytes = json.dumps(payload).encode()
 
     with patch(
-        "nominal_code.agent.cli.tracking.run_agent",
+        "nominal_code.agent.cli.session.run_agent",
         new_callable=AsyncMock,
         return_value=BUGGY_AGENT_RESULT,
     ):
@@ -183,12 +190,12 @@ async def test_webhook_worker_mention_posts_reply(
 
     with (
         patch(
-            "nominal_code.agent.cli.tracking.run_agent",
+            "nominal_code.agent.cli.session.run_agent",
             new_callable=AsyncMock,
             return_value=BUGGY_AGENT_RESULT,
         ),
         patch(
-            "nominal_code.worker.handler.review_and_fix",
+            "nominal_code.handlers.worker.review_and_fix",
             new_callable=AsyncMock,
         ) as mock_review_and_fix,
     ):
@@ -231,7 +238,7 @@ async def test_webhook_lifecycle_auto_trigger(
     payload_bytes = json.dumps(payload).encode()
 
     with patch(
-        "nominal_code.agent.cli.tracking.run_agent",
+        "nominal_code.agent.cli.session.run_agent",
         new_callable=AsyncMock,
         return_value=BUGGY_AGENT_RESULT,
     ):
@@ -315,7 +322,7 @@ async def test_webhook_unauthorized_user_ignored(
 
     assert response.status == 200
     data = await response.json()
-    assert data["status"] == "accepted"
+    assert data["status"] == "unauthorized"
 
     assert not job_queue._consumers, "Unauthorized user should not trigger a job"
 
