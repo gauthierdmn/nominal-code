@@ -198,9 +198,9 @@ async def test_kubernetes_job_dispatch(
     assert payload_env is not None, "REVIEW_JOB_PAYLOAD env var not found on job pod"
 
     job_payload = json.loads(payload_env)
-    assert job_payload["platform"] == "github"
-    assert job_payload["pr_number"] == pr_info.number
-    assert job_payload["repo_full_name"] == pr_info.repo
+    assert job_payload["event"]["platform"] == "github"
+    assert job_payload["event"]["pr_number"] == pr_info.number
+    assert job_payload["event"]["repo_full_name"] == pr_info.repo
     assert job_payload["bot_type"] == "reviewer"
 
     env_from = container.get("envFrom", [])

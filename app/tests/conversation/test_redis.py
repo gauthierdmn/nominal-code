@@ -1,6 +1,18 @@
-# type: ignore
 from datetime import timedelta
 from unittest.mock import MagicMock
+
+import pytest
+
+from nominal_code.llm.messages import (
+    Message,
+    TextBlock,
+    ToolResultBlock,
+    ToolUseBlock,
+)
+from nominal_code.models import BotType
+from nominal_code.platforms.base import PlatformName
+
+pytest.importorskip("redis")
 
 import redis
 
@@ -10,14 +22,6 @@ from nominal_code.conversation.redis import (
     _deserialize_messages,
     _serialize_messages,
 )
-from nominal_code.llm.messages import (
-    Message,
-    TextBlock,
-    ToolResultBlock,
-    ToolUseBlock,
-)
-from nominal_code.models import BotType
-from nominal_code.platforms.base import PlatformName
 
 
 class TestBuildKey:
