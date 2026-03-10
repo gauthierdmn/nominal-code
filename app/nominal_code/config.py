@@ -101,6 +101,40 @@ AgentConfig = CliAgentConfig | ApiAgentConfig
 
 
 @dataclass(frozen=True)
+class KubernetesConfig:
+    """
+    Configuration for the Kubernetes job runner.
+
+    Attributes:
+        image (str): Docker image for review pods.
+        namespace (str): Kubernetes namespace for review Jobs.
+        service_account (str): ServiceAccount name for review pods.
+        image_pull_policy (str): Image pull policy override.
+        backoff_limit (int): Job retry count (0 = no retries).
+        active_deadline_seconds (int): Per-job timeout in seconds.
+        ttl_after_finished (int): Seconds before completed Jobs are cleaned up.
+        env_from_secrets (tuple[str, ...]): K8s Secret names to mount as env.
+        resource_requests_cpu (str): CPU request (e.g. ``"500m"``).
+        resource_requests_memory (str): Memory request (e.g. ``"512Mi"``).
+        resource_limits_cpu (str): CPU limit.
+        resource_limits_memory (str): Memory limit.
+    """
+
+    image: str
+    namespace: str = "default"
+    service_account: str = ""
+    image_pull_policy: str = ""
+    backoff_limit: int = 0
+    active_deadline_seconds: int = 600
+    ttl_after_finished: int = 3600
+    env_from_secrets: tuple[str, ...] = ()
+    resource_requests_cpu: str = ""
+    resource_requests_memory: str = ""
+    resource_limits_cpu: str = ""
+    resource_limits_memory: str = ""
+
+
+@dataclass(frozen=True)
 class WorkerConfig:
     """
     Worker bot configuration.
@@ -176,6 +210,7 @@ class Config:
     allowed_repos: frozenset[str] = frozenset()
     pr_title_include_tags: frozenset[str] = frozenset()
     pr_title_exclude_tags: frozenset[str] = frozenset()
+    kubernetes: KubernetesConfig | None = None
 
     @classmethod
     def for_cli(
@@ -365,14 +400,14 @@ class Config:
         webhook_port: int = env.int("WEBHOOK_PORT", DEFAULT_WEBHOOK_PORT)
 
         try:
-            users_raw: str = env.str("ALLOWED_USERS")
+            allowed_users_env: str = env.str("ALLOWED_USERS")
         except EnvError as exc:
             raise ValueError(
                 "Required environment variable 'ALLOWED_USERS' is not set"
             ) from exc
 
         allowed_users: frozenset[str] = frozenset(
-            user.strip() for user in users_raw.split(",") if user.strip()
+            user.strip() for user in allowed_users_env.split(",") if user.strip()
         )
 
         if not allowed_users:
@@ -418,6 +453,8 @@ class Config:
             max_turns=env.int("AGENT_MAX_TURNS", DEFAULT_AGENT_MAX_TURNS),
         )
 
+        kubernetes_config: KubernetesConfig | None = _parse_kubernetes_config()
+
         return cls(
             worker=worker,
             reviewer=reviewer,
@@ -433,6 +470,7 @@ class Config:
             allowed_repos=allowed_repos,
             pr_title_include_tags=pr_title_include_tags,
             pr_title_exclude_tags=pr_title_exclude_tags,
+            kubernetes=kubernetes_config,
         )
 
 
@@ -491,7 +529,7 @@ def _resolve_agent_config(
             cli_path=env.str("AGENT_CLI_PATH", ""),
         )
 
-    from nominal_code.agent.providers.registry import PROVIDERS
+    from nominal_code.llm.registry import PROVIDERS
 
     provider_config: ProviderConfig = PROVIDERS[provider_name]
 
@@ -553,6 +591,53 @@ def _parse_reviewer_triggers(events: str) -> frozenset[EventType]:
             logger.warning("Ignoring unknown REVIEWER_TRIGGERS value: %s", name)
 
     return frozenset(triggers)
+
+
+def _parse_kubernetes_config() -> KubernetesConfig | None:
+    """
+    Parse Kubernetes runner configuration from environment variables.
+
+    Returns ``None`` when ``JOB_RUNNER`` is not set to ``"kubernetes"``.
+
+    Returns:
+        KubernetesConfig | None: The parsed config, or ``None`` when disabled.
+
+    Raises:
+        ValueError: If ``K8S_IMAGE`` is missing when Kubernetes mode is enabled.
+    """
+
+    job_runner: str = env.str("JOB_RUNNER", "")
+
+    if job_runner != "kubernetes":
+        return None
+
+    image: str = env.str("K8S_IMAGE", "")
+
+    if not image:
+        raise ValueError(
+            "K8S_IMAGE is required when JOB_RUNNER=kubernetes",
+        )
+
+    env_from_secrets: tuple[str, ...] = tuple(
+        secret.strip()
+        for secret in env.str("K8S_ENV_FROM_SECRETS", "").split(",")
+        if secret.strip()
+    )
+
+    return KubernetesConfig(
+        namespace=env.str("K8S_NAMESPACE", "default"),
+        image=image,
+        service_account=env.str("K8S_SERVICE_ACCOUNT", ""),
+        image_pull_policy=env.str("K8S_IMAGE_PULL_POLICY", ""),
+        backoff_limit=env.int("K8S_BACKOFF_LIMIT", 0),
+        active_deadline_seconds=env.int("K8S_ACTIVE_DEADLINE_SECONDS", 600),
+        ttl_after_finished=env.int("K8S_TTL_AFTER_FINISHED", 3600),
+        env_from_secrets=env_from_secrets,
+        resource_requests_cpu=env.str("K8S_RESOURCE_REQUESTS_CPU", ""),
+        resource_requests_memory=env.str("K8S_RESOURCE_REQUESTS_MEMORY", ""),
+        resource_limits_cpu=env.str("K8S_RESOURCE_LIMITS_CPU", ""),
+        resource_limits_memory=env.str("K8S_RESOURCE_LIMITS_MEMORY", ""),
+    )
 
 
 def _load_file_content(file_path: Path) -> str:

@@ -6,13 +6,13 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from nominal_code.agent.providers.types import ToolDefinition
+from nominal_code.llm.messages import ToolDefinition
 
 logger: logging.Logger = logging.getLogger(__name__)
 
 
 MAX_GLOB_RESULTS: int = 200
-MAX_GREP_OUTPUT_LENGTH: int = 30000
+MAX_GREP_OUTPUT_LENGTH: int = 30_000
 MAX_READ_LINES: int = 2000
 MAX_LINE_LENGTH: int = 2000
 
@@ -227,6 +227,7 @@ def get_tool_definitions(
     allowed_names: set[str] = set()
 
     for entry in allowed_tools:
+        # extract tools names even with arguments e.g. Bash(git clone*)
         name: str = entry.split("(")[0]
         allowed_names.add(name)
 
@@ -262,22 +263,28 @@ async def execute_tool(
 
     try:
         if name == "Read":
-            return _execute_read(tool_input, cwd), False
+            return _execute_read(tool_input=tool_input, cwd=cwd), False
 
         if name == "Glob":
-            return _execute_glob(tool_input, cwd), False
+            return _execute_glob(tool_input=tool_input, cwd=cwd), False
 
         if name == "Grep":
-            return await _execute_grep(tool_input, cwd), False
+            return await _execute_grep(tool_input=tool_input, cwd=cwd), False
 
         if name == "Bash":
-            return await _execute_bash(tool_input, cwd, allowed_tools), False
+            return await _execute_bash(
+                tool_input=tool_input,
+                cwd=cwd,
+                allowed_tools=allowed_tools,
+            ), False
 
         raise ToolError(f"Unknown tool '{name}'")
+
     except ToolError as exc:
         logger.debug("Tool %s failed: %s", name, exc)
 
         return str(exc), True
+
     except Exception as exc:
         logger.debug("Tool %s failed unexpectedly: %s", name, exc)
 
@@ -343,7 +350,10 @@ def _execute_read(tool_input: dict[str, Any], cwd: Path) -> str:
         ToolError: If the file does not exist or cannot be read.
     """
 
-    file_path: Path = _resolve_path(tool_input["file_path"], cwd)
+    file_path: Path = _resolve_path(
+        file_path=tool_input["file_path"],
+        cwd=cwd,
+    )
 
     if not file_path.is_file():
         raise ToolError(f"File not found: {tool_input['file_path']}")
@@ -510,11 +520,11 @@ async def _execute_bash(
     """
 
     command: str = tool_input["command"]
-    bash_patterns: list[str] = _parse_bash_patterns(allowed_tools)
+    bash_patterns: list[str] = _parse_bash_patterns(allowed_tools=allowed_tools)
 
     if bash_patterns:
         allowed: bool = any(
-            fnmatch.fnmatch(command, pattern) for pattern in bash_patterns
+            fnmatch.fnmatch(name=command, pat=pattern) for pattern in bash_patterns
         )
 
         if not allowed:

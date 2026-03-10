@@ -1,8 +1,8 @@
 # type: ignore
 import pytest
 
-from nominal_code.agent.providers.types import Message, TextBlock
 from nominal_code.agent.result import AgentResult
+from nominal_code.llm.messages import Message, TextBlock
 
 
 class TestAgentResult:

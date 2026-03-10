@@ -6,18 +6,19 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from aiohttp import web
 
-from nominal_code.agent.cli.job import JobQueue
-from nominal_code.agent.memory import ConversationStore
 from nominal_code.config import (
     CliAgentConfig,
     Config,
     ReviewerConfig,
     WorkerConfig,
 )
+from nominal_code.conversation.memory import MemoryConversationStore
+from nominal_code.jobs.process import ProcessRunner
+from nominal_code.jobs.queue import AsyncioJobQueue
 from nominal_code.models import EventType
 from nominal_code.platforms.github import GitHubPlatform
 from nominal_code.platforms.github.auth import GitHubPatAuth
-from nominal_code.webhooks.server import create_app
+from nominal_code.server.app import create_app
 from tests.integration.conftest import (
     BranchInfo,
     install_enqueue_hook,
@@ -81,19 +82,25 @@ async def test_webhook_server_posts_review(
         auth=GitHubPatAuth(token=github_token),
         webhook_secret=WEBHOOK_SECRET,
     )
-    conversation_store = ConversationStore()
-    job_queue = JobQueue()
+    conversation_store = MemoryConversationStore()
+    job_queue = AsyncioJobQueue()
+    platforms = {"github": platform}
+    in_process_runner = ProcessRunner(
+        config=config,
+        platforms=platforms,
+        conversation_store=conversation_store,
+        queue=job_queue,
+    )
 
     app = create_app(
         config=config,
-        platforms={"github": platform},
-        conversation_store=conversation_store,
-        job_queue=job_queue,
+        platforms=platforms,
+        runner=in_process_runner,
     )
 
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", 0)
+    site = web.TCPSite(runner, host="0.0.0.0", port=0)
     await site.start()
 
     server = site._server
@@ -122,7 +129,7 @@ async def test_webhook_server_posts_review(
         job_enqueued = install_enqueue_hook(job_queue)
 
         with patch(
-            "nominal_code.agent.cli.tracking.run_agent",
+            "nominal_code.agent.cli.runner.run",
             new_callable=AsyncMock,
             return_value=BUGGY_AGENT_RESULT,
         ):
@@ -135,9 +142,9 @@ async def test_webhook_server_posts_review(
 
             async def _attempt_github_redelivery() -> None:
                 delivery = await fetch_latest_delivery(
-                    github_token,
-                    GITHUB_TEST_REPO,
-                    hook_id,
+                    token=github_token,
+                    repo=GITHUB_TEST_REPO,
+                    hook_id=hook_id,
                 )
 
                 if delivery is None:
@@ -147,10 +154,10 @@ async def test_webhook_server_posts_review(
 
                 delivery_id: int = delivery["id"]
                 await redeliver_webhook(
-                    github_token,
-                    GITHUB_TEST_REPO,
-                    hook_id,
-                    delivery_id,
+                    token=github_token,
+                    repo=GITHUB_TEST_REPO,
+                    hook_id=hook_id,
+                    delivery_id=delivery_id,
                 )
 
             await wait_for_webhook_processing(
@@ -160,9 +167,9 @@ async def test_webhook_server_posts_review(
             )
 
             reviews = await fetch_pr_reviews(
-                github_token,
-                GITHUB_TEST_REPO,
-                pr_number,
+                token=github_token,
+                repo=GITHUB_TEST_REPO,
+                pr_number=pr_number,
             )
 
             review_bodies = [review["body"] for review in reviews if review.get("body")]

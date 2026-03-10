@@ -9,7 +9,12 @@ from typing import Any
 
 from nominal_code.models import EventType
 from nominal_code.platforms.base import PlatformName, PullRequestEvent, ReviewerPlatform
-from nominal_code.platforms.github import GitHubPatAuth, GitHubPlatform
+from nominal_code.platforms.github import (
+    GitHubAppAuth,
+    GitHubPatAuth,
+    GitHubPlatform,
+    load_private_key,
+)
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -28,10 +33,9 @@ def build_event() -> PullRequestEvent:
         SystemExit: If required environment variables are missing.
     """
 
-    event_path_raw: str = os.environ.get("GITHUB_EVENT_PATH", "")
-    event_path: Path = Path(event_path_raw)
+    event_path: Path = Path(os.environ.get("GITHUB_EVENT_PATH", ""))
 
-    if not event_path_raw or not event_path.is_file():
+    if not event_path.is_file():
         logger.error("GITHUB_EVENT_PATH is not set or file does not exist")
         sys.exit(1)
 
@@ -69,21 +73,40 @@ def build_event() -> PullRequestEvent:
 
 def build_platform() -> ReviewerPlatform:
     """
-    Construct a GitHub platform client for CI mode.
+    Construct a GitHub platform client for CI/job mode.
 
-    Reads ``$GITHUB_TOKEN`` from environment variables.
+    Supports both auth modes: if ``GITHUB_APP_ID`` and a private key
+    are available, uses GitHub App authentication. Otherwise falls back
+    to PAT via ``GITHUB_TOKEN``.
 
     Returns:
         ReviewerPlatform: The constructed GitHub platform client.
 
     Raises:
-        SystemExit: If ``$GITHUB_TOKEN`` is not set.
+        SystemExit: If neither auth mode is configured.
     """
+
+    app_id: str = os.environ.get("GITHUB_APP_ID", "")
+    private_key: str = load_private_key()
+
+    if app_id and private_key:
+        installation_id: int = int(os.environ.get("GITHUB_INSTALLATION_ID", "0"))
+
+        return GitHubPlatform(
+            auth=GitHubAppAuth(
+                app_id=app_id,
+                private_key=private_key,
+                installation_id=installation_id,
+            ),
+        )
 
     github_token: str = os.environ.get("GITHUB_TOKEN", "")
 
     if not github_token:
-        logger.error("GITHUB_TOKEN is required for GitHub CI reviews")
+        logger.error(
+            "GitHub auth is required: set GITHUB_TOKEN, "
+            "or GITHUB_APP_ID + GITHUB_APP_PRIVATE_KEY",
+        )
         sys.exit(1)
 
     return GitHubPlatform(auth=GitHubPatAuth(token=github_token))

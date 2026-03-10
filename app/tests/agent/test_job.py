@@ -3,104 +3,121 @@ import asyncio
 
 import pytest
 
-from nominal_code.agent.cli.job import JobQueue
-from nominal_code.models import BotType
-from nominal_code.platforms.base import PlatformName
+from nominal_code.jobs.payload import JobPayload
+from nominal_code.jobs.queue import AsyncioJobQueue
+from nominal_code.models import EventType
+from nominal_code.platforms.base import CommentEvent, PlatformName
+
+
+def _make_job(pr_number=1, bot_type="worker"):
+    event = CommentEvent(
+        platform=PlatformName.GITHUB,
+        repo_full_name="owner/repo",
+        pr_number=pr_number,
+        pr_branch="feature",
+        pr_title="Fix bug",
+        event_type=EventType.ISSUE_COMMENT,
+        comment_id=100,
+        author_username="alice",
+        body="@bot review",
+    )
+
+    return JobPayload(event=event, bot_type=bot_type)
 
 
 class TestJobQueue:
     @pytest.mark.asyncio
     async def test_enqueue_executes_job(self):
-        queue = JobQueue()
+        queue = AsyncioJobQueue()
         executed = []
 
-        async def job():
+        async def callback(job):
             executed.append(True)
 
-        await queue.enqueue(PlatformName.GITHUB, "owner/repo", 1, BotType.WORKER, job)
+        queue.set_job_callback(callback)
+
+        await queue.enqueue(_make_job())
         await asyncio.sleep(0.05)
 
         assert executed == [True]
 
     @pytest.mark.asyncio
     async def test_enqueue_serializes_jobs_for_same_key(self):
-        queue = JobQueue()
+        queue = AsyncioJobQueue()
         order = []
 
-        async def job_a():
-            await asyncio.sleep(0.02)
-            order.append("a")
+        async def callback(job):
+            if len(order) == 0:
+                await asyncio.sleep(0.02)
+            order.append("done")
 
-        async def job_b():
-            order.append("b")
+        queue.set_job_callback(callback)
 
-        await queue.enqueue(PlatformName.GITHUB, "owner/repo", 1, BotType.WORKER, job_a)
-        await queue.enqueue(PlatformName.GITHUB, "owner/repo", 1, BotType.WORKER, job_b)
+        await queue.enqueue(_make_job())
+        await queue.enqueue(_make_job())
         await asyncio.sleep(0.1)
 
-        assert order == ["a", "b"]
+        assert order == ["done", "done"]
 
     @pytest.mark.asyncio
     async def test_enqueue_different_keys_run_concurrently(self):
-        queue = JobQueue()
+        queue = AsyncioJobQueue()
         order = []
 
-        async def slow_job():
-            await asyncio.sleep(0.05)
-            order.append("slow")
+        async def callback(job):
+            if job.event.pr_number == 1:
+                await asyncio.sleep(0.05)
+                order.append("slow")
+            else:
+                order.append("fast")
 
-        async def fast_job():
-            order.append("fast")
+        queue.set_job_callback(callback)
 
-        await queue.enqueue(
-            PlatformName.GITHUB, "owner/repo", 1, BotType.WORKER, slow_job
-        )
-        await queue.enqueue(
-            PlatformName.GITHUB, "owner/repo", 2, BotType.WORKER, fast_job
-        )
+        await queue.enqueue(_make_job(pr_number=1))
+        await queue.enqueue(_make_job(pr_number=2))
         await asyncio.sleep(0.1)
 
         assert order == ["fast", "slow"]
 
     @pytest.mark.asyncio
     async def test_enqueue_failing_job_does_not_block_next(self):
-        queue = JobQueue()
+        queue = AsyncioJobQueue()
         executed = []
+        call_count = 0
 
-        async def bad_job():
-            raise ValueError("boom")
+        async def callback(job):
+            nonlocal call_count
+            call_count += 1
 
-        async def good_job():
+            if call_count == 1:
+                raise ValueError("boom")
+
             executed.append(True)
 
-        await queue.enqueue(
-            PlatformName.GITHUB, "owner/repo", 1, BotType.WORKER, bad_job
-        )
-        await queue.enqueue(
-            PlatformName.GITHUB, "owner/repo", 1, BotType.WORKER, good_job
-        )
+        queue.set_job_callback(callback)
+
+        await queue.enqueue(_make_job())
+        await queue.enqueue(_make_job())
         await asyncio.sleep(0.05)
 
         assert executed == [True]
 
     @pytest.mark.asyncio
     async def test_enqueue_different_bot_types_run_concurrently(self):
-        queue = JobQueue()
+        queue = AsyncioJobQueue()
         order = []
 
-        async def slow_job():
-            await asyncio.sleep(0.05)
-            order.append("worker")
+        async def callback(job):
+            if job.bot_type == "worker":
+                await asyncio.sleep(0.05)
+                order.append("worker")
+            else:
+                order.append("reviewer")
 
-        async def fast_job():
-            order.append("reviewer")
+        queue.set_job_callback(callback)
 
-        await queue.enqueue(
-            PlatformName.GITHUB, "owner/repo", 1, BotType.WORKER, slow_job
-        )
-        await queue.enqueue(
-            PlatformName.GITHUB, "owner/repo", 1, BotType.REVIEWER, fast_job
-        )
+        await queue.enqueue(_make_job(bot_type="worker"))
+        await queue.enqueue(_make_job(bot_type="reviewer"))
         await asyncio.sleep(0.1)
 
         assert order == ["reviewer", "worker"]
@@ -108,18 +125,18 @@ class TestJobQueue:
 
 class TestJobQueueInit:
     def test_job_queue_init_creates_empty_queues(self):
-        queue = JobQueue()
+        queue = AsyncioJobQueue()
 
         assert queue._queues == {}
 
     def test_job_queue_init_creates_empty_consumers(self):
-        queue = JobQueue()
+        queue = AsyncioJobQueue()
 
         assert queue._consumers == {}
 
     def test_job_queue_init_instances_are_independent(self):
-        queue_a = JobQueue()
-        queue_b = JobQueue()
+        queue_a = AsyncioJobQueue()
+        queue_b = AsyncioJobQueue()
 
         assert queue_a._queues is not queue_b._queues
 
@@ -127,67 +144,58 @@ class TestJobQueueInit:
 class TestJobQueueConsume:
     @pytest.mark.asyncio
     async def test_consume_runs_job_and_cleans_up(self):
-        queue = JobQueue()
+        queue = AsyncioJobQueue()
         executed = []
 
-        async def first_job():
-            executed.append("first")
+        async def callback(job):
+            executed.append(len(executed))
 
-        async def second_job():
-            executed.append("second")
+        queue.set_job_callback(callback)
 
-        await queue.enqueue(
-            PlatformName.GITHUB, "owner/repo", 1, BotType.WORKER, first_job
-        )
-        await queue.enqueue(
-            PlatformName.GITHUB, "owner/repo", 1, BotType.WORKER, second_job
-        )
+        await queue.enqueue(_make_job())
+        await queue.enqueue(_make_job())
         await asyncio.sleep(0.1)
 
         key = ("github", "owner/repo", 1, "worker")
 
-        assert "first" in executed
-        assert "second" in executed
+        assert len(executed) == 2
         assert key not in queue._queues
         assert key not in queue._consumers
 
     @pytest.mark.asyncio
     async def test_consume_logs_exception_and_continues(self):
-        queue = JobQueue()
+        queue = AsyncioJobQueue()
         second_ran = []
+        call_count = 0
 
-        async def bad_job():
-            raise RuntimeError("oops")
+        async def callback(job):
+            nonlocal call_count
+            call_count += 1
 
-        async def good_job():
+            if call_count == 1:
+                raise RuntimeError("oops")
+
             second_ran.append(True)
 
-        await queue.enqueue(
-            PlatformName.GITHUB, "owner/repo", 1, BotType.WORKER, bad_job
-        )
-        await queue.enqueue(
-            PlatformName.GITHUB, "owner/repo", 1, BotType.WORKER, good_job
-        )
+        queue.set_job_callback(callback)
+
+        await queue.enqueue(_make_job())
+        await queue.enqueue(_make_job())
         await asyncio.sleep(0.1)
 
         assert second_ran == [True]
 
     @pytest.mark.asyncio
-    async def test_consume_removes_key_after_sentinel(self):
-        queue = JobQueue()
+    async def test_consume_removes_key_after_drain(self):
+        queue = AsyncioJobQueue()
 
-        async def first():
+        async def callback(job):
             pass
 
-        async def second():
-            pass
+        queue.set_job_callback(callback)
 
-        await queue.enqueue(
-            PlatformName.GITHUB, "owner/repo", 99, BotType.WORKER, first
-        )
-        await queue.enqueue(
-            PlatformName.GITHUB, "owner/repo", 99, BotType.WORKER, second
-        )
+        await queue.enqueue(_make_job(pr_number=99))
+        await queue.enqueue(_make_job(pr_number=99))
         await asyncio.sleep(0.1)
 
         key = ("github", "owner/repo", 99, "worker")
@@ -198,13 +206,15 @@ class TestJobQueueConsume:
 class TestJobQueueEdgeCases:
     @pytest.mark.asyncio
     async def test_single_job_consumer_exits_and_cleans_up(self):
-        queue = JobQueue()
+        queue = AsyncioJobQueue()
         executed = []
 
-        async def job():
+        async def callback(job):
             executed.append(True)
 
-        await queue.enqueue(PlatformName.GITHUB, "owner/repo", 1, BotType.WORKER, job)
+        queue.set_job_callback(callback)
+
+        await queue.enqueue(_make_job())
         await asyncio.sleep(0.1)
 
         key = ("github", "owner/repo", 1, "worker")
@@ -215,36 +225,23 @@ class TestJobQueueEdgeCases:
 
     @pytest.mark.asyncio
     async def test_re_enqueue_after_consumer_exits_spawns_new_consumer(self):
-        queue = JobQueue()
+        queue = AsyncioJobQueue()
         executed = []
 
-        async def first_job():
-            executed.append("first")
+        async def callback(job):
+            executed.append(len(executed))
 
-        await queue.enqueue(
-            PlatformName.GITHUB,
-            "owner/repo",
-            1,
-            BotType.WORKER,
-            first_job,
-        )
+        queue.set_job_callback(callback)
+
+        await queue.enqueue(_make_job())
         await asyncio.sleep(0.1)
 
-        assert executed == ["first"]
+        assert executed == [0]
 
-        async def second_job():
-            executed.append("second")
-
-        await queue.enqueue(
-            PlatformName.GITHUB,
-            "owner/repo",
-            1,
-            BotType.WORKER,
-            second_job,
-        )
+        await queue.enqueue(_make_job())
         await asyncio.sleep(0.1)
 
-        assert executed == ["first", "second"]
+        assert executed == [0, 1]
 
         key = ("github", "owner/repo", 1, "worker")
 
@@ -253,18 +250,14 @@ class TestJobQueueEdgeCases:
 
     @pytest.mark.asyncio
     async def test_single_failing_job_cleans_up(self):
-        queue = JobQueue()
+        queue = AsyncioJobQueue()
 
-        async def bad_job():
+        async def callback(job):
             raise RuntimeError("boom")
 
-        await queue.enqueue(
-            PlatformName.GITHUB,
-            "owner/repo",
-            1,
-            BotType.WORKER,
-            bad_job,
-        )
+        queue.set_job_callback(callback)
+
+        await queue.enqueue(_make_job())
         await asyncio.sleep(0.1)
 
         key = ("github", "owner/repo", 1, "worker")
@@ -274,90 +267,60 @@ class TestJobQueueEdgeCases:
 
     @pytest.mark.asyncio
     async def test_all_jobs_fail_still_cleans_up(self):
-        queue = JobQueue()
+        queue = AsyncioJobQueue()
         attempted = []
 
-        async def bad_first():
-            attempted.append("first")
+        async def callback(job):
+            attempted.append(len(attempted))
 
-            raise ValueError("first error")
+            raise ValueError("error")
 
-        async def bad_second():
-            attempted.append("second")
+        queue.set_job_callback(callback)
 
-            raise ValueError("second error")
-
-        await queue.enqueue(
-            PlatformName.GITHUB,
-            "owner/repo",
-            1,
-            BotType.WORKER,
-            bad_first,
-        )
-        await queue.enqueue(
-            PlatformName.GITHUB,
-            "owner/repo",
-            1,
-            BotType.WORKER,
-            bad_second,
-        )
+        await queue.enqueue(_make_job())
+        await queue.enqueue(_make_job())
         await asyncio.sleep(0.1)
 
         key = ("github", "owner/repo", 1, "worker")
 
-        assert attempted == ["first", "second"]
+        assert len(attempted) == 2
         assert key not in queue._queues
         assert key not in queue._consumers
 
     @pytest.mark.asyncio
     async def test_multiple_keys_single_job_each_all_clean_up(self):
-        queue = JobQueue()
+        queue = AsyncioJobQueue()
         executed = []
 
-        async def job_pr1():
-            executed.append("pr1")
+        async def callback(job):
+            executed.append(job.event.pr_number)
 
-        async def job_pr2():
-            executed.append("pr2")
+        queue.set_job_callback(callback)
 
-        await queue.enqueue(
-            PlatformName.GITHUB,
-            "owner/repo",
-            1,
-            BotType.WORKER,
-            job_pr1,
-        )
-        await queue.enqueue(
-            PlatformName.GITHUB,
-            "owner/repo",
-            2,
-            BotType.WORKER,
-            job_pr2,
-        )
+        await queue.enqueue(_make_job(pr_number=1))
+        await queue.enqueue(_make_job(pr_number=2))
         await asyncio.sleep(0.1)
 
-        assert "pr1" in executed
-        assert "pr2" in executed
+        assert 1 in executed
+        assert 2 in executed
         assert queue._queues == {}
         assert queue._consumers == {}
 
     @pytest.mark.asyncio
     async def test_rapid_sequential_enqueue_to_same_key(self):
-        queue = JobQueue()
+        queue = AsyncioJobQueue()
         executed = []
+        call_count = 0
 
-        for index in range(5):
+        async def callback(job):
+            nonlocal call_count
+            executed.append(call_count)
+            call_count += 1
 
-            async def job(number=index):
-                executed.append(number)
+        queue.set_job_callback(callback)
 
-            await queue.enqueue(
-                PlatformName.GITHUB,
-                "owner/repo",
-                1,
-                BotType.WORKER,
-                job,
-            )
+        for _ in range(5):
+            await queue.enqueue(_make_job())
 
         await asyncio.sleep(0.2)
 

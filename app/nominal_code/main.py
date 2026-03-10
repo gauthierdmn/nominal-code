@@ -8,12 +8,12 @@ from datetime import timedelta
 from aiohttp import web
 from environs import Env
 
-from nominal_code.agent.cli.job import JobQueue
-from nominal_code.agent.memory import ConversationStore
 from nominal_code.config import Config
+from nominal_code.conversation.memory import MemoryConversationStore
+from nominal_code.jobs.queue import AsyncioJobQueue
 from nominal_code.platforms import build_platforms
 from nominal_code.platforms.base import Platform
-from nominal_code.webhooks.server import create_app
+from nominal_code.server.app import create_app
 from nominal_code.workspace.cleanup import WorkspaceCleaner
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -60,14 +60,39 @@ async def _async_main() -> None:
         )
         sys.exit(1)
 
-    conversation_store: ConversationStore = ConversationStore()
-    job_queue: JobQueue = JobQueue()
+    conversation_store: MemoryConversationStore = MemoryConversationStore()
+    job_queue: AsyncioJobQueue = AsyncioJobQueue()
+
+    if config.kubernetes is not None:
+        redis_url: str = env.str("REDIS_URL", "")
+
+        if not redis_url:
+            logger.error("REDIS_URL is required when JOB_RUNNER=kubernetes")
+            sys.exit(1)
+
+        from nominal_code.jobs.kubernetes import KubernetesRunner
+        from nominal_code.jobs.redis_queue import RedisJobQueue
+
+        redis_queue: RedisJobQueue = RedisJobQueue(redis_url)
+
+        runner: KubernetesRunner | ProcessRunner = KubernetesRunner(
+            config=config.kubernetes,
+            queue=redis_queue,
+        )
+    else:
+        from nominal_code.jobs.process import ProcessRunner
+
+        runner = ProcessRunner(
+            config=config,
+            platforms=platforms,
+            conversation_store=conversation_store,
+            queue=job_queue,
+        )
 
     app: web.Application = create_app(
         config=config,
         platforms=platforms,
-        conversation_store=conversation_store,
-        job_queue=job_queue,
+        runner=runner,
     )
 
     enabled: list[str] = list(platforms.keys())
@@ -80,12 +105,15 @@ async def _async_main() -> None:
     if config.reviewer is not None:
         bots.append(f"reviewer=@{config.reviewer.bot_username}")
 
+    runner_mode: str = "kubernetes" if config.kubernetes is not None else "in-process"
+
     logger.info(
-        "Starting server on %s:%d | platforms=%s | %s | allowed_users=%s",
+        "Starting server on %s:%d | platforms=%s | %s | runner=%s | allowed_users=%s",
         config.webhook_host,
         config.webhook_port,
         enabled,
         " | ".join(bots),
+        runner_mode,
         config.allowed_users,
     )
 
@@ -98,14 +126,14 @@ async def _async_main() -> None:
             cleanup_wait=timedelta(hours=config.cleanup_interval_hours),
         )
 
-    runner: web.AppRunner = web.AppRunner(app)
+    web_runner: web.AppRunner = web.AppRunner(app)
 
-    await runner.setup()
+    await web_runner.setup()
 
     site: web.TCPSite = web.TCPSite(
-        runner,
-        config.webhook_host,
-        config.webhook_port,
+        runner=web_runner,
+        host=config.webhook_host,
+        port=config.webhook_port,
     )
 
     try:
@@ -125,26 +153,35 @@ async def _async_main() -> None:
         if cleaner is not None:
             await cleaner.stop()
 
-        await runner.cleanup()
+        await web_runner.cleanup()
 
 
 def main() -> None:
-    """Entry point: dispatch to CLI review, CI, or start the webhook server."""
+    """
+    Entry point: dispatch to run-job, CLI review, CI, or start the webhook server.
+    """
+
+    if len(sys.argv) > 1 and sys.argv[1] == "run-job":
+        from nominal_code.commands.job import run_job_main
+
+        setup_logging()
+        exit_code: int = asyncio.run(run_job_main())
+        sys.exit(exit_code)
 
     if len(sys.argv) > 1 and sys.argv[1] == "review":
-        from nominal_code.cli import cli_main
+        from nominal_code.commands.cli import cli_main
 
         cli_main()
 
         return
 
     if len(sys.argv) > 2 and sys.argv[1] == "ci":
-        from nominal_code.ci import run_ci_review
+        from nominal_code.commands.ci import run_ci_review
 
         setup_logging()
 
         platform_name: str = sys.argv[2]
-        exit_code: int = asyncio.run(run_ci_review(platform_name))
+        exit_code = asyncio.run(run_ci_review(platform_name))
         sys.exit(exit_code)
 
     setup_logging()

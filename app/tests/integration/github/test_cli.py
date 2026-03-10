@@ -5,11 +5,11 @@ import pytest
 
 from nominal_code.agent.result import AgentResult
 from nominal_code.config import Config
+from nominal_code.handlers.review import review
 from nominal_code.models import EventType
 from nominal_code.platforms.base import CommentReply, PlatformName, PullRequestEvent
 from nominal_code.platforms.github import GitHubPlatform
 from nominal_code.platforms.github.auth import GitHubPatAuth
-from nominal_code.review.handler import review
 from tests.integration.conftest import PrInfo
 from tests.integration.github.api import (
     fetch_pr_comments,
@@ -49,7 +49,7 @@ async def _run_review(
     config = Config.for_cli()
 
     with patch(
-        "nominal_code.agent.cli.tracking.run_agent",
+        "nominal_code.agent.cli.runner.run",
         new_callable=AsyncMock,
         return_value=canned_result,
     ):
@@ -90,13 +90,26 @@ async def test_cli_review_dry_run_does_not_post(
     platform = _build_platform(github_token)
     event = _build_event(buggy_pr)
 
-    await _run_review(platform, event, BUGGY_AGENT_RESULT, dry_run=True)
+    await _run_review(
+        platform=platform,
+        event=event,
+        canned_result=BUGGY_AGENT_RESULT,
+        dry_run=True,
+    )
 
-    reviews = await fetch_pr_reviews(github_token, GITHUB_TEST_REPO, buggy_pr.number)
+    reviews = await fetch_pr_reviews(
+        token=github_token,
+        repo=GITHUB_TEST_REPO,
+        pr_number=buggy_pr.number,
+    )
     review_with_body = [review for review in reviews if review.get("body")]
     assert not review_with_body
 
-    comments = await fetch_pr_comments(github_token, GITHUB_TEST_REPO, buggy_pr.number)
+    comments = await fetch_pr_comments(
+        token=github_token,
+        repo=GITHUB_TEST_REPO,
+        pr_number=buggy_pr.number,
+    )
     assert not comments
 
 
@@ -108,18 +121,27 @@ async def test_cli_review_posts_review(
     platform = _build_platform(github_token)
     event = _build_event(buggy_pr)
 
-    await _run_review(platform, event, BUGGY_AGENT_RESULT, dry_run=False)
+    await _run_review(
+        platform=platform,
+        event=event,
+        canned_result=BUGGY_AGENT_RESULT,
+        dry_run=False,
+    )
 
-    reviews = await fetch_pr_reviews(github_token, GITHUB_TEST_REPO, buggy_pr.number)
+    reviews = await fetch_pr_reviews(
+        token=github_token,
+        repo=GITHUB_TEST_REPO,
+        pr_number=buggy_pr.number,
+    )
     assert len(reviews) >= 1
 
     latest_review = reviews[-1]
     assert "Found issues" in latest_review["body"]
 
     review_comments = await fetch_pr_review_comments(
-        github_token,
-        GITHUB_TEST_REPO,
-        buggy_pr.number,
+        token=github_token,
+        repo=GITHUB_TEST_REPO,
+        pr_number=buggy_pr.number,
     )
     assert len(review_comments) >= 1
 
@@ -132,9 +154,18 @@ async def test_cli_review_no_findings_posts_comment(
     platform = _build_platform(github_token)
     event = _build_event(clean_pr)
 
-    await _run_review(platform, event, CLEAN_AGENT_RESULT, dry_run=False)
+    await _run_review(
+        platform=platform,
+        event=event,
+        canned_result=CLEAN_AGENT_RESULT,
+        dry_run=False,
+    )
 
-    comments = await fetch_pr_comments(github_token, GITHUB_TEST_REPO, clean_pr.number)
+    comments = await fetch_pr_comments(
+        token=github_token,
+        repo=GITHUB_TEST_REPO,
+        pr_number=clean_pr.number,
+    )
     assert len(comments) >= 1
 
     comment_bodies = [comment["body"] for comment in comments]

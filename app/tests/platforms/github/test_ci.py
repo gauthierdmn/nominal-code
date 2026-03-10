@@ -101,8 +101,17 @@ class TestBuildPlatform:
 
         assert platform.__class__.__name__ == "GitHubPlatform"
 
-    def test_build_platform_exits_when_token_missing(self):
-        with patch.dict(os.environ, {"GITHUB_TOKEN": ""}, clear=False):
+    def test_build_platform_exits_when_no_auth(self):
+        with patch.dict(
+            os.environ,
+            {
+                "GITHUB_TOKEN": "",
+                "GITHUB_APP_ID": "",
+                "GITHUB_APP_PRIVATE_KEY": "",
+                "GITHUB_APP_PRIVATE_KEY_PATH": "",
+            },
+            clear=False,
+        ):
             with pytest.raises(SystemExit):
                 build_platform()
 

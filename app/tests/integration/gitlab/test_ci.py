@@ -3,13 +3,13 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from nominal_code.agent.providers.registry import PROVIDERS
 from nominal_code.agent.result import AgentResult
 from nominal_code.config import Config
+from nominal_code.handlers.review import review
+from nominal_code.llm.registry import PROVIDERS
 from nominal_code.models import EventType, ProviderName
 from nominal_code.platforms.base import CommentReply, PlatformName, PullRequestEvent
 from nominal_code.platforms.gitlab import GitLabPlatform
-from nominal_code.review.handler import review
 from tests.integration.conftest import PrInfo
 from tests.integration.gitlab.api import (
     fetch_mr_discussions,
@@ -49,10 +49,16 @@ async def _run_ci_review(
     config: Config,
     canned_result: AgentResult,
 ) -> int:
-    with patch(
-        "nominal_code.agent.cli.tracking.run_agent",
-        new_callable=AsyncMock,
-        return_value=canned_result,
+    with (
+        patch(
+            "nominal_code.agent.api.runner.run",
+            new_callable=AsyncMock,
+            return_value=canned_result,
+        ),
+        patch(
+            "nominal_code.agent.api.runner.create_provider",
+            return_value=AsyncMock(),
+        ),
     ):
         result = await review(
             event=event,
@@ -88,18 +94,27 @@ async def test_ci_review_posts_findings_to_mr(
     event = _build_event(buggy_mr)
     config = _build_ci_config()
 
-    exit_code = await _run_ci_review(platform, event, config, BUGGY_AGENT_RESULT)
+    exit_code = await _run_ci_review(
+        platform=platform,
+        event=event,
+        config=config,
+        canned_result=BUGGY_AGENT_RESULT,
+    )
 
     assert exit_code == 0
 
-    notes = await fetch_mr_notes(gitlab_token, GITLAB_TEST_REPO, buggy_mr.number)
+    notes = await fetch_mr_notes(
+        token=gitlab_token,
+        repo=GITLAB_TEST_REPO,
+        mr_iid=buggy_mr.number,
+    )
     note_bodies = [note["body"] for note in notes]
     assert any("Found issues" in body for body in note_bodies)
 
     discussions = await fetch_mr_discussions(
-        gitlab_token,
-        GITLAB_TEST_REPO,
-        buggy_mr.number,
+        token=gitlab_token,
+        repo=GITLAB_TEST_REPO,
+        mr_iid=buggy_mr.number,
     )
     inline_discussions = [
         disc
@@ -118,18 +133,27 @@ async def test_ci_review_no_findings_posts_comment(
     event = _build_event(clean_mr)
     config = _build_ci_config()
 
-    exit_code = await _run_ci_review(platform, event, config, CLEAN_AGENT_RESULT)
+    exit_code = await _run_ci_review(
+        platform=platform,
+        event=event,
+        config=config,
+        canned_result=CLEAN_AGENT_RESULT,
+    )
 
     assert exit_code == 0
 
-    notes = await fetch_mr_notes(gitlab_token, GITLAB_TEST_REPO, clean_mr.number)
+    notes = await fetch_mr_notes(
+        token=gitlab_token,
+        repo=GITLAB_TEST_REPO,
+        mr_iid=clean_mr.number,
+    )
     note_bodies = [note["body"] for note in notes]
     assert any("No issues found" in body for body in note_bodies)
 
     discussions = await fetch_mr_discussions(
-        gitlab_token,
-        GITLAB_TEST_REPO,
-        clean_mr.number,
+        token=gitlab_token,
+        repo=GITLAB_TEST_REPO,
+        mr_iid=clean_mr.number,
     )
     inline_discussions = [
         disc

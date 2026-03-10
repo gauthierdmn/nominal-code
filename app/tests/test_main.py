@@ -58,7 +58,7 @@ class TestSetupLogging:
 class TestMain:
     def test_main_dispatches_to_cli_main_when_review_arg(self):
         with patch.object(sys, "argv", ["nominal-code", "review", "owner/repo#1"]):
-            with patch("nominal_code.cli.cli_main") as mock_cli:
+            with patch("nominal_code.commands.cli.cli_main") as mock_cli:
                 main()
 
                 mock_cli.assert_called_once()

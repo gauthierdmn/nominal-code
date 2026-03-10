@@ -6,7 +6,7 @@ AI-powered code review bot that monitors GitHub PRs and GitLab MRs. When a user 
 
 - **Async-first** — built on aiohttp + asyncio; all I/O (HTTP, git, agent) is non-blocking.
 - **Protocol-based platforms** — GitHub and GitLab implement the same `Platform` / `ReviewerPlatform` protocols, making it easy to add new providers.
-- **Per-PR job serialisation** — `JobQueue` guarantees only one agent job runs per PR at a time, preventing race conditions on the same workspace.
+- **Per-PR job serialisation** — `JobQueue` protocol with two implementations (`AsyncioJobQueue` for in-process, `RedisJobQueue` for Kubernetes) guarantees only one agent job runs per PR at a time, preventing race conditions on the same workspace.
 - **Multi-turn conversations** — `ConversationStore` maps (platform, repo, PR, bot) to conversation IDs and message histories so conversations resume across comments.
 - **Workspace isolation** — each PR gets its own shallow clone; a shared `.deps/` directory is available for cross-PR dependencies.
 - **Dual agent runners** — CLI and webhook modes use the Claude Code CLI (supports subscriptions); CI mode calls the LLM provider API directly (requires a provider API key).
@@ -24,9 +24,9 @@ AI-powered code review bot that monitors GitHub PRs and GitLab MRs. When a user 
 |------|--------|-------------|
 | Webhook server | Claude Code CLI (`agent/cli/runner.py`) | `CliAgentConfig` |
 | CLI review | Claude Code CLI (`agent/cli/runner.py`) | `CliAgentConfig` |
-| CI (`ci.py`) | LLM provider API (`agent/api/runner.py`) | `ApiAgentConfig` |
+| CI (`commands/ci.py`) | LLM provider API (`agent/api/runner.py`) | `ApiAgentConfig` |
 
-The dispatcher in `agent/runner.py` routes based on the agent config type (`CliAgentConfig` or `ApiAgentConfig`). The API runner implements its own tool execution (Read, Glob, Grep, Bash with allowlist) and supports multiple providers (Anthropic, OpenAI, Google Gemini, DeepSeek, Groq, Together, Fireworks).
+The dispatcher in `agent/router.py` routes based on the agent config type (`CliAgentConfig` or `ApiAgentConfig`). The API runner implements its own tool execution (Read, Glob, Grep, Bash with allowlist) and supports multiple providers (Anthropic, OpenAI, Google Gemini, DeepSeek, Groq, Together, Fireworks).
 
 ## Bot types
 
@@ -76,15 +76,16 @@ The dispatcher in `agent/runner.py` routes based on the agent config type (`CliA
 ```
 nominal_code/
 ├── main.py              # Entry point: dispatches to webhook server, CLI, or CI
-├── cli.py               # One-shot review CLI (argparse, platform construction)
-├── ci.py                # CI mode dispatcher (delegates to platform-specific CI modules, posts results)
 ├── config.py            # Frozen dataclass config loaded from env vars / files
 ├── models.py            # Shared enums (EventType, BotType, FileStatus) and dataclasses (ReviewFinding, AgentReview, ChangedFile)
 ├── http.py              # request_with_retry(): HTTP request helper with transient error retries
-├── agent/               # Dual agent runners, conversation management, prompt composition
+├── commands/            # Entry points: CLI review, CI mode, job runner
+├── llm/                 # LLM provider abstraction, cost tracking, canonical message types
+├── agent/               # Dual agent runners, prompt composition, error handling
+├── conversation/        # Conversation persistence (memory + Redis stores)
+├── handlers/            # Bot handlers: reviewer (structured review) and worker (code fixes)
+├── server/              # aiohttp webhook server, @mention extraction, job dispatch
+├── jobs/                # Job payload, process runner, Kubernetes runner
 ├── platforms/           # Platform protocol + GitHub/GitLab implementations (subpackages)
-├── review/              # Reviewer bot handler (structured code review)
-├── webhooks/            # aiohttp webhook server, @mention extraction, job dispatch
-├── worker/              # Worker bot handler (code fixes)
 └── workspace/           # Git workspace management and cleanup
 ```

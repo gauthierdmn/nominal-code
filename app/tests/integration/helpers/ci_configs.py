@@ -2,8 +2,8 @@ import base64
 import dataclasses
 import os
 
-from nominal_code.agent.providers.registry import PROVIDERS
 from nominal_code.config import ProviderConfig
+from nominal_code.llm.registry import PROVIDERS
 from nominal_code.models import ProviderName
 
 DEFAULT_MAX_TURNS = 2

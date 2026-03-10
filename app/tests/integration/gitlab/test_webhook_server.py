@@ -6,17 +6,18 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from aiohttp import web
 
-from nominal_code.agent.cli.job import JobQueue
-from nominal_code.agent.memory import ConversationStore
 from nominal_code.config import (
     CliAgentConfig,
     Config,
     ReviewerConfig,
     WorkerConfig,
 )
+from nominal_code.conversation.memory import MemoryConversationStore
+from nominal_code.jobs.process import ProcessRunner
+from nominal_code.jobs.queue import AsyncioJobQueue
 from nominal_code.models import EventType
 from nominal_code.platforms.gitlab import GitLabPlatform
-from nominal_code.webhooks.server import create_app
+from nominal_code.server.app import create_app
 from tests.integration.conftest import (
     BranchInfo,
     install_enqueue_hook,
@@ -81,19 +82,25 @@ async def test_webhook_server_posts_review(
         token=gitlab_token,
         webhook_secret=WEBHOOK_SECRET,
     )
-    conversation_store = ConversationStore()
-    job_queue = JobQueue()
+    conversation_store = MemoryConversationStore()
+    job_queue = AsyncioJobQueue()
+    platforms = {"gitlab": platform}
+    in_process_runner = ProcessRunner(
+        config=config,
+        platforms=platforms,
+        conversation_store=conversation_store,
+        queue=job_queue,
+    )
 
     app = create_app(
         config=config,
-        platforms={"gitlab": platform},
-        conversation_store=conversation_store,
-        job_queue=job_queue,
+        platforms=platforms,
+        runner=in_process_runner,
     )
 
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", 0)
+    site = web.TCPSite(runner, host="0.0.0.0", port=0)
     await site.start()
 
     server = site._server
@@ -122,7 +129,7 @@ async def test_webhook_server_posts_review(
         job_enqueued = install_enqueue_hook(job_queue)
 
         with patch(
-            "nominal_code.agent.cli.tracking.run_agent",
+            "nominal_code.agent.cli.runner.run",
             new_callable=AsyncMock,
             return_value=BUGGY_AGENT_RESULT,
         ):
@@ -134,16 +141,16 @@ async def test_webhook_server_posts_review(
             )
 
             await wait_for_mr_diff(
-                gitlab_token,
-                GITLAB_TEST_REPO,
-                mr_iid,
+                token=gitlab_token,
+                repo=GITLAB_TEST_REPO,
+                mr_iid=mr_iid,
             )
 
             async def _attempt_gitlab_redelivery() -> None:
                 event = await fetch_latest_webhook_event(
-                    gitlab_token,
-                    GITLAB_TEST_REPO,
-                    hook_id,
+                    token=gitlab_token,
+                    repo=GITLAB_TEST_REPO,
+                    hook_id=hook_id,
                 )
 
                 if event is None:
@@ -153,10 +160,10 @@ async def test_webhook_server_posts_review(
 
                 event_id: int = event["id"]
                 await resend_webhook_event(
-                    gitlab_token,
-                    GITLAB_TEST_REPO,
-                    hook_id,
-                    event_id,
+                    token=gitlab_token,
+                    repo=GITLAB_TEST_REPO,
+                    hook_id=hook_id,
+                    event_id=event_id,
                 )
 
             await wait_for_webhook_processing(
@@ -166,9 +173,9 @@ async def test_webhook_server_posts_review(
             )
 
             notes = await fetch_mr_notes(
-                gitlab_token,
-                GITLAB_TEST_REPO,
-                mr_iid,
+                token=gitlab_token,
+                repo=GITLAB_TEST_REPO,
+                mr_iid=mr_iid,
             )
 
             user_notes = [
