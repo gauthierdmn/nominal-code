@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
-import redis
+if TYPE_CHECKING:
+    import redis
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -26,17 +28,19 @@ def publish_job_completion(
         status (str): Completion status (``"succeeded"`` or ``"failed"``).
     """
 
+    import redis as _redis
+
     channel: str = f"{JOB_CHANNEL_PREFIX}:{job_name}:done"
 
     try:
-        client: redis.Redis = redis.Redis.from_url(redis_url)
+        client: redis.Redis = _redis.Redis.from_url(redis_url)
 
         try:
             client.publish(channel, status)
             logger.info("Published completion for job %s: %s", job_name, status)
         finally:
             client.close()
-    except redis.RedisError:
+    except _redis.RedisError:
         logger.warning(
             "Failed to publish completion for job %s",
             job_name,

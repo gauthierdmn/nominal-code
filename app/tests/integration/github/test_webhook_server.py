@@ -89,7 +89,7 @@ async def test_webhook_server_posts_review(
         config=config,
         platforms=platforms,
         conversation_store=conversation_store,
-        job_queue=job_queue,
+        queue=job_queue,
     )
 
     app = create_app(

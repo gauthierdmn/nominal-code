@@ -169,7 +169,7 @@ async def test_app_auth_reviewer_mention_posts_review(
         config=config,
         platforms=platforms,
         conversation_store=conversation_store,
-        job_queue=job_queue,
+        queue=job_queue,
     )
     app = create_app(
         config=config,
@@ -243,7 +243,7 @@ async def test_app_auth_lifecycle_auto_trigger(
         config=config,
         platforms=platforms,
         conversation_store=conversation_store,
-        job_queue=job_queue,
+        queue=job_queue,
     )
     app = create_app(
         config=config,

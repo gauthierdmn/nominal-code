@@ -3,11 +3,12 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
-from typing import Any
-
-import redis.asyncio as aioredis
+from typing import TYPE_CHECKING, Any
 
 from nominal_code.jobs.payload import JobPayload
+
+if TYPE_CHECKING:
+    import redis.asyncio as aioredis
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -40,7 +41,9 @@ class RedisJobQueue:
             redis_url (str): Redis connection URL.
         """
 
-        self._redis: aioredis.Redis = aioredis.from_url(redis_url)  # type: ignore[no-untyped-call]
+        import redis.asyncio as _aioredis
+
+        self._redis: aioredis.Redis = _aioredis.from_url(redis_url)  # type: ignore[no-untyped-call]
         self._consumers: dict[str, asyncio.Task[None]] = {}
         self._on_job: Callable[[JobPayload], Awaitable[None]] | None = None
 

@@ -8,7 +8,7 @@ class TestPublishJobCompletion:
     def test_publishes_to_correct_channel(self):
         mock_client = MagicMock()
 
-        with patch("nominal_code.jobs.signals.redis.Redis") as mock_redis_cls:
+        with patch("redis.Redis") as mock_redis_cls:
             mock_redis_cls.from_url.return_value = mock_client
 
             publish_job_completion(
@@ -26,7 +26,7 @@ class TestPublishJobCompletion:
     def test_publishes_failed_status(self):
         mock_client = MagicMock()
 
-        with patch("nominal_code.jobs.signals.redis.Redis") as mock_redis_cls:
+        with patch("redis.Redis") as mock_redis_cls:
             mock_redis_cls.from_url.return_value = mock_client
 
             publish_job_completion(
@@ -43,7 +43,7 @@ class TestPublishJobCompletion:
     def test_handles_redis_error_gracefully(self):
         import redis
 
-        with patch("nominal_code.jobs.signals.redis.Redis") as mock_redis_cls:
+        with patch("redis.Redis") as mock_redis_cls:
             mock_redis_cls.from_url.side_effect = redis.RedisError("connection failed")
 
             publish_job_completion(

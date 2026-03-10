@@ -130,7 +130,7 @@ def _create_test_app(
         config=config,
         platforms=platforms,
         conversation_store=conversation_store,
-        job_queue=job_queue,
+        queue=job_queue,
     )
     app = create_app(
         config=config,

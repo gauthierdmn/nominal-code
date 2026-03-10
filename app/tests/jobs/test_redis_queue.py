@@ -51,7 +51,7 @@ class TestRedisJobQueueEnqueue:
     async def test_enqueue_creates_consumer(self):
         job = _make_job()
 
-        with patch("nominal_code.jobs.redis_queue.aioredis") as mock_aioredis:
+        with patch("redis.asyncio") as mock_aioredis:
             mock_redis = AsyncMock()
             mock_aioredis.from_url.return_value = mock_redis
             mock_redis.lpush = AsyncMock()
@@ -75,7 +75,7 @@ class TestRedisJobQueueEnqueue:
             order.append(job.event.pr_number)
             await asyncio.sleep(0.01)
 
-        with patch("nominal_code.jobs.redis_queue.aioredis") as mock_aioredis:
+        with patch("redis.asyncio") as mock_aioredis:
             mock_redis = AsyncMock()
             mock_aioredis.from_url.return_value = mock_redis
 
@@ -113,7 +113,7 @@ def _make_mock_pubsub():
 class TestRedisJobQueueAwaitCompletion:
     @pytest.mark.asyncio
     async def test_await_job_completion_succeeds(self):
-        with patch("nominal_code.jobs.redis_queue.aioredis") as mock_aioredis:
+        with patch("redis.asyncio") as mock_aioredis:
             mock_redis = AsyncMock()
             mock_aioredis.from_url.return_value = mock_redis
 
@@ -134,7 +134,7 @@ class TestRedisJobQueueAwaitCompletion:
 
     @pytest.mark.asyncio
     async def test_await_job_completion_timeout(self):
-        with patch("nominal_code.jobs.redis_queue.aioredis") as mock_aioredis:
+        with patch("redis.asyncio") as mock_aioredis:
             mock_redis = AsyncMock()
             mock_aioredis.from_url.return_value = mock_redis
 
@@ -152,7 +152,7 @@ class TestRedisJobQueueAwaitCompletion:
 
     @pytest.mark.asyncio
     async def test_await_job_completion_failed_status(self):
-        with patch("nominal_code.jobs.redis_queue.aioredis") as mock_aioredis:
+        with patch("redis.asyncio") as mock_aioredis:
             mock_redis = AsyncMock()
             mock_aioredis.from_url.return_value = mock_redis
 
