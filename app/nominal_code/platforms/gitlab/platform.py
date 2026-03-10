@@ -10,7 +10,6 @@ import httpx
 from aiohttp import web
 from environs import Env
 
-from nominal_code.http import request_with_retry
 from nominal_code.models import (
     ChangedFile,
     DiffSide,
@@ -26,6 +25,7 @@ from nominal_code.platforms.base import (
     PlatformName,
     PullRequestEvent,
 )
+from nominal_code.platforms.http import request_with_retry
 from nominal_code.platforms.registry import register_platform
 
 GITLAB_API_BASE: str = "https://gitlab.com"

@@ -6,7 +6,12 @@ import pytest
 from claude_agent_sdk import SystemMessage
 from claude_agent_sdk._errors import MessageParseError
 
-from nominal_code.agent.cli.runner import _patched_parse_message, handle_event
+from nominal_code.agent.cli.runner import _patched_parse_message
+from nominal_code.agent.invoke import (
+    invoke_agent,
+    prepare_conversation,
+    save_conversation,
+)
 from nominal_code.agent.result import AgentResult
 from nominal_code.config import CliAgentConfig
 from nominal_code.conversation.memory import MemoryConversationStore
@@ -78,60 +83,76 @@ class TestPatchedParseMessage:
         assert result.data == {}
 
 
-class TestHandleEvent:
+class TestInvokeAgent:
     @pytest.mark.asyncio
     async def test_returns_result(self):
-        event = _make_event()
         config = _make_config()
         expected = _make_agent_result()
 
         with patch(
-            "nominal_code.agent.cli.runner.run",
+            "nominal_code.agent.invoke.run_cli_agent",
             new=AsyncMock(return_value=expected),
         ):
-            result = await handle_event(
-                event=event,
-                bot_type=BotType.WORKER,
-                system_prompt="sys",
+            result = await invoke_agent(
                 prompt="fix it",
                 cwd=Path("/tmp"),
-                config=config,
+                system_prompt="sys",
+                agent_config=config.agent,
             )
 
         assert result is expected
 
     @pytest.mark.asyncio
-    async def test_stores_conversation_id(self):
-        event = _make_event()
+    async def test_passes_allowed_tools(self):
         config = _make_config()
-        store = MemoryConversationStore()
-        agent_result = _make_agent_result(conversation_id="stored-sess")
+        captured = {}
+
+        async def mock_run(**kwargs):
+            captured.update(kwargs)
+
+            return _make_agent_result()
 
         with patch(
-            "nominal_code.agent.cli.runner.run",
-            new=AsyncMock(return_value=agent_result),
+            "nominal_code.agent.invoke.run_cli_agent",
+            side_effect=mock_run,
         ):
-            await handle_event(
-                event=event,
-                bot_type=BotType.WORKER,
-                system_prompt="sys",
+            await invoke_agent(
                 prompt="fix it",
                 cwd=Path("/tmp"),
-                config=config,
-                conversation_store=store,
+                system_prompt="sys",
+                agent_config=config.agent,
+                allowed_tools=["Read", "Write"],
             )
 
-        stored = store.get_conversation_id(
-            platform=PlatformName.GITHUB,
-            repo="owner/repo",
-            pr_number=42,
-            bot_type=BotType.WORKER,
-        )
-
-        assert stored == "stored-sess"
+        assert captured["allowed_tools"] == ["Read", "Write"]
 
     @pytest.mark.asyncio
-    async def test_uses_existing_id_from_store(self):
+    async def test_passes_conversation_id(self):
+        config = _make_config()
+        captured = {}
+
+        async def mock_run(**kwargs):
+            captured.update(kwargs)
+
+            return _make_agent_result()
+
+        with patch(
+            "nominal_code.agent.invoke.run_cli_agent",
+            side_effect=mock_run,
+        ):
+            await invoke_agent(
+                prompt="fix it",
+                cwd=Path("/tmp"),
+                system_prompt="sys",
+                agent_config=config.agent,
+                conversation_id="prev-sess",
+            )
+
+        assert captured["conversation_id"] == "prev-sess"
+
+
+class TestConversationLifecycle:
+    def test_prepare_loads_existing_id_from_store(self):
         event = _make_event()
         config = _make_config()
         store = MemoryConversationStore()
@@ -142,106 +163,67 @@ class TestHandleEvent:
             bot_type=BotType.WORKER,
             value="prev-sess",
         )
-        captured = {}
 
-        async def mock_run(**kwargs):
-            captured.update(kwargs)
+        conversation_id, prior_messages = prepare_conversation(
+            event=event,
+            bot_type=BotType.WORKER,
+            agent_config=config.agent,
+            conversation_store=store,
+        )
 
-            return _make_agent_result()
+        assert conversation_id == "prev-sess"
+        assert prior_messages is None
 
-        with patch(
-            "nominal_code.agent.cli.runner.run",
-            side_effect=mock_run,
-        ):
-            await handle_event(
-                event=event,
-                bot_type=BotType.WORKER,
-                system_prompt="sys",
-                prompt="fix it",
-                cwd=Path("/tmp"),
-                config=config,
-                conversation_store=store,
-            )
+    def test_prepare_without_store_returns_none(self):
+        event = _make_event()
+        config = _make_config()
 
-        assert captured["conversation_id"] == "prev-sess"
+        conversation_id, prior_messages = prepare_conversation(
+            event=event,
+            bot_type=BotType.WORKER,
+            agent_config=config.agent,
+            conversation_store=None,
+        )
 
-    @pytest.mark.asyncio
-    async def test_override_wins_over_store(self):
+        assert conversation_id is None
+        assert prior_messages is None
+
+    def test_save_stores_conversation_id(self):
         event = _make_event()
         config = _make_config()
         store = MemoryConversationStore()
-        store.set_conversation_id(
+        agent_result = _make_agent_result(conversation_id="stored-sess")
+
+        save_conversation(
+            event=event,
+            bot_type=BotType.WORKER,
+            result=agent_result,
+            agent_config=config.agent,
+            conversation_store=store,
+        )
+
+        stored = store.get_conversation_id(
             platform=PlatformName.GITHUB,
             repo="owner/repo",
             pr_number=42,
             bot_type=BotType.WORKER,
-            value="store-sess",
         )
-        captured = {}
 
-        async def mock_run(**kwargs):
-            captured.update(kwargs)
+        assert stored == "stored-sess"
 
-            return _make_agent_result()
-
-        with patch(
-            "nominal_code.agent.cli.runner.run",
-            side_effect=mock_run,
-        ):
-            await handle_event(
-                event=event,
-                bot_type=BotType.WORKER,
-                system_prompt="sys",
-                prompt="fix it",
-                cwd=Path("/tmp"),
-                config=config,
-                conversation_id_override="override-sess",
-                conversation_store=store,
-            )
-
-        assert captured["conversation_id"] == "override-sess"
-
-    @pytest.mark.asyncio
-    async def test_none_store_skips_storage(self):
-        event = _make_event()
-        config = _make_config()
-        agent_result = _make_agent_result(conversation_id="some-sess")
-
-        with patch(
-            "nominal_code.agent.cli.runner.run",
-            new=AsyncMock(return_value=agent_result),
-        ):
-            result = await handle_event(
-                event=event,
-                bot_type=BotType.WORKER,
-                system_prompt="sys",
-                prompt="fix it",
-                cwd=Path("/tmp"),
-                config=config,
-            )
-
-        assert result.conversation_id == "some-sess"
-
-    @pytest.mark.asyncio
-    async def test_empty_conversation_id_skips_store(self):
+    def test_save_skips_store_when_conversation_id_none(self):
         event = _make_event()
         config = _make_config()
         store = MemoryConversationStore()
         agent_result = _make_agent_result(conversation_id=None)
 
-        with patch(
-            "nominal_code.agent.cli.runner.run",
-            new=AsyncMock(return_value=agent_result),
-        ):
-            await handle_event(
-                event=event,
-                bot_type=BotType.WORKER,
-                system_prompt="sys",
-                prompt="fix it",
-                cwd=Path("/tmp"),
-                config=config,
-                conversation_store=store,
-            )
+        save_conversation(
+            event=event,
+            bot_type=BotType.WORKER,
+            result=agent_result,
+            agent_config=config.agent,
+            conversation_store=store,
+        )
 
         stored = store.get_conversation_id(
             platform=PlatformName.GITHUB,
@@ -252,55 +234,15 @@ class TestHandleEvent:
 
         assert stored is None
 
-    @pytest.mark.asyncio
-    async def test_no_store_no_existing_id(self):
+    def test_save_skips_when_no_store(self):
         event = _make_event()
         config = _make_config()
-        captured = {}
+        agent_result = _make_agent_result(conversation_id="some-sess")
 
-        async def mock_run(**kwargs):
-            captured.update(kwargs)
-
-            return _make_agent_result()
-
-        with patch(
-            "nominal_code.agent.cli.runner.run",
-            side_effect=mock_run,
-        ):
-            await handle_event(
-                event=event,
-                bot_type=BotType.WORKER,
-                system_prompt="sys",
-                prompt="fix it",
-                cwd=Path("/tmp"),
-                config=config,
-            )
-
-        assert captured["conversation_id"] is None
-
-    @pytest.mark.asyncio
-    async def test_passes_allowed_tools(self):
-        event = _make_event()
-        config = _make_config()
-        captured = {}
-
-        async def mock_run(**kwargs):
-            captured.update(kwargs)
-
-            return _make_agent_result()
-
-        with patch(
-            "nominal_code.agent.cli.runner.run",
-            side_effect=mock_run,
-        ):
-            await handle_event(
-                event=event,
-                bot_type=BotType.WORKER,
-                system_prompt="sys",
-                prompt="fix it",
-                cwd=Path("/tmp"),
-                config=config,
-                allowed_tools=["Read", "Write"],
-            )
-
-        assert captured["allowed_tools"] == ["Read", "Write"]
+        save_conversation(
+            event=event,
+            bot_type=BotType.WORKER,
+            result=agent_result,
+            agent_config=config.agent,
+            conversation_store=None,
+        )

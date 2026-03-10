@@ -15,20 +15,6 @@ DEPS_FOLDER_NAME: str = ".deps"
 GIT_FOLDER_NAME: str = ".git"
 
 
-def _redact_url(url: str) -> str:
-    """
-    Replace embedded tokens in clone URLs with ``***``.
-
-    Args:
-        url (str): A URL that may contain an embedded token.
-
-    Returns:
-        str: The URL with the token replaced by ``***``.
-    """
-
-    return TOKEN_PATTERN.sub(r"\1***\2", url)
-
-
 @dataclass(frozen=True)
 class PushResult:
     """
@@ -242,3 +228,17 @@ class GitWorkspace:
             logger.debug("git stderr: %s", stderr_text)
 
         return stdout_text
+
+
+def _redact_url(url: str) -> str:
+    """
+    Replace embedded tokens in clone URLs with ``***``.
+
+    Args:
+        url (str): A URL that may contain an embedded token.
+
+    Returns:
+        str: The URL with the token replaced by ``***``.
+    """
+
+    return TOKEN_PATTERN.sub(r"\1***\2", url)

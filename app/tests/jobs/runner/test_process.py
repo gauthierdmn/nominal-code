@@ -7,8 +7,8 @@ import pytest
 from nominal_code.config import CliAgentConfig, ReviewerConfig, WorkerConfig
 from nominal_code.conversation.memory import MemoryConversationStore
 from nominal_code.jobs.payload import JobPayload
-from nominal_code.jobs.process import ProcessRunner
-from nominal_code.jobs.queue import AsyncioJobQueue
+from nominal_code.jobs.queue.asyncio import AsyncioJobQueue
+from nominal_code.jobs.runner.process import ProcessRunner
 from nominal_code.models import EventType
 from nominal_code.platforms.base import (
     CommentEvent,
@@ -99,7 +99,7 @@ def _make_lifecycle_job():
 
 class TestProcessRunner:
     @pytest.mark.asyncio
-    async def test_worker_job_calls_review_and_fix(self):
+    async def test_worker_job_dispatches_to_review_and_fix(self):
         config = _make_config()
         platform = _make_platform()
         platforms = {"github": platform}
@@ -113,21 +113,28 @@ class TestProcessRunner:
             queue=job_queue,
         )
 
-        with patch(
-            "nominal_code.jobs.process.review_and_fix",
-            new_callable=AsyncMock,
-        ) as mock_handler:
-            await runner.enqueue(_make_worker_job())
+        job = _make_worker_job()
+
+        with (
+            patch(
+                "nominal_code.jobs.runner.process.prepare_job_event",
+                new_callable=AsyncMock,
+                return_value=job.event,
+            ),
+            patch(
+                "nominal_code.jobs.runner.process.review_and_fix",
+                new_callable=AsyncMock,
+            ) as mock_handler,
+        ):
+            await runner.enqueue(job)
             await asyncio.sleep(0.05)
 
             mock_handler.assert_called_once()
             call_kwargs = mock_handler.call_args.kwargs
-            assert call_kwargs["event"].clone_url == (
-                "https://token@github.com/owner/repo.git"
-            )
+            assert call_kwargs["event"].repo_full_name == "owner/repo"
 
     @pytest.mark.asyncio
-    async def test_reviewer_job_calls_review_and_post(self):
+    async def test_reviewer_job_dispatches_to_run_and_post_review(self):
         config = _make_config()
         platform = _make_platform()
         platforms = {"github": platform}
@@ -141,10 +148,20 @@ class TestProcessRunner:
             queue=job_queue,
         )
 
-        with patch(
-            "nominal_code.jobs.process.review_and_post",
-            new_callable=AsyncMock,
-        ) as mock_handler:
+        mock_result = MagicMock()
+
+        with (
+            patch(
+                "nominal_code.jobs.runner.process.prepare_job_event",
+                new_callable=AsyncMock,
+                return_value=_make_reviewer_job().event,
+            ),
+            patch(
+                "nominal_code.jobs.runner.process.run_and_post_review",
+                new_callable=AsyncMock,
+                return_value=mock_result,
+            ) as mock_handler,
+        ):
             await runner.enqueue(_make_reviewer_job())
             await asyncio.sleep(0.05)
 
@@ -165,10 +182,20 @@ class TestProcessRunner:
             queue=job_queue,
         )
 
-        with patch(
-            "nominal_code.jobs.process.review_and_post",
-            new_callable=AsyncMock,
-        ) as mock_handler:
+        mock_result = MagicMock()
+
+        with (
+            patch(
+                "nominal_code.jobs.runner.process.prepare_job_event",
+                new_callable=AsyncMock,
+                return_value=_make_lifecycle_job().event,
+            ),
+            patch(
+                "nominal_code.jobs.runner.process.run_and_post_review",
+                new_callable=AsyncMock,
+                return_value=mock_result,
+            ) as mock_handler,
+        ):
             await runner.enqueue(_make_lifecycle_job())
             await asyncio.sleep(0.05)
 
@@ -189,9 +216,16 @@ class TestProcessRunner:
             queue=job_queue,
         )
 
-        with patch(
-            "nominal_code.jobs.process.review_and_fix",
-            new_callable=AsyncMock,
+        with (
+            patch(
+                "nominal_code.jobs.runner.process.prepare_job_event",
+                new_callable=AsyncMock,
+                return_value=_make_worker_job().event,
+            ),
+            patch(
+                "nominal_code.jobs.runner.process.review_and_fix",
+                new_callable=AsyncMock,
+            ),
         ):
             await runner.enqueue(_make_worker_job())
             await asyncio.sleep(0.05)

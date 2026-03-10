@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from aiohttp.pytest_plugin import AiohttpClient
 
+from nominal_code.commands.webhook.server import create_app
 from nominal_code.config import (
     CliAgentConfig,
     Config,
@@ -17,12 +18,11 @@ from nominal_code.config import (
     WorkerConfig,
 )
 from nominal_code.conversation.memory import MemoryConversationStore
-from nominal_code.jobs.process import ProcessRunner
-from nominal_code.jobs.queue import AsyncioJobQueue
+from nominal_code.jobs.queue.asyncio import AsyncioJobQueue
+from nominal_code.jobs.runner.process import ProcessRunner
 from nominal_code.models import EventType
 from nominal_code.platforms.github import GitHubPlatform
 from nominal_code.platforms.github.auth import GitHubAppAuth
-from nominal_code.server.app import create_app
 from tests.integration.conftest import PrInfo, wait_for_queue_drain
 from tests.integration.github.api import (
     fetch_pr_reviews,
@@ -187,7 +187,7 @@ async def test_app_auth_reviewer_mention_posts_review(
     signature = _sign_payload(payload_bytes)
 
     with patch(
-        "nominal_code.agent.cli.runner.run",
+        "nominal_code.agent.invoke.run_cli_agent",
         new_callable=AsyncMock,
         return_value=BUGGY_AGENT_RESULT,
     ):
@@ -262,7 +262,7 @@ async def test_app_auth_lifecycle_auto_trigger(
     signature = _sign_payload(payload_bytes)
 
     with patch(
-        "nominal_code.agent.cli.runner.run",
+        "nominal_code.agent.invoke.run_cli_agent",
         new_callable=AsyncMock,
         return_value=BUGGY_AGENT_RESULT,
     ):

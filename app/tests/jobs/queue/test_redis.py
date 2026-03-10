@@ -7,7 +7,7 @@ import pytest
 pytest.importorskip("redis")
 
 from nominal_code.jobs.payload import JobPayload
-from nominal_code.jobs.redis_queue import RedisJobQueue, _build_queue_key
+from nominal_code.jobs.queue.redis import RedisJobQueue, _build_queue_key
 from nominal_code.models import EventType
 from nominal_code.platforms.base import CommentEvent, PlatformName
 

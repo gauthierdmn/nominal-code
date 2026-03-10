@@ -49,16 +49,10 @@ async def _run_ci_review(
     config: Config,
     canned_result: AgentResult,
 ) -> int:
-    with (
-        patch(
-            "nominal_code.agent.api.runner.run",
-            new_callable=AsyncMock,
-            return_value=canned_result,
-        ),
-        patch(
-            "nominal_code.agent.api.runner.create_provider",
-            return_value=AsyncMock(),
-        ),
+    with patch(
+        "nominal_code.handlers.review.invoke_agent",
+        new_callable=AsyncMock,
+        return_value=canned_result,
     ):
         result = await review(
             event=event,

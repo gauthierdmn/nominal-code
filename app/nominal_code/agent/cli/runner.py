@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Any, Literal
 
 from claude_agent_sdk import (
     AssistantMessage,
@@ -25,12 +25,7 @@ from claude_agent_sdk.types import (
 
 from nominal_code.agent.result import AgentResult
 from nominal_code.llm.cost import CostSummary
-from nominal_code.models import BotType, ProviderName
-from nominal_code.platforms.base import PullRequestEvent
-
-if TYPE_CHECKING:
-    from nominal_code.config import CliAgentConfig, Config
-    from nominal_code.conversation.base import ConversationStore
+from nominal_code.models import ProviderName
 
 CONVERSATION_ID_INIT_SUBTYPE: str = "init"
 MAX_TOOL_RESULT_LOG_LENGTH: int = 500
@@ -77,7 +72,7 @@ _sdk_parser.parse_message = _patched_parse_message
 _sdk_client.parse_message = _patched_parse_message  # type: ignore[attr-defined]
 
 
-async def run(
+async def run_cli_agent(
     prompt: str,
     cwd: Path,
     model: str = "",
@@ -180,76 +175,6 @@ async def run(
         duration_ms=0,
         conversation_id=returned_conversation_id,
     )
-
-
-async def handle_event(
-    event: PullRequestEvent,
-    bot_type: BotType,
-    system_prompt: str,
-    prompt: str,
-    cwd: Path,
-    config: Config,
-    allowed_tools: list[str] | None = None,
-    conversation_id_override: str | None = None,
-    conversation_store: ConversationStore | None = None,
-) -> AgentResult:
-    """
-    Run the CLI agent and persist the conversation ID.
-
-    Looks up the existing conversation ID from the store (or uses
-    ``conversation_id_override`` for retries), runs the agent via the
-    Claude Code CLI, and stores the new conversation ID on success.
-
-    Args:
-        event (PullRequestEvent): The event that triggered the agent run.
-        bot_type (BotType): Which bot personality is running.
-        system_prompt (str): The composed system prompt.
-        prompt (str): The user/PR prompt to send to the agent.
-        cwd (Path): Working directory for the agent.
-        config (Config): Application configuration.
-        allowed_tools (list[str] | None): Restrict which tools the agent
-            may use.
-        conversation_id_override (str | None): Override conversation ID
-            (e.g. for retries).
-        conversation_store (ConversationStore | None): Conversation store
-            (None to skip persistence).
-
-    Returns:
-        AgentResult: The agent execution result.
-    """
-
-    agent_config: CliAgentConfig = config.agent  # type: ignore[assignment]
-    existing_conversation_id: str | None = conversation_id_override
-
-    if existing_conversation_id is None and conversation_store is not None:
-        existing_conversation_id = conversation_store.get_conversation_id(
-            platform=event.platform,
-            repo=event.repo_full_name,
-            pr_number=event.pr_number,
-            bot_type=bot_type,
-        )
-
-    result: AgentResult = await run(
-        prompt=prompt,
-        cwd=cwd,
-        model=agent_config.model,
-        max_turns=agent_config.max_turns,
-        cli_path=agent_config.cli_path,
-        conversation_id=existing_conversation_id,
-        system_prompt=system_prompt,
-        allowed_tools=allowed_tools,
-    )
-
-    if conversation_store is not None and result.conversation_id:
-        conversation_store.set_conversation_id(
-            platform=event.platform,
-            repo=event.repo_full_name,
-            pr_number=event.pr_number,
-            bot_type=bot_type,
-            value=result.conversation_id,
-        )
-
-    return result
 
 
 def _log_message(message: Message) -> None:

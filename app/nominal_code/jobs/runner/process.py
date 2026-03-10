@@ -1,22 +1,20 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from nominal_code.handlers.review import review_and_post
+from nominal_code.agent.errors import handle_agent_errors
+from nominal_code.handlers.review import run_and_post_review
 from nominal_code.handlers.worker import review_and_fix
 from nominal_code.jobs.payload import JobPayload
 from nominal_code.models import BotType
-from nominal_code.platforms.base import (
-    CommentEvent,
-    ReviewerPlatform,
-)
+from nominal_code.platforms.base import CommentEvent, ReviewerPlatform
+from nominal_code.workspace.setup import prepare_job_event
 
 if TYPE_CHECKING:
     from nominal_code.config import Config
     from nominal_code.conversation.base import ConversationStore
-    from nominal_code.jobs.runner import JobQueue
+    from nominal_code.jobs.queue.base import JobQueue
     from nominal_code.platforms.base import Platform
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -27,8 +25,8 @@ class ProcessRunner:
     Runs review jobs in the current process.
 
     This is the default runner used when no external job backend is
-    configured. It sets clone URLs on the event, builds the appropriate
-    handler closure, and executes it. Jobs are enqueued via the per-PR
+    configured. It prepares the job event, dispatches to the appropriate
+    handler, and posts results. Jobs are enqueued via the per-PR
     ``JobQueue`` for serial execution.
 
     Attributes:
@@ -81,8 +79,8 @@ class ProcessRunner:
         """
         Execute a single dequeued job in the current process.
 
-        Looks up the platform, sets the clone URL on the event, and
-        dispatches to the appropriate handler.
+        Looks up the platform, prepares the job event, and dispatches
+        to the appropriate handler.
 
         Args:
             job (JobPayload): The review job to execute.
@@ -95,73 +93,52 @@ class ProcessRunner:
         bot_type: BotType = BotType(job.bot_type)
 
         if bot_type == BotType.WORKER:
-            await self._run_worker_job(job=job, platform=platform)
+            agent_label: str = "worker"
         elif isinstance(platform, ReviewerPlatform):
-            await self._run_reviewer_job(job=job, platform=platform)
+            agent_label = "reviewer"
         else:
             logger.warning(
                 "Platform %s does not support reviewer operations",
                 job.event.platform,
             )
 
-    async def _run_worker_job(
-        self,
-        job: JobPayload,
-        platform: Platform,
-    ) -> None:
-        """
-        Execute a worker job.
-
-        Args:
-            job (JobPayload): The job payload.
-            platform (Platform): The platform client.
-        """
-
-        if not isinstance(job.event, CommentEvent):
-            logger.warning("Worker job requires a comment event")
-
             return
 
-        clone_url: str = platform.build_clone_url(
-            repo_full_name=job.event.repo_full_name
-        )
-        ready_event: CommentEvent = replace(job.event, clone_url=clone_url)
-
-        await review_and_fix(
-            event=ready_event,
-            prompt=ready_event.mention_prompt or "",
-            config=self._config,
+        async with handle_agent_errors(
+            event=job.event,
             platform=platform,
-            conversation_store=self._conversation_store,
-        )
+            agent_label=agent_label,
+        ):
+            prepared_event = await prepare_job_event(
+                event=job.event,
+                bot_type=bot_type,
+                platform=platform,
+            )
 
-    async def _run_reviewer_job(
-        self,
-        job: JobPayload,
-        platform: ReviewerPlatform,
-    ) -> None:
-        """
-        Execute a reviewer job.
+            if bot_type == BotType.WORKER:
+                if not isinstance(prepared_event, CommentEvent):
+                    raise RuntimeError("Worker job requires a comment event")
 
-        Args:
-            job (JobPayload): The job payload.
-            platform (ReviewerPlatform): The platform client.
-        """
+                await review_and_fix(
+                    event=prepared_event,
+                    prompt=prepared_event.mention_prompt or "",
+                    config=self._config,
+                    platform=platform,
+                    conversation_store=self._conversation_store,
+                )
+            elif isinstance(platform, ReviewerPlatform):
+                mention_prompt: str = ""
 
-        clone_url: str = platform.build_reviewer_clone_url(
-            repo_full_name=job.event.repo_full_name
-        )
-        ready_event = replace(job.event, clone_url=clone_url)
+                if (
+                    isinstance(prepared_event, CommentEvent)
+                    and prepared_event.mention_prompt
+                ):
+                    mention_prompt = prepared_event.mention_prompt
 
-        mention_prompt: str = ""
-
-        if isinstance(ready_event, CommentEvent) and ready_event.mention_prompt:
-            mention_prompt = ready_event.mention_prompt
-
-        await review_and_post(
-            event=ready_event,
-            prompt=mention_prompt,
-            config=self._config,
-            platform=platform,
-            conversation_store=self._conversation_store,
-        )
+                await run_and_post_review(
+                    event=prepared_event,
+                    prompt=mention_prompt,
+                    config=self._config,
+                    platform=platform,
+                    conversation_store=self._conversation_store,
+                )

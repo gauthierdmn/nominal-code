@@ -47,7 +47,7 @@ async def _run_review(
     config = Config.for_cli()
 
     with patch(
-        "nominal_code.agent.cli.runner.run",
+        "nominal_code.agent.invoke.run_cli_agent",
         new_callable=AsyncMock,
         return_value=canned_result,
     ):

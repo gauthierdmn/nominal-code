@@ -3,10 +3,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from nominal_code.commands.webhook.helpers import acknowledge_event
 from nominal_code.config import CliAgentConfig, ReviewerConfig, WorkerConfig
 from nominal_code.models import BotType, EventType
 from nominal_code.platforms.base import CommentEvent, LifecycleEvent, PlatformName
-from nominal_code.server.router import acknowledge_event
 
 
 def _make_config(allowed_users=None):

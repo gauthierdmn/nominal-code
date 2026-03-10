@@ -14,9 +14,19 @@ AI-powered code review bot that monitors GitHub PRs and GitLab MRs. When a user 
 
 ## Entry points
 
-- `nominal-code` (no args) — starts the webhook server.
+- `nominal-code serve` — starts the webhook server.
 - `nominal-code review owner/repo#42` — one-shot CLI review (supports `--dry-run`, `--platform`, `--prompt`).
 - `nominal-code ci {platform}` — CI mode review (GitHub Actions / GitLab CI). Uses the LLM provider API runner.
+- `nominal-code run-job` — internal: executes a single job in a K8s pod (invoked by `KubernetesRunner`).
+
+## Processing layers
+
+The call chain follows four conceptual layers:
+
+1. **Receive** — `commands/webhook/server.py` (webhooks), `commands/` (CLI/CI).
+2. **Prepare** — `workspace/setup.py::prepare_job_event()` resolves clone URLs and branches; `jobs/runner/process.py` wraps with error handling and queue management.
+3. **Orchestrate** — `handlers/review.py` and `handlers/worker.py` (business logic: diff fetching, prompt building, output parsing).
+4. **Invoke** — `agent/invoke.py` provides agent execution with explicit conversation lifecycle (`prepare_conversation`, `invoke_agent`, `save_conversation`).
 
 ## Agent runner selection
 
@@ -26,7 +36,7 @@ AI-powered code review bot that monitors GitHub PRs and GitLab MRs. When a user 
 | CLI review | Claude Code CLI (`agent/cli/runner.py`) | `CliAgentConfig` |
 | CI (`commands/ci.py`) | LLM provider API (`agent/api/runner.py`) | `ApiAgentConfig` |
 
-The dispatcher in `agent/router.py` routes based on the agent config type (`CliAgentConfig` or `ApiAgentConfig`). The API runner implements its own tool execution (Read, Glob, Grep, Bash with allowlist) and supports multiple providers (Anthropic, OpenAI, Google Gemini, DeepSeek, Groq, Together, Fireworks).
+The dispatcher in `agent/invoke.py` routes based on the agent config type (`CliAgentConfig` or `ApiAgentConfig`). The API runner implements its own tool execution (Read, Glob, Grep, Bash with allowlist) and supports multiple providers (Anthropic, OpenAI, Google Gemini, DeepSeek, Groq, Together, Fireworks).
 
 ## Bot types
 
@@ -78,14 +88,17 @@ nominal_code/
 ├── main.py              # Entry point: dispatches to webhook server, CLI, or CI
 ├── config.py            # Frozen dataclass config loaded from env vars / files
 ├── models.py            # Shared enums (EventType, BotType, FileStatus) and dataclasses (ReviewFinding, AgentReview, ChangedFile)
-├── http.py              # request_with_retry(): HTTP request helper with transient error retries
-├── commands/            # Entry points: CLI review, CI mode, job runner
+├── commands/            # Entry points: CLI review, CI mode, webhook server, K8s job runner
+│   ├── webhook/         # Webhook server (server.py), helpers, mention extraction, K8s job runner (job.py)
+│   ├── cli.py           # CLI review mode
+│   └── ci.py            # CI mode review
 ├── llm/                 # LLM provider abstraction, cost tracking, canonical message types
-├── agent/               # Dual agent runners, prompt composition, error handling
+├── agent/               # Agent invocation (invoke.py), dual runners, prompt composition, error handling
 ├── conversation/        # Conversation persistence (memory + Redis stores)
 ├── handlers/            # Bot handlers: reviewer (structured review) and worker (code fixes)
-├── server/              # aiohttp webhook server, @mention extraction, job dispatch
-├── jobs/                # Job payload, process runner, Kubernetes runner
+├── jobs/                # Job payload, runner and queue subpackages
+│   ├── runner/          # JobRunner protocol (base.py), ProcessRunner, KubernetesRunner
+│   └── queue/           # JobQueue protocol (base.py), AsyncioJobQueue, RedisJobQueue
 ├── platforms/           # Platform protocol + GitHub/GitLab implementations (subpackages)
 └── workspace/           # Git workspace management and cleanup
 ```

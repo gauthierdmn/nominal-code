@@ -68,7 +68,7 @@ Minimal steps to go from zero to a working review.
     export GITHUB_TOKEN=ghp_...
     export GITHUB_WEBHOOK_SECRET=your-secret
 
-    uv run nominal-code
+    uv run nominal-code serve
     ```
 
     Set up a webhook on your repository pointing to `https://your-server:8080/webhooks/github`, then mention `@my-reviewer` in a PR comment.

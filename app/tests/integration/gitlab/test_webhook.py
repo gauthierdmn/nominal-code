@@ -8,6 +8,7 @@ import pytest
 from aiohttp import web
 from aiohttp.pytest_plugin import AiohttpClient
 
+from nominal_code.commands.webhook.server import create_app
 from nominal_code.config import (
     CliAgentConfig,
     Config,
@@ -15,11 +16,10 @@ from nominal_code.config import (
     WorkerConfig,
 )
 from nominal_code.conversation.memory import MemoryConversationStore
-from nominal_code.jobs.process import ProcessRunner
-from nominal_code.jobs.queue import AsyncioJobQueue
+from nominal_code.jobs.queue.asyncio import AsyncioJobQueue
+from nominal_code.jobs.runner.process import ProcessRunner
 from nominal_code.models import EventType
 from nominal_code.platforms.gitlab import GitLabPlatform
-from nominal_code.server.app import create_app
 from tests.integration.conftest import PrInfo, wait_for_queue_drain
 from tests.integration.gitlab.api import (
     fetch_mr_notes,
@@ -149,7 +149,7 @@ async def test_webhook_reviewer_mention_posts_review(
     payload_bytes = json.dumps(payload).encode()
 
     with patch(
-        "nominal_code.agent.cli.runner.run",
+        "nominal_code.agent.invoke.run_cli_agent",
         new_callable=AsyncMock,
         return_value=BUGGY_AGENT_RESULT,
     ):
@@ -198,7 +198,7 @@ async def test_webhook_worker_mention_posts_reply(
 
     with (
         patch(
-            "nominal_code.agent.cli.runner.run",
+            "nominal_code.agent.invoke.run_cli_agent",
             new_callable=AsyncMock,
             return_value=BUGGY_AGENT_RESULT,
         ),
@@ -252,7 +252,7 @@ async def test_webhook_lifecycle_auto_trigger(
     payload_bytes = json.dumps(payload).encode()
 
     with patch(
-        "nominal_code.agent.cli.runner.run",
+        "nominal_code.agent.invoke.run_cli_agent",
         new_callable=AsyncMock,
         return_value=BUGGY_AGENT_RESULT,
     ):
