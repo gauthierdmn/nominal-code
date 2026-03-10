@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nominal_code.agent.router import AgentResult
+from nominal_code.agent.result import AgentResult
 from nominal_code.config import CliAgentConfig, WorkerConfig
 from nominal_code.conversation.memory import MemoryConversationStore
 from nominal_code.handlers.worker import _build_prompt, review_and_fix
@@ -71,7 +71,7 @@ class TestWorkerProcessComment:
         conversation_store = MemoryConversationStore()
 
         with patch(
-            "nominal_code.agent.cli.runner.run",
+            "nominal_code.agent.invoke.run_cli_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(
@@ -112,7 +112,7 @@ class TestWorkerProcessComment:
         conversation_store = MemoryConversationStore()
 
         with patch(
-            "nominal_code.agent.cli.runner.run",
+            "nominal_code.agent.invoke.run_cli_agent",
             new_callable=AsyncMock,
         ) as mock_run:
             mock_run.return_value = AgentResult(

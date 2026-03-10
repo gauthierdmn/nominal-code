@@ -474,6 +474,40 @@ class Config:
         )
 
 
+def resolve_provider_config(default: str = "") -> ProviderConfig:
+    """
+    Resolve the LLM provider from ``AGENT_PROVIDER`` or a caller-supplied default.
+
+    Reads the environment variable, falls back to ``default``, validates
+    the provider name, and looks up the ``ProviderConfig`` from the
+    ``PROVIDERS`` registry.
+
+    Args:
+        default (str): Fallback provider name when ``AGENT_PROVIDER`` is unset.
+
+    Returns:
+        ProviderConfig: The resolved provider configuration.
+
+    Raises:
+        ValueError: If the provider name is not recognised.
+    """
+
+    from nominal_code.llm.registry import PROVIDERS
+
+    provider_env: str = env.str("AGENT_PROVIDER", default)
+
+    try:
+        provider_name: ProviderName = ProviderName(provider_env)
+    except ValueError:
+        available: str = ", ".join(p.value for p in ProviderName)
+
+        raise ValueError(
+            f"Unknown AGENT_PROVIDER: {provider_env!r}. Available: {available}",
+        ) from None
+
+    return PROVIDERS[provider_name]
+
+
 def _parse_provider_env() -> ProviderName | None:
     """
     Read ``AGENT_PROVIDER`` from the environment and convert to enum.

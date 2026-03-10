@@ -4,7 +4,6 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from nominal_code.agent.api.tools import (
     SUBMIT_REVIEW_TOOL_NAME,
@@ -25,20 +24,14 @@ from nominal_code.llm.messages import (
     ToolUseBlock,
 )
 from nominal_code.llm.provider import LLMProvider, ProviderError
-from nominal_code.llm.registry import create_provider
-from nominal_code.models import BotType, ProviderName
-from nominal_code.platforms.base import PullRequestEvent
-
-if TYPE_CHECKING:
-    from nominal_code.config import ApiAgentConfig, Config
-    from nominal_code.conversation.base import ConversationStore
+from nominal_code.models import ProviderName
 
 MAX_RESPONSE_TOKENS: int = 16384
 
 logger: logging.Logger = logging.getLogger(__name__)
 
 
-async def run(
+async def run_api_agent(
     prompt: str,
     cwd: Path,
     model: str,
@@ -265,89 +258,6 @@ async def run(
                 num_api_calls=api_call_count,
             ),
         )
-
-
-async def handle_event(
-    event: PullRequestEvent,
-    bot_type: BotType,
-    system_prompt: str,
-    prompt: str,
-    cwd: Path,
-    config: Config,
-    allowed_tools: list[str] | None = None,
-    conversation_store: ConversationStore | None = None,
-) -> AgentResult:
-    """
-    Run the API agent and persist conversation state.
-
-    Loads prior messages from the conversation store (if available),
-    runs the agent via the LLM provider API, and stores the updated
-    messages and conversation ID on success.
-
-    Args:
-        event (PullRequestEvent): The event that triggered the agent run.
-        bot_type (BotType): Which bot personality is running.
-        system_prompt (str): The composed system prompt.
-        prompt (str): The user/PR prompt to send to the agent.
-        cwd (Path): Working directory for the agent.
-        config (Config): Application configuration.
-        allowed_tools (list[str] | None): Restrict which tools the agent
-            may use.
-        conversation_store (ConversationStore | None): Conversation store
-            (None to skip persistence).
-
-    Returns:
-        AgentResult: The agent execution result.
-    """
-
-    agent_config: ApiAgentConfig = config.agent  # type: ignore[assignment]
-
-    prior_messages: list[Message] | None = None
-
-    if conversation_store is not None:
-        prior_messages = conversation_store.get_messages(
-            platform=event.platform,
-            repo=event.repo_full_name,
-            pr_number=event.pr_number,
-            bot_type=bot_type,
-        )
-
-    provider = create_provider(name=agent_config.provider.name)
-
-    try:
-        result: AgentResult = await run(
-            prompt=prompt,
-            cwd=cwd,
-            model=agent_config.provider.model,
-            provider=provider,
-            max_turns=agent_config.max_turns,
-            system_prompt=system_prompt,
-            allowed_tools=allowed_tools,
-            prior_messages=prior_messages,
-            provider_name=agent_config.provider.name,
-        )
-    finally:
-        await provider.close()
-
-    if conversation_store is not None and result.conversation_id:
-        conversation_store.set_conversation_id(
-            platform=event.platform,
-            repo=event.repo_full_name,
-            pr_number=event.pr_number,
-            bot_type=bot_type,
-            value=result.conversation_id,
-        )
-
-    if conversation_store is not None and not result.is_error and result.messages:
-        conversation_store.set_messages(
-            platform=event.platform,
-            repo=event.repo_full_name,
-            pr_number=event.pr_number,
-            bot_type=bot_type,
-            value=list(result.messages),
-        )
-
-    return result
 
 
 def _extract_text(response: LLMResponse) -> str:

@@ -6,7 +6,8 @@ import pytest
 from claude_agent_sdk import SystemMessage
 from claude_agent_sdk._errors import MessageParseError
 
-from nominal_code.agent.cli.runner import _patched_parse_message, handle_event
+from nominal_code.agent.cli.runner import _patched_parse_message
+from nominal_code.agent.invoke import invoke_agent
 from nominal_code.agent.result import AgentResult
 from nominal_code.config import CliAgentConfig
 from nominal_code.conversation.memory import MemoryConversationStore
@@ -78,7 +79,7 @@ class TestPatchedParseMessage:
         assert result.data == {}
 
 
-class TestHandleEvent:
+class TestInvokeAgent:
     @pytest.mark.asyncio
     async def test_returns_result(self):
         event = _make_event()
@@ -86,10 +87,10 @@ class TestHandleEvent:
         expected = _make_agent_result()
 
         with patch(
-            "nominal_code.agent.cli.runner.run",
+            "nominal_code.agent.invoke.run_cli_agent",
             new=AsyncMock(return_value=expected),
         ):
-            result = await handle_event(
+            result = await invoke_agent(
                 event=event,
                 bot_type=BotType.WORKER,
                 system_prompt="sys",
@@ -108,10 +109,10 @@ class TestHandleEvent:
         agent_result = _make_agent_result(conversation_id="stored-sess")
 
         with patch(
-            "nominal_code.agent.cli.runner.run",
+            "nominal_code.agent.invoke.run_cli_agent",
             new=AsyncMock(return_value=agent_result),
         ):
-            await handle_event(
+            await invoke_agent(
                 event=event,
                 bot_type=BotType.WORKER,
                 system_prompt="sys",
@@ -150,10 +151,10 @@ class TestHandleEvent:
             return _make_agent_result()
 
         with patch(
-            "nominal_code.agent.cli.runner.run",
+            "nominal_code.agent.invoke.run_cli_agent",
             side_effect=mock_run,
         ):
-            await handle_event(
+            await invoke_agent(
                 event=event,
                 bot_type=BotType.WORKER,
                 system_prompt="sys",
@@ -185,10 +186,10 @@ class TestHandleEvent:
             return _make_agent_result()
 
         with patch(
-            "nominal_code.agent.cli.runner.run",
+            "nominal_code.agent.invoke.run_cli_agent",
             side_effect=mock_run,
         ):
-            await handle_event(
+            await invoke_agent(
                 event=event,
                 bot_type=BotType.WORKER,
                 system_prompt="sys",
@@ -208,10 +209,10 @@ class TestHandleEvent:
         agent_result = _make_agent_result(conversation_id="some-sess")
 
         with patch(
-            "nominal_code.agent.cli.runner.run",
+            "nominal_code.agent.invoke.run_cli_agent",
             new=AsyncMock(return_value=agent_result),
         ):
-            result = await handle_event(
+            result = await invoke_agent(
                 event=event,
                 bot_type=BotType.WORKER,
                 system_prompt="sys",
@@ -230,10 +231,10 @@ class TestHandleEvent:
         agent_result = _make_agent_result(conversation_id=None)
 
         with patch(
-            "nominal_code.agent.cli.runner.run",
+            "nominal_code.agent.invoke.run_cli_agent",
             new=AsyncMock(return_value=agent_result),
         ):
-            await handle_event(
+            await invoke_agent(
                 event=event,
                 bot_type=BotType.WORKER,
                 system_prompt="sys",
@@ -264,10 +265,10 @@ class TestHandleEvent:
             return _make_agent_result()
 
         with patch(
-            "nominal_code.agent.cli.runner.run",
+            "nominal_code.agent.invoke.run_cli_agent",
             side_effect=mock_run,
         ):
-            await handle_event(
+            await invoke_agent(
                 event=event,
                 bot_type=BotType.WORKER,
                 system_prompt="sys",
@@ -290,10 +291,10 @@ class TestHandleEvent:
             return _make_agent_result()
 
         with patch(
-            "nominal_code.agent.cli.runner.run",
+            "nominal_code.agent.invoke.run_cli_agent",
             side_effect=mock_run,
         ):
-            await handle_event(
+            await invoke_agent(
                 event=event,
                 bot_type=BotType.WORKER,
                 system_prompt="sys",

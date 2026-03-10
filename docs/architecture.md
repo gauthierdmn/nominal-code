@@ -141,7 +141,7 @@ Used by **CI mode**. Calls the LLM provider API directly with tool use. Supports
 | CLI (`nominal-code review`) | Claude Code CLI | `CliAgentConfig` |
 | Webhook server | Claude Code CLI | `CliAgentConfig` |
 
-The dispatcher in `agent/router.py` routes to the appropriate backend based on whether the config is a `CliAgentConfig` or `ApiAgentConfig`.
+The dispatcher in `agent/invoke.py` routes to the appropriate backend based on whether the config is a `CliAgentConfig` or `ApiAgentConfig`.
 
 ## Components
 
@@ -158,11 +158,11 @@ Each incoming request is verified, parsed, and dispatched. The HTTP response is 
 
 A factory-based registry where each platform module self-registers at import time. At startup, `build_platforms()` calls each factory and returns only the platforms that are configured (i.e. have their required tokens set).
 
-### Pre-flight Checks (`server/router.py`)
+### Pre-flight Checks (`commands/webhook/helpers.py`)
 
 - **`run_pre_flight()`** — central pre-flight for all events. For comment events: validates the author against `ALLOWED_USERS`, logs the event, posts the eyes reaction. For lifecycle events: logs with event type/title/author, posts a PR reaction, and skips auth and comment reaction. Returns whether the job should proceed.
 
-### Job Processing (`jobs/process.py`)
+### Job Processing (`jobs/runner/process.py`)
 
 - **`ProcessRunner`** — sets clone URLs on the event, builds the appropriate handler closure, and enqueues jobs for serial execution via the job queue.
 
@@ -191,9 +191,9 @@ Each platform provides a `ci.py` module with three functions:
 - **`build_platform()`** — constructs a `ReviewerPlatform` from CI tokens (`$GITHUB_TOKEN` or `$GITLAB_TOKEN`).
 - **`resolve_workspace()`** — returns the CI runner's checkout directory (`$GITHUB_WORKSPACE` or `$CI_PROJECT_DIR`).
 
-### Agent Runner (`agent/router.py`)
+### Agent Dispatcher (`agent/invoke.py`)
 
-Dispatcher that routes to the API or CLI runner based on the agent config type (`CliAgentConfig` or `ApiAgentConfig`). See [Agent Runners](#agent-runners) above.
+Single entry point for agent execution. Routes to the API or CLI runner based on the agent config type (`CliAgentConfig` or `ApiAgentConfig`), with conversation persistence. See [Agent Runners](#agent-runners) above.
 
 ### API Runner (`agent/api/runner.py`)
 
@@ -211,15 +211,11 @@ Wraps the Claude Code SDK to stream messages from the CLI subprocess. See [Claud
 
 Loads and composes the system prompt from multiple sources: the bot's base prompt, global coding guidelines, and per-repo/per-language overrides from the `.nominal/` directory. Language detection is based on file extensions in the PR diff.
 
-### Conversation Tracking (`agent/cli/session.py`)
-
-Bridges the conversation store and the agent runner. Looks up the existing conversation ID for a PR/bot pair, passes it to the agent for multi-turn continuity, and stores the new conversation ID after execution. Only used in webhook mode (CLI and CI are stateless).
-
-### Conversation Store and Job Queue (`conversation/memory.py`, `jobs/queue.py`)
+### Conversation Store and Job Queue (`conversation/memory.py`, `jobs/queue/asyncio.py`)
 
 - **ConversationStore** — a unified in-memory store with two parallel dicts keyed by `(platform, repo, pr_number, bot_type)`: lightweight conversation IDs and full message histories (API mode only). Used to resume conversations across multiple interactions on the same PR.
-- **AsyncioJobQueue** — per-PR async job queue for in-process mode. Each PR key gets its own `asyncio.Queue` with a single consumer task, ensuring that agent invocations on the same PR run serially (no race conditions). The consumer and queue are cleaned up when drained.
-- **RedisJobQueue** — Redis-backed per-PR job queue for Kubernetes mode (`jobs/redis_queue.py`). Uses Redis lists for serial execution and Redis pub/sub for event-driven job completion. Each PR key gets a consumer task that loops with `BRPOP`, creates K8s Jobs, and awaits completion signals — no K8s API polling required.
+- **AsyncioJobQueue** — per-PR async job queue for in-process mode (`jobs/queue/asyncio.py`). Each PR key gets its own `asyncio.Queue` with a single consumer task, ensuring that agent invocations on the same PR run serially (no race conditions). The consumer and queue are cleaned up when drained.
+- **RedisJobQueue** — Redis-backed per-PR job queue for Kubernetes mode (`jobs/queue/redis.py`). Uses Redis lists for serial execution and Redis pub/sub for event-driven job completion. Each PR key gets a consumer task that loops with `BRPOP`, creates K8s Jobs, and awaits completion signals — no K8s API polling required.
 
 ### Cost Tracking (`llm/cost.py`)
 
@@ -297,11 +293,13 @@ nominal_code/
 ├── main.py              # Entry point: dispatches to webhook server, CLI, or CI
 ├── config.py            # Frozen dataclass config loaded from env vars / files
 ├── models.py            # Shared enums (EventType, BotType, FileStatus) and dataclasses
-├── http.py              # request_with_retry(): HTTP request helper with transient error retries
 ├── commands/
 │   ├── cli.py           # One-shot review CLI (argparse, platform construction)
 │   ├── ci.py            # CI mode dispatcher (delegates to platform-specific CI modules)
-│   └── job.py           # Job runner CLI command
+│   └── webhook/         # Webhook server and K8s job entrypoint
+│       ├── server.py    # aiohttp app with /health and /webhooks/{platform} routes
+│       ├── helpers.py   # Pre-flight checks (auth, reactions, logging), mention extraction
+│       └── entrypoint.py # K8s job runner CLI command
 ├── llm/
 │   ├── provider.py      # LLM provider protocol and base classes
 │   ├── registry.py      # Provider registry and factory
@@ -313,7 +311,7 @@ nominal_code/
 │   ├── openai.py        # OpenAI provider implementation (also used by DeepSeek, Groq, Together, Fireworks)
 │   └── google.py        # Google Gemini provider implementation
 ├── agent/
-│   ├── router.py        # Dispatcher: routes to API or CLI runner based on config
+│   ├── invoke.py        # Single entry point: invoke_agent() (with persistence) + invoke_agent_stateless()
 │   ├── result.py        # AgentResult dataclass (output, turns, conversation ID, cost)
 │   ├── prompts.py       # Guideline loading, language detection, system prompt composition
 │   ├── errors.py        # Async context manager for handler error handling
@@ -321,30 +319,31 @@ nominal_code/
 │   │   ├── runner.py    # LLM provider API agentic loop (tool use)
 │   │   └── tools.py     # Tool definitions and execution (Read, Glob, Grep, Bash)
 │   └── cli/
-│       ├── runner.py    # Claude Code CLI subprocess wrapper (SDK integration)
-│       └── session.py   # Bridges conversation store and agent runner for multi-turn continuity
+│       └── runner.py    # Claude Code CLI subprocess wrapper (SDK integration)
 ├── conversation/
 │   ├── base.py          # Conversation store protocol
 │   ├── memory.py        # In-memory conversation store
 │   └── redis.py         # Redis-backed conversation store
 ├── handlers/
 │   ├── review.py        # Reviewer bot: structured code review with inline comments
-│   └── worker.py        # Worker bot: full-access agent that pushes code changes
-├── server/
-│   ├── app.py           # aiohttp app with /health and /webhooks/{platform} routes
-│   ├── mention.py       # @mention extraction from comment text
-│   └── router.py        # Pre-flight checks (auth, reactions, logging)
+│   ├── worker.py        # Worker bot: full-access agent that pushes code changes
+│   ├── diff.py          # Diff handling utilities
+│   └── output.py        # Output parsing and JSON repair
 ├── jobs/
 │   ├── payload.py       # ReviewJob serializable dataclass
-│   ├── queue.py         # AsyncioJobQueue (per-PR in-memory async queue)
-│   ├── redis_queue.py   # RedisJobQueue (Redis-backed per-PR queue + pub/sub)
-│   ├── signals.py       # Job completion pub/sub signals (used by K8s Job pods)
-│   ├── process.py       # ProcessRunner: job enqueueing and handler dispatch
-│   ├── runner.py        # Job runner protocol
-│   └── kubernetes.py    # Kubernetes Job dispatcher with Redis queue integration
+│   ├── execute.py       # Shared execution logic: routes by bot type, prepares and runs jobs
+│   ├── runner/          # Job runner implementations
+│   │   ├── base.py      # JobRunner protocol
+│   │   ├── process.py   # ProcessRunner: job enqueueing and handler dispatch
+│   │   └── kubernetes.py # Kubernetes Job dispatcher with Redis queue integration
+│   └── queue/           # Job queue implementations
+│       ├── base.py      # JobQueue protocol
+│       ├── asyncio.py   # AsyncioJobQueue (per-PR in-memory async queue)
+│       └── redis.py     # RedisJobQueue (Redis-backed per-PR queue + pub/sub)
 ├── platforms/
 │   ├── base.py          # Protocol definitions and shared dataclasses
 │   ├── registry.py      # Self-registering platform factory pattern
+│   ├── http.py          # request_with_retry(): HTTP request helper with transient error retries
 │   ├── github/
 │   │   ├── auth.py      # GitHubAuth ABC, PAT and App auth implementations
 │   │   ├── ci.py        # CI mode: build event, platform, and workspace from GitHub Actions env vars

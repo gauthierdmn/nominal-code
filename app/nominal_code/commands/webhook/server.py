@@ -1,63 +1,157 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+import sys
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
+from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from aiohttp import web
+from environs import Env
 
+from nominal_code.commands.webhook.helpers import acknowledge_event, extract_mention
+from nominal_code.config import Config
 from nominal_code.jobs.payload import JobPayload
 from nominal_code.models import COMMENT_EVENT_TYPES, BotType
+from nominal_code.platforms import build_platforms
 from nominal_code.platforms.base import (
     CommentEvent,
     LifecycleEvent,
+    Platform,
     PullRequestEvent,
     ReviewerPlatform,
 )
-from nominal_code.server.mention import extract_mention
-from nominal_code.server.router import acknowledge_event
+from nominal_code.workspace.cleanup import WorkspaceCleaner
 
 if TYPE_CHECKING:
-    from nominal_code.config import Config
-    from nominal_code.jobs.runner import JobRunner
-    from nominal_code.platforms.base import Platform
+    from nominal_code.jobs.runner.base import JobRunner
 
 logger: logging.Logger = logging.getLogger(__name__)
+env: Env = Env()
 
 
-def _should_process_event(event: PullRequestEvent, config: Config) -> bool:
+async def run_webhook_server() -> None:
     """
-    Check whether an event passes the PR title tag filters.
-
-    When both tag lists are empty, all events are processed (backward
-    compatible). Exclude tags take priority over include tags.
-
-    Args:
-        event (PullRequestEvent): The parsed webhook event.
-        config (Config): Application configuration with tag filter lists.
-
-    Returns:
-        bool: True if the event should be processed.
+    Async core: load config, build platforms, create app, and start server.
     """
 
-    if not config.pr_title_include_tags and not config.pr_title_exclude_tags:
-        return True
+    logger.info("Loading configuration from environment")
 
-    title_lower: str = event.pr_title.lower()
+    try:
+        config: Config = Config.from_env()
+    except (OSError, ValueError) as exc:
+        logger.error("Configuration error: %s", exc)
+        sys.exit(1)
 
-    for tag in config.pr_title_exclude_tags:
-        if f"[{tag}]" in title_lower:
-            return False
+    platforms: dict[str, Platform] = build_platforms()
 
-    if config.pr_title_include_tags:
-        for tag in config.pr_title_include_tags:
-            if f"[{tag}]" in title_lower:
-                return True
+    if not platforms:
+        logger.error(
+            "No platforms configured. "
+            "Set GITHUB_TOKEN or GITLAB_TOKEN to enable a platform."
+        )
+        sys.exit(1)
 
-        return False
+    runner: JobRunner
 
-    return True
+    if config.kubernetes is not None:
+        redis_url: str = env.str("REDIS_URL", "")
+
+        if not redis_url:
+            logger.error("REDIS_URL is required when JOB_RUNNER=kubernetes")
+            sys.exit(1)
+
+        from nominal_code.jobs.queue.redis import RedisJobQueue
+        from nominal_code.jobs.runner.kubernetes import KubernetesRunner
+
+        redis_queue: RedisJobQueue = RedisJobQueue(redis_url)
+
+        runner = KubernetesRunner(
+            config=config.kubernetes,
+            queue=redis_queue,
+        )
+    else:
+        from nominal_code.conversation.memory import MemoryConversationStore
+        from nominal_code.jobs.queue.asyncio import AsyncioJobQueue
+        from nominal_code.jobs.runner.process import ProcessRunner
+
+        conversation_store: MemoryConversationStore = MemoryConversationStore()
+        job_queue: AsyncioJobQueue = AsyncioJobQueue()
+
+        runner = ProcessRunner(
+            config=config,
+            platforms=platforms,
+            conversation_store=conversation_store,
+            queue=job_queue,
+        )
+
+    app: web.Application = create_app(
+        config=config,
+        platforms=platforms,
+        runner=runner,
+    )
+
+    enabled: list[str] = list(platforms.keys())
+
+    bots: list[str] = []
+
+    if config.worker is not None:
+        bots.append(f"worker=@{config.worker.bot_username}")
+
+    if config.reviewer is not None:
+        bots.append(f"reviewer=@{config.reviewer.bot_username}")
+
+    runner_mode: str = "kubernetes" if config.kubernetes is not None else "in-process"
+
+    logger.info(
+        "Starting server on %s:%d | platforms=%s | %s | runner=%s | allowed_users=%s",
+        config.webhook_host,
+        config.webhook_port,
+        enabled,
+        " | ".join(bots),
+        runner_mode,
+        config.allowed_users,
+    )
+
+    cleaner: WorkspaceCleaner | None = None
+
+    if config.cleanup_interval_hours > 0:
+        cleaner = WorkspaceCleaner(
+            base_dir=config.workspace_base_dir,
+            platforms=platforms,
+            cleanup_wait=timedelta(hours=config.cleanup_interval_hours),
+        )
+
+    web_runner: web.AppRunner = web.AppRunner(app)
+
+    await web_runner.setup()
+
+    site: web.TCPSite = web.TCPSite(
+        runner=web_runner,
+        host=config.webhook_host,
+        port=config.webhook_port,
+    )
+
+    try:
+        if cleaner is not None:
+            cleaner.purge()
+            await cleaner.start()
+
+        await site.start()
+        logger.info("Server is running, waiting for webhooks...")
+
+        await asyncio.Event().wait()
+    except asyncio.CancelledError:
+        pass
+    finally:
+        logger.info("Shutting down...")
+
+        if cleaner is not None:
+            await cleaner.stop()
+
+        await web_runner.cleanup()
 
 
 def create_app(
@@ -93,6 +187,40 @@ def create_app(
         app.router.add_post(path=f"/webhooks/{platform_name}", handler=handler)
 
     return app
+
+
+def _should_process_event(event: PullRequestEvent, config: Config) -> bool:
+    """
+    Check whether an event passes the PR title tag filters.
+
+    When both tag lists are empty, all events are processed (backward
+    compatible). Exclude tags take priority over include tags.
+
+    Args:
+        event (PullRequestEvent): The parsed webhook event.
+        config (Config): Application configuration with tag filter lists.
+
+    Returns:
+        bool: True if the event should be processed.
+    """
+
+    if not config.pr_title_include_tags and not config.pr_title_exclude_tags:
+        return True
+
+    title_lower: str = event.pr_title.lower()
+
+    for tag in config.pr_title_exclude_tags:
+        if f"[{tag}]" in title_lower:
+            return False
+
+    if config.pr_title_include_tags:
+        for tag in config.pr_title_include_tags:
+            if f"[{tag}]" in title_lower:
+                return True
+
+        return False
+
+    return True
 
 
 async def _handle_health(request: web.Request) -> web.Response:

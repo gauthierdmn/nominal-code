@@ -7,7 +7,7 @@ from urllib.parse import quote
 
 import httpx
 
-from nominal_code.http import request_with_retry
+from nominal_code.platforms.http import request_with_retry
 
 GITLAB_API_BASE = "https://gitlab.com/api/v4"
 TIMEOUT = 30.0

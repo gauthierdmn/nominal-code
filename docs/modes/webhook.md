@@ -45,7 +45,7 @@ You also need a publicly reachable server (or a tunnel like ngrok for developmen
 
 ```bash
 cd app
-uv run nominal-code
+uv run nominal-code serve
 ```
 
 You should see:

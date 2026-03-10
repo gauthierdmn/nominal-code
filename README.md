@@ -83,7 +83,7 @@ export ALLOWED_USERS=alice,bob
 export GITHUB_TOKEN=ghp_...
 export GITHUB_WEBHOOK_SECRET=your-secret
 
-uv run nominal-code
+uv run nominal-code serve
 ```
 
 The server supports **GitHub App authentication** as an alternative to PATs, **auto-triggering** reviews on PR lifecycle events, and **multi-turn conversations** that carry context across comments. See [Getting Started](https://gauthierdmn.github.io/nominal-code/getting-started/) for the full setup.

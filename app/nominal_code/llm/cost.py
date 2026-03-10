@@ -100,6 +100,45 @@ def compute_cost(usage: TokenUsage, model: str) -> float | None:
     return usage.compute_cost(pricing)
 
 
+def format_cost_summary(cost: CostSummary | None) -> str:
+    """
+    Format a cost summary for log output.
+
+    Args:
+        cost (CostSummary | None): The cost summary, or ``None`` if
+            cost tracking was not available.
+
+    Returns:
+        str: Formatted multi-line string prefixed with a newline,
+            or empty string if no cost data is available.
+    """
+
+    if cost is None:
+        return ""
+
+    parts: list[str] = []
+
+    if cost.model:
+        parts.append(f"  Model: {cost.model} ({cost.provider})")
+
+    tokens_in: int = cost.total_input_tokens
+    tokens_out: int = cost.total_output_tokens
+    tokens_line: str = f"  Tokens: {tokens_in:,} in / {tokens_out:,} out"
+
+    if cost.total_cache_read_tokens > 0:
+        tokens_line += f" (cache read: {cost.total_cache_read_tokens:,})"
+
+    parts.append(tokens_line)
+
+    if cost.total_cost_usd is not None:
+        parts.append(f"  Cost: ${cost.total_cost_usd:.4f}")
+
+    if cost.num_api_calls > 0:
+        parts.append(f"  API calls: {cost.num_api_calls}")
+
+    return "\n" + "\n".join(parts)
+
+
 def build_cost_summary(
     usage: TokenUsage | None,
     model: str,

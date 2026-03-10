@@ -7,14 +7,13 @@ import pytest
 
 from nominal_code.commands.ci import (
     _build_ci_config,
-    _format_cost_summary,
-    _load_platform_ci,
     run_ci_review,
 )
 from nominal_code.config import ApiAgentConfig
 from nominal_code.handlers.review import ReviewResult
-from nominal_code.llm.cost import CostSummary
+from nominal_code.llm.cost import CostSummary, format_cost_summary
 from nominal_code.models import AgentReview, EventType, ProviderName, ReviewFinding
+from nominal_code.platforms import load_platform_ci
 from nominal_code.platforms.base import PlatformName, PullRequestEvent
 
 DUMMY_EVENT = PullRequestEvent(
@@ -32,7 +31,7 @@ CI_ENV = {
     "INPUT_CODING_GUIDELINES": "",
 }
 
-LOAD_CI = "nominal_code.commands.ci._load_platform_ci"
+LOAD_CI = "nominal_code.commands.ci.load_platform_ci"
 REVIEW = "nominal_code.commands.ci.review"
 
 
@@ -145,7 +144,7 @@ class TestBuildCiConfig:
 
 class TestFormatCostSummary:
     def test_none_returns_empty(self):
-        result = _format_cost_summary(None)
+        result = format_cost_summary(None)
 
         assert result == ""
 
@@ -157,7 +156,7 @@ class TestFormatCostSummary:
             total_output_tokens=50,
         )
 
-        result = _format_cost_summary(cost)
+        result = format_cost_summary(cost)
 
         assert "gpt-4.1" in result
         assert "openai" in result
@@ -168,7 +167,7 @@ class TestFormatCostSummary:
             total_output_tokens=500,
         )
 
-        result = _format_cost_summary(cost)
+        result = format_cost_summary(cost)
 
         assert "1,000 in" in result
         assert "500 out" in result
@@ -180,7 +179,7 @@ class TestFormatCostSummary:
             total_cache_read_tokens=200,
         )
 
-        result = _format_cost_summary(cost)
+        result = format_cost_summary(cost)
 
         assert "cache read: 200" in result
 
@@ -191,7 +190,7 @@ class TestFormatCostSummary:
             total_cache_read_tokens=0,
         )
 
-        result = _format_cost_summary(cost)
+        result = format_cost_summary(cost)
 
         assert "cache read" not in result
 
@@ -202,7 +201,7 @@ class TestFormatCostSummary:
             total_cost_usd=0.0123,
         )
 
-        result = _format_cost_summary(cost)
+        result = format_cost_summary(cost)
 
         assert "$0.0123" in result
 
@@ -213,7 +212,7 @@ class TestFormatCostSummary:
             num_api_calls=3,
         )
 
-        result = _format_cost_summary(cost)
+        result = format_cost_summary(cost)
 
         assert "API calls: 3" in result
 
@@ -224,21 +223,21 @@ class TestFormatCostSummary:
             num_api_calls=0,
         )
 
-        result = _format_cost_summary(cost)
+        result = format_cost_summary(cost)
 
         assert "API calls" not in result
 
 
 class TestLoadPlatformCi:
     def test_load_platform_ci_github(self):
-        module = _load_platform_ci(PlatformName.GITHUB)
+        module = load_platform_ci(PlatformName.GITHUB)
 
         assert hasattr(module, "build_event")
         assert hasattr(module, "build_platform")
         assert hasattr(module, "resolve_workspace")
 
     def test_load_platform_ci_gitlab(self):
-        module = _load_platform_ci(PlatformName.GITLAB)
+        module = load_platform_ci(PlatformName.GITLAB)
 
         assert hasattr(module, "build_event")
         assert hasattr(module, "build_platform")

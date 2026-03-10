@@ -16,6 +16,7 @@ platforms/
 ├── __init__.py        # Side-effect imports (github, gitlab); re-exports build_platforms()
 ├── base.py            # Protocol definitions (Platform, ReviewerPlatform) and shared dataclasses
 ├── registry.py        # register_platform() / build_platforms() — service locator pattern
+├── http.py            # request_with_retry(): HTTP request helper with transient error retries
 ├── github/
 │   ├── __init__.py    # Re-exports: GitHubPlatform, auth classes, factory, load_private_key
 │   ├── auth.py        # GitHubAuth ABC, GitHubPatAuth, GitHubAppAuth, load_private_key()

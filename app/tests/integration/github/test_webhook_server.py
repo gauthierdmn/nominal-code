@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from aiohttp import web
 
+from nominal_code.commands.webhook.server import create_app
 from nominal_code.config import (
     CliAgentConfig,
     Config,
@@ -13,12 +14,11 @@ from nominal_code.config import (
     WorkerConfig,
 )
 from nominal_code.conversation.memory import MemoryConversationStore
-from nominal_code.jobs.process import ProcessRunner
-from nominal_code.jobs.queue import AsyncioJobQueue
+from nominal_code.jobs.queue.asyncio import AsyncioJobQueue
+from nominal_code.jobs.runner.process import ProcessRunner
 from nominal_code.models import EventType
 from nominal_code.platforms.github import GitHubPlatform
 from nominal_code.platforms.github.auth import GitHubPatAuth
-from nominal_code.server.app import create_app
 from tests.integration.conftest import (
     BranchInfo,
     install_enqueue_hook,
@@ -129,7 +129,7 @@ async def test_webhook_server_posts_review(
         job_enqueued = install_enqueue_hook(job_queue)
 
         with patch(
-            "nominal_code.agent.cli.runner.run",
+            "nominal_code.agent.invoke.run_cli_agent",
             new_callable=AsyncMock,
             return_value=BUGGY_AGENT_RESULT,
         ):

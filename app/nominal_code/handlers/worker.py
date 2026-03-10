@@ -5,11 +5,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from nominal_code.agent.errors import handle_agent_errors
+from nominal_code.agent.invoke import invoke_agent
 from nominal_code.agent.prompts import resolve_system_prompt
-from nominal_code.agent.router import handle_event
 from nominal_code.models import BotType
 from nominal_code.platforms.base import CommentEvent, CommentReply
-from nominal_code.workspace.setup import create_workspace, resolve_branch
+from nominal_code.workspace.setup import create_workspace
 
 if TYPE_CHECKING:
     from nominal_code.config import Config
@@ -39,16 +39,10 @@ async def review_and_fix(
             conversation continuity.
     """
 
-    effective_event: CommentEvent | None = await resolve_branch(
+    async with handle_agent_errors(
         event=event,
         platform=platform,
-    )
-
-    if effective_event is None:
-        return
-
-    async with handle_agent_errors(
-        event=event, platform=platform, agent_label="worker"
+        agent_label="worker",
     ):
         workspace: GitWorkspace = create_workspace(
             event=event,
@@ -61,9 +55,7 @@ async def review_and_fix(
         if config.worker is None:
             raise RuntimeError("Worker config is required but not configured")
 
-        file_paths: list[Path] = (
-            [Path(effective_event.file_path)] if effective_event.file_path else []
-        )
+        file_paths: list[Path] = [Path(event.file_path)] if event.file_path else []
         system_prompt: str = resolve_system_prompt(
             workspace=workspace,
             config=config,
@@ -71,12 +63,12 @@ async def review_and_fix(
             file_paths=file_paths,
         )
         full_prompt: str = _build_prompt(
-            event=effective_event,
+            event=event,
             user_prompt=prompt,
             deps_path=workspace.deps_path,
         )
 
-        result = await handle_event(
+        result = await invoke_agent(
             event=event,
             bot_type=BotType.WORKER,
             system_prompt=system_prompt,

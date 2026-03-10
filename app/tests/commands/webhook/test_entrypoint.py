@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nominal_code.commands.job import run_job_main
+from nominal_code.commands.webhook.entrypoint import run_job_main
 from nominal_code.jobs.payload import JobPayload
 from nominal_code.models import EventType
 from nominal_code.platforms.base import CommentEvent, PlatformName
@@ -69,16 +69,16 @@ class TestRunJobMain:
 
         with (
             patch(
-                "nominal_code.commands.job._build_platform",
+                "nominal_code.commands.webhook.entrypoint._build_platform",
                 return_value=mock_platform,
             ),
             patch(
-                "nominal_code.commands.job.review",
+                "nominal_code.commands.webhook.entrypoint.execute_job",
                 new_callable=AsyncMock,
                 return_value=mock_review_result,
             ),
             patch(
-                "nominal_code.commands.job.post_review_result",
+                "nominal_code.commands.webhook.entrypoint.post_review_result",
                 new_callable=AsyncMock,
             ) as mock_post,
         ):
@@ -103,11 +103,11 @@ class TestRunJobMain:
 
         with (
             patch(
-                "nominal_code.commands.job._build_platform",
+                "nominal_code.commands.webhook.entrypoint._build_platform",
                 return_value=mock_platform,
             ),
             patch(
-                "nominal_code.commands.job.review",
+                "nominal_code.commands.webhook.entrypoint.execute_job",
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("Agent failed"),
             ),
@@ -143,20 +143,20 @@ class TestPublishCompletion:
 
         with (
             patch(
-                "nominal_code.commands.job._build_platform",
+                "nominal_code.commands.webhook.entrypoint._build_platform",
                 return_value=mock_platform,
             ),
             patch(
-                "nominal_code.commands.job.review",
+                "nominal_code.commands.webhook.entrypoint.execute_job",
                 new_callable=AsyncMock,
                 return_value=mock_review_result,
             ),
             patch(
-                "nominal_code.commands.job.post_review_result",
+                "nominal_code.commands.webhook.entrypoint.post_review_result",
                 new_callable=AsyncMock,
             ),
             patch(
-                "nominal_code.commands.job.publish_job_completion",
+                "nominal_code.commands.webhook.entrypoint.publish_job_completion",
             ) as mock_publish,
         ):
             result = await run_job_main()
@@ -186,16 +186,16 @@ class TestPublishCompletion:
 
         with (
             patch(
-                "nominal_code.commands.job._build_platform",
+                "nominal_code.commands.webhook.entrypoint._build_platform",
                 return_value=mock_platform,
             ),
             patch(
-                "nominal_code.commands.job.review",
+                "nominal_code.commands.webhook.entrypoint.execute_job",
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("Agent failed"),
             ),
             patch(
-                "nominal_code.commands.job.publish_job_completion",
+                "nominal_code.commands.webhook.entrypoint.publish_job_completion",
             ) as mock_publish,
         ):
             result = await run_job_main()
@@ -232,20 +232,20 @@ class TestPublishCompletion:
 
         with (
             patch(
-                "nominal_code.commands.job._build_platform",
+                "nominal_code.commands.webhook.entrypoint._build_platform",
                 return_value=mock_platform,
             ),
             patch(
-                "nominal_code.commands.job.review",
+                "nominal_code.commands.webhook.entrypoint.execute_job",
                 new_callable=AsyncMock,
                 return_value=mock_review_result,
             ),
             patch(
-                "nominal_code.commands.job.post_review_result",
+                "nominal_code.commands.webhook.entrypoint.post_review_result",
                 new_callable=AsyncMock,
             ),
             patch(
-                "nominal_code.commands.job.publish_job_completion",
+                "nominal_code.commands.webhook.entrypoint.publish_job_completion",
             ) as mock_publish,
         ):
             result = await run_job_main()

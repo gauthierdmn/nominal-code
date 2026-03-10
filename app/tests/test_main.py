@@ -63,34 +63,43 @@ class TestMain:
 
                 mock_cli.assert_called_once()
 
-    def test_main_calls_asyncio_run_when_no_review_arg(self):
-        with patch.object(sys, "argv", ["nominal-code"]):
+    def test_main_serve_calls_asyncio_run(self):
+        with patch.object(sys, "argv", ["nominal-code", "serve"]):
             with patch("nominal_code.main.setup_logging"):
-                with patch("nominal_code.main._async_main", new=MagicMock()):
+                with patch(
+                    "nominal_code.commands.webhook.server.run_webhook_server",
+                    new=MagicMock(),
+                ):
                     with patch("nominal_code.main.asyncio.run") as mock_run:
                         main()
 
                         mock_run.assert_called_once()
 
-    def test_main_handles_keyboard_interrupt_gracefully(self):
-        with patch.object(sys, "argv", ["nominal-code"]):
+    def test_main_serve_handles_keyboard_interrupt_gracefully(self):
+        with patch.object(sys, "argv", ["nominal-code", "serve"]):
             with patch("nominal_code.main.setup_logging"):
-                with patch("nominal_code.main._async_main", new=MagicMock()):
+                with patch(
+                    "nominal_code.commands.webhook.server.run_webhook_server",
+                    new=MagicMock(),
+                ):
                     with patch(
                         "nominal_code.main.asyncio.run",
                         side_effect=KeyboardInterrupt,
                     ):
                         main()
 
-    def test_main_calls_setup_logging_before_asyncio_run(self):
+    def test_main_serve_calls_setup_logging_before_asyncio_run(self):
         call_order = []
 
-        with patch.object(sys, "argv", ["nominal-code"]):
+        with patch.object(sys, "argv", ["nominal-code", "serve"]):
             with patch(
                 "nominal_code.main.setup_logging",
                 side_effect=lambda: call_order.append("setup_logging"),
             ):
-                with patch("nominal_code.main._async_main", new=MagicMock()):
+                with patch(
+                    "nominal_code.commands.webhook.server.run_webhook_server",
+                    new=MagicMock(),
+                ):
                     with patch(
                         "nominal_code.main.asyncio.run",
                         side_effect=lambda *a, **kw: call_order.append("asyncio_run"),
@@ -99,23 +108,44 @@ class TestMain:
 
         assert call_order == ["setup_logging", "asyncio_run"]
 
+    def test_main_no_args_exits_with_error(self):
+        with patch.object(sys, "argv", ["nominal-code"]):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
 
-class TestAsyncMain:
+        assert exc_info.value.code == 1
+
+    def test_main_unknown_command_exits_with_error(self):
+        with patch.object(sys, "argv", ["nominal-code", "bogus"]):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+
+        assert exc_info.value.code == 1
+
+    def test_main_ci_without_platform_exits_with_error(self):
+        with patch.object(sys, "argv", ["nominal-code", "ci"]):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+
+        assert exc_info.value.code == 1
+
+
+class TestRunWebhookServer:
     @pytest.mark.asyncio
-    async def test_async_main_exits_on_config_error(self):
+    async def test_run_webhook_server_exits_on_config_error(self):
         with patch(
-            "nominal_code.main.Config.from_env",
+            "nominal_code.commands.webhook.server.Config.from_env",
             side_effect=ValueError("bad config"),
         ):
             with pytest.raises(SystemExit) as exc_info:
-                from nominal_code.main import _async_main
+                from nominal_code.commands.webhook.server import run_webhook_server
 
-                await _async_main()
+                await run_webhook_server()
 
         assert exc_info.value.code == 1
 
     @pytest.mark.asyncio
-    async def test_async_main_exits_when_no_platforms(self):
+    async def test_run_webhook_server_exits_when_no_platforms(self):
         mock_config = MagicMock()
         mock_config.cleanup_interval_hours = 0
         mock_config.worker = None
@@ -123,11 +153,17 @@ class TestAsyncMain:
         mock_config.webhook_host = "0.0.0.0"
         mock_config.webhook_port = 8080
 
-        with patch("nominal_code.main.Config.from_env", return_value=mock_config):
-            with patch("nominal_code.main.build_platforms", return_value={}):
+        with patch(
+            "nominal_code.commands.webhook.server.Config.from_env",
+            return_value=mock_config,
+        ):
+            with patch(
+                "nominal_code.commands.webhook.server.build_platforms",
+                return_value={},
+            ):
                 with pytest.raises(SystemExit) as exc_info:
-                    from nominal_code.main import _async_main
+                    from nominal_code.commands.webhook.server import run_webhook_server
 
-                    await _async_main()
+                    await run_webhook_server()
 
         assert exc_info.value.code == 1

@@ -5,7 +5,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nominal_code.agent.api.runner import handle_event, run
+from nominal_code.agent.api.runner import run_api_agent
+from nominal_code.agent.invoke import invoke_agent
 from nominal_code.agent.result import AgentResult
 from nominal_code.config import ApiAgentConfig, ProviderConfig
 from nominal_code.conversation.memory import MemoryConversationStore
@@ -47,7 +48,7 @@ class TestRunAgentApi:
             return_value=_make_text_response(text="All good!"),
         )
 
-        result = await run(
+        result = await run_api_agent(
             prompt="Review this code",
             cwd=tmp_path,
             model="test-model",
@@ -68,7 +69,7 @@ class TestRunAgentApi:
             ),
         )
 
-        result = await run(
+        result = await run_api_agent(
             prompt="test",
             cwd=tmp_path,
             model="test-model",
@@ -94,7 +95,7 @@ class TestRunAgentApi:
             ],
         )
 
-        result = await run(
+        result = await run_api_agent(
             prompt="Read hello.py",
             cwd=tmp_path,
             model="test-model",
@@ -127,7 +128,7 @@ class TestRunAgentApi:
             ),
         )
 
-        result = await run(
+        result = await run_api_agent(
             prompt="Review this",
             cwd=tmp_path,
             model="test-model",
@@ -151,7 +152,7 @@ class TestRunAgentApi:
             ),
         )
 
-        result = await run(
+        result = await run_api_agent(
             prompt="Find files",
             cwd=tmp_path,
             model="test-model",
@@ -171,7 +172,7 @@ class TestRunAgentApi:
             side_effect=ProviderError("API down"),
         )
 
-        result = await run(
+        result = await run_api_agent(
             prompt="test",
             cwd=tmp_path,
             model="test-model",
@@ -188,7 +189,7 @@ class TestRunAgentApi:
             side_effect=RuntimeError("boom"),
         )
 
-        result = await run(
+        result = await run_api_agent(
             prompt="test",
             cwd=tmp_path,
             model="test-model",
@@ -215,7 +216,7 @@ class TestRunAgentApi:
             Message(role="assistant", content=[TextBlock(text="first reply")]),
         ]
 
-        result = await run(
+        result = await run_api_agent(
             prompt="follow up",
             cwd=tmp_path,
             model="test-model",
@@ -236,7 +237,7 @@ class TestRunAgentApi:
             return_value=_make_text_response(text="done"),
         )
 
-        result = await run(
+        result = await run_api_agent(
             prompt="hello",
             cwd=tmp_path,
             model="test-model",
@@ -256,7 +257,7 @@ class TestRunAgentApi:
             side_effect=ProviderError("fail"),
         )
 
-        result = await run(
+        result = await run_api_agent(
             prompt="test",
             cwd=tmp_path,
             model="test-model",
@@ -276,7 +277,7 @@ class TestRunAgentApiCost:
             return_value=_make_text_response(text="done", usage=usage),
         )
 
-        result = await run(
+        result = await run_api_agent(
             prompt="test",
             cwd=tmp_path,
             model="gpt-4.1",
@@ -312,7 +313,7 @@ class TestRunAgentApiCost:
             ],
         )
 
-        result = await run(
+        result = await run_api_agent(
             prompt="Read hello.py",
             cwd=tmp_path,
             model="gpt-4.1",
@@ -335,7 +336,7 @@ class TestRunAgentApiCost:
             side_effect=ProviderError("fail"),
         )
 
-        result = await run(
+        result = await run_api_agent(
             prompt="test",
             cwd=tmp_path,
             model="gpt-4.1",
@@ -358,7 +359,7 @@ class TestRunAgentApiCost:
             ),
         )
 
-        result = await run(
+        result = await run_api_agent(
             prompt="test",
             cwd=tmp_path,
             model="gpt-4.1",
@@ -428,15 +429,15 @@ class TestHandleEvent:
 
         with (
             patch(
-                "nominal_code.agent.api.runner.run",
+                "nominal_code.agent.invoke.run_api_agent",
                 side_effect=mock_run,
             ),
             patch(
-                "nominal_code.agent.api.runner.create_provider",
+                "nominal_code.agent.invoke.create_provider",
                 return_value=AsyncMock(),
             ),
         ):
-            await handle_event(
+            await invoke_agent(
                 event=event,
                 bot_type=BotType.WORKER,
                 system_prompt="sys",
@@ -469,15 +470,15 @@ class TestHandleEvent:
 
         with (
             patch(
-                "nominal_code.agent.api.runner.run",
+                "nominal_code.agent.invoke.run_api_agent",
                 new=AsyncMock(return_value=agent_result),
             ),
             patch(
-                "nominal_code.agent.api.runner.create_provider",
+                "nominal_code.agent.invoke.create_provider",
                 return_value=AsyncMock(),
             ),
         ):
-            await handle_event(
+            await invoke_agent(
                 event=event,
                 bot_type=BotType.WORKER,
                 system_prompt="sys",
@@ -521,15 +522,15 @@ class TestHandleEvent:
 
         with (
             patch(
-                "nominal_code.agent.api.runner.run",
+                "nominal_code.agent.invoke.run_api_agent",
                 new=AsyncMock(return_value=agent_result),
             ),
             patch(
-                "nominal_code.agent.api.runner.create_provider",
+                "nominal_code.agent.invoke.create_provider",
                 return_value=AsyncMock(),
             ),
         ):
-            await handle_event(
+            await invoke_agent(
                 event=event,
                 bot_type=BotType.WORKER,
                 system_prompt="sys",
@@ -567,15 +568,15 @@ class TestHandleEvent:
 
         with (
             patch(
-                "nominal_code.agent.api.runner.run",
+                "nominal_code.agent.invoke.run_api_agent",
                 side_effect=mock_run,
             ),
             patch(
-                "nominal_code.agent.api.runner.create_provider",
+                "nominal_code.agent.invoke.create_provider",
                 return_value=AsyncMock(),
             ),
         ):
-            await handle_event(
+            await invoke_agent(
                 event=event,
                 bot_type=BotType.WORKER,
                 system_prompt="sys",
@@ -602,15 +603,15 @@ class TestHandleEvent:
 
         with (
             patch(
-                "nominal_code.agent.api.runner.run",
+                "nominal_code.agent.invoke.run_api_agent",
                 new=AsyncMock(return_value=agent_result),
             ),
             patch(
-                "nominal_code.agent.api.runner.create_provider",
+                "nominal_code.agent.invoke.create_provider",
                 return_value=AsyncMock(),
             ),
         ):
-            await handle_event(
+            await invoke_agent(
                 event=event,
                 bot_type=BotType.WORKER,
                 system_prompt="sys",

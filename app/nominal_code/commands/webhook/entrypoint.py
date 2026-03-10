@@ -2,32 +2,20 @@ from __future__ import annotations
 
 import logging
 import os
-from dataclasses import replace
 from datetime import timedelta
-from types import ModuleType
 
-from nominal_code.config import Config, ProviderConfig
+from nominal_code.config import Config, resolve_provider_config
 from nominal_code.conversation.base import ConversationStore
-from nominal_code.handlers.review import ReviewResult, post_review_result, review
-from nominal_code.handlers.worker import review_and_fix
+from nominal_code.handlers.review import post_review_result
+from nominal_code.jobs.execute import execute_job
 from nominal_code.jobs.payload import JobPayload
-from nominal_code.jobs.signals import publish_job_completion
-from nominal_code.llm.cost import CostSummary
-from nominal_code.llm.registry import PROVIDERS
-from nominal_code.models import BotType, ProviderName
-from nominal_code.platforms.base import (
-    CommentEvent,
-    PlatformName,
-    PullRequestEvent,
-    ReviewerPlatform,
-)
-from nominal_code.platforms.github import ci as github_ci
-from nominal_code.platforms.gitlab import ci as gitlab_ci
-from nominal_code.workspace.setup import resolve_branch
+from nominal_code.jobs.runner.kubernetes import publish_job_completion
+from nominal_code.llm.cost import format_cost_summary
+from nominal_code.models import BotType
+from nominal_code.platforms import load_platform_ci
+from nominal_code.platforms.base import PlatformName, ReviewerPlatform
 
 logger: logging.Logger = logging.getLogger(__name__)
-
-DEFAULT_AGENT_PROVIDER: str = "google"
 
 
 async def run_job_main() -> int:
@@ -112,25 +100,6 @@ async def _run_reviewer_job(
 
     await platform.ensure_auth()
 
-    clone_url: str = platform.build_reviewer_clone_url(
-        repo_full_name=job.event.repo_full_name
-    )
-    event: PullRequestEvent = replace(job.event, clone_url=clone_url)
-
-    resolved_event: PullRequestEvent | None = await resolve_branch(
-        event=event,
-        platform=platform,
-    )
-
-    if resolved_event is None:
-        logger.error(
-            "Cannot resolve branch for %s#%d",
-            job.event.repo_full_name,
-            job.event.pr_number,
-        )
-
-        return 1
-
     logger.info(
         "Running job review for %s#%d on %s",
         job.event.repo_full_name,
@@ -139,14 +108,8 @@ async def _run_reviewer_job(
     )
 
     try:
-        mention_prompt: str = ""
-
-        if isinstance(resolved_event, CommentEvent) and resolved_event.mention_prompt:
-            mention_prompt = resolved_event.mention_prompt
-
-        result: ReviewResult = await review(
-            event=resolved_event,
-            prompt=mention_prompt,
+        result = await execute_job(
+            job=job,
             config=config,
             platform=platform,
             conversation_store=conversation_store,
@@ -160,17 +123,22 @@ async def _run_reviewer_job(
 
         return 1
 
-    await post_review_result(event=resolved_event, result=result, platform=platform)
+    if result is not None:
+        await post_review_result(
+            event=job.event,
+            result=result,
+            platform=platform,
+        )
 
-    cost_info: str = _format_cost_summary(result.cost)
+        cost_info: str = format_cost_summary(cost=result.cost)
 
-    logger.info(
-        "Job review posted for %s#%d (findings=%d)%s",
-        job.event.repo_full_name,
-        job.event.pr_number,
-        len(result.valid_findings),
-        cost_info,
-    )
+        logger.info(
+            "Job review posted for %s#%d (findings=%d)%s",
+            job.event.repo_full_name,
+            job.event.pr_number,
+            len(result.valid_findings),
+            cost_info,
+        )
 
     return 0
 
@@ -195,29 +163,7 @@ async def _run_worker_job(
         int: Exit code (0 on success, 1 on failure).
     """
 
-    if not isinstance(job.event, CommentEvent):
-        logger.error("Worker job requires a comment event")
-
-        return 1
-
     await platform.ensure_auth()
-
-    clone_url: str = platform.build_clone_url(repo_full_name=job.event.repo_full_name)
-    comment_event: CommentEvent = replace(job.event, clone_url=clone_url)
-
-    resolved_event = await resolve_branch(
-        event=comment_event,
-        platform=platform,
-    )
-
-    if resolved_event is None:
-        logger.error(
-            "Cannot resolve branch for %s#%d",
-            job.event.repo_full_name,
-            job.event.pr_number,
-        )
-
-        return 1
 
     logger.info(
         "Running worker job for %s#%d on %s",
@@ -227,9 +173,8 @@ async def _run_worker_job(
     )
 
     try:
-        await review_and_fix(
-            event=resolved_event,
-            prompt=comment_event.mention_prompt or "",
+        await execute_job(
+            job=job,
             config=config,
             platform=platform,
             conversation_store=conversation_store,
@@ -312,7 +257,7 @@ def _build_platform(platform_name: PlatformName) -> ReviewerPlatform:
         ReviewerPlatform: The constructed platform client.
     """
 
-    platform_ci: ModuleType = _load_platform_ci(platform_name=platform_name)
+    platform_ci = load_platform_ci(platform_name=platform_name)
     result: ReviewerPlatform = platform_ci.build_platform()
 
     return result
@@ -333,21 +278,7 @@ def _build_job_config() -> Config:
         ValueError: If ``AGENT_PROVIDER`` is not a recognised provider.
     """
 
-    provider_env: str = os.environ.get(
-        "AGENT_PROVIDER",
-        DEFAULT_AGENT_PROVIDER,
-    )
-
-    try:
-        provider_name: ProviderName = ProviderName(provider_env)
-    except ValueError:
-        available: str = ", ".join(p.value for p in ProviderName)
-
-        raise ValueError(
-            f"Unknown AGENT_PROVIDER: {provider_env!r}. Available: {available}",
-        ) from None
-
-    provider_config: ProviderConfig = PROVIDERS[provider_name]
+    provider_config = resolve_provider_config(default="google")
     model: str = os.environ.get("AGENT_MODEL", "")
 
     try:
@@ -360,43 +291,6 @@ def _build_job_config() -> Config:
         model=model,
         max_turns=max_turns,
     )
-
-
-def _format_cost_summary(cost: CostSummary | None) -> str:
-    """
-    Format a cost summary for log output.
-
-    Args:
-        cost (CostSummary | None): The cost summary.
-
-    Returns:
-        str: Formatted cost string, or empty if no data.
-    """
-
-    if cost is None:
-        return ""
-
-    parts: list[str] = []
-
-    if cost.model:
-        parts.append(f"  Model: {cost.model} ({cost.provider})")
-
-    tokens_in: int = cost.total_input_tokens
-    tokens_out: int = cost.total_output_tokens
-    tokens_line: str = f"  Tokens: {tokens_in:,} in / {tokens_out:,} out"
-
-    if cost.total_cache_read_tokens > 0:
-        tokens_line += f" (cache read: {cost.total_cache_read_tokens:,})"
-
-    parts.append(tokens_line)
-
-    if cost.total_cost_usd is not None:
-        parts.append(f"  Cost: ${cost.total_cost_usd:.4f}")
-
-    if cost.num_api_calls > 0:
-        parts.append(f"  API calls: {cost.num_api_calls}")
-
-    return "\n" + "\n".join(parts)
 
 
 def _publish_completion(exit_code: int) -> None:
@@ -419,20 +313,3 @@ def _publish_completion(exit_code: int) -> None:
 
     status: str = "succeeded" if exit_code == 0 else "failed"
     publish_job_completion(redis_url=redis_url, job_name=job_name, status=status)
-
-
-def _load_platform_ci(platform_name: PlatformName) -> ModuleType:
-    """
-    Import and return the platform-specific CI module.
-
-    Args:
-        platform_name (PlatformName): The target platform.
-
-    Returns:
-        ModuleType: The platform CI module.
-    """
-
-    if platform_name == PlatformName.GITHUB:
-        return github_ci
-
-    return gitlab_ci
