@@ -64,7 +64,7 @@ def _make_github_platform():
 
 def _make_runner(config, platforms):
     mock_runner = MagicMock()
-    mock_runner.run = AsyncMock()
+    mock_runner.enqueue = AsyncMock()
 
     return mock_runner
 
@@ -74,7 +74,7 @@ def app():
     config = _make_config()
     github_platform = _make_github_platform()
     platforms = {"github": github_platform}
-    runner = _make_runner(config, platforms)
+    runner = _make_runner(config=config, platforms=platforms)
 
     return create_app(
         config=config,
@@ -172,7 +172,7 @@ class TestGitHubWebhook:
         app["platforms"]["github"].parse_event.return_value = comment
 
         with patch(
-            "nominal_code.server.app.run_pre_flight",
+            "nominal_code.server.app.acknowledge_event",
             new_callable=AsyncMock,
             return_value=True,
         ):
@@ -187,8 +187,8 @@ class TestGitHubWebhook:
             data = await response.json()
 
             assert data["status"] == "accepted"
-            app["runner"].run.assert_called_once()
-            job = app["runner"].run.call_args.args[0]
+            app["runner"].enqueue.assert_called_once()
+            job = app["runner"].enqueue.call_args.args[0]
 
             assert job.bot_type == "worker"
 
@@ -207,7 +207,7 @@ class TestGitHubWebhook:
         app["platforms"]["github"].parse_event.return_value = comment
 
         with patch(
-            "nominal_code.server.app.run_pre_flight",
+            "nominal_code.server.app.acknowledge_event",
             new_callable=AsyncMock,
             return_value=True,
         ):
@@ -222,8 +222,8 @@ class TestGitHubWebhook:
             data = await response.json()
 
             assert data["status"] == "accepted"
-            app["runner"].run.assert_called_once()
-            job = app["runner"].run.call_args.args[0]
+            app["runner"].enqueue.assert_called_once()
+            job = app["runner"].enqueue.call_args.args[0]
 
             assert job.bot_type == "reviewer"
 
@@ -246,7 +246,7 @@ class TestGitHubWebhook:
         app["platforms"]["github"].parse_event.return_value = comment
 
         with patch(
-            "nominal_code.server.app.run_pre_flight",
+            "nominal_code.server.app.acknowledge_event",
             new_callable=AsyncMock,
             return_value=True,
         ):
@@ -257,7 +257,7 @@ class TestGitHubWebhook:
             )
 
             assert response.status == 200
-            job = app["runner"].run.call_args.args[0]
+            job = app["runner"].enqueue.call_args.args[0]
 
             assert job.bot_type == "worker"
 
@@ -268,7 +268,7 @@ class TestSingleBotConfig:
         config = _make_config(worker=False, reviewer=True)
         github_platform = _make_github_platform()
         platforms = {"github": github_platform}
-        runner = _make_runner(config, platforms)
+        runner = _make_runner(config=config, platforms=platforms)
 
         app = create_app(
             config=config,
@@ -306,7 +306,7 @@ class TestSingleBotConfig:
         config = _make_config(worker=True, reviewer=False)
         github_platform = _make_github_platform()
         platforms = {"github": github_platform}
-        runner = _make_runner(config, platforms)
+        runner = _make_runner(config=config, platforms=platforms)
 
         app = create_app(
             config=config,
@@ -349,7 +349,7 @@ class TestAutoTrigger:
         )
         github_platform = _make_github_platform()
         platforms = {"github": github_platform}
-        runner = _make_runner(config, platforms)
+        runner = _make_runner(config=config, platforms=platforms)
 
         app = create_app(
             config=config,
@@ -370,7 +370,7 @@ class TestAutoTrigger:
         app["platforms"]["github"].parse_event.return_value = event
 
         with patch(
-            "nominal_code.server.app.run_pre_flight",
+            "nominal_code.server.app.acknowledge_event",
             new_callable=AsyncMock,
             return_value=True,
         ):
@@ -385,7 +385,7 @@ class TestAutoTrigger:
             data = await response.json()
 
             assert data["status"] == "accepted"
-            runner.run.assert_called_once()
+            runner.enqueue.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_lifecycle_event_ignored_when_triggers_not_configured(
@@ -395,7 +395,7 @@ class TestAutoTrigger:
         config = _make_config(reviewer=True, reviewer_triggers=[])
         github_platform = _make_github_platform()
         platforms = {"github": github_platform}
-        runner = _make_runner(config, platforms)
+        runner = _make_runner(config=config, platforms=platforms)
 
         app = create_app(
             config=config,
@@ -435,7 +435,7 @@ class TestAutoTrigger:
         )
         github_platform = _make_github_platform()
         platforms = {"github": github_platform}
-        runner = _make_runner(config, platforms)
+        runner = _make_runner(config=config, platforms=platforms)
 
         app = create_app(
             config=config,
@@ -567,7 +567,7 @@ class TestHandleWebhook:
         app["platforms"]["github"].parse_event.return_value = event
 
         with patch(
-            "nominal_code.server.app.run_pre_flight",
+            "nominal_code.server.app.acknowledge_event",
             new=AsyncMock(return_value=True),
         ):
             response = await client.post("/webhooks/github", data=b"{}")
@@ -600,7 +600,7 @@ class TestAutoTriggerJob:
         app["platforms"]["github"].parse_event.return_value = event
 
         with patch(
-            "nominal_code.server.app.run_pre_flight",
+            "nominal_code.server.app.acknowledge_event",
             new=AsyncMock(return_value=True),
         ):
             response = await client.post("/webhooks/github", data=b"{}")
@@ -658,25 +658,25 @@ class TestTitleTagFilter:
         config = _make_config()
         event = self._lifecycle("any title")
 
-        assert _should_process_event(event, config) is True
+        assert _should_process_event(event=event, config=config) is True
 
     def test_exclude_tag_in_title_filters(self):
         config = _make_config(pr_title_exclude_tags=["skip"])
         event = self._lifecycle("fix: some change [skip]")
 
-        assert _should_process_event(event, config) is False
+        assert _should_process_event(event=event, config=config) is False
 
     def test_include_tag_in_title_accepts(self):
         config = _make_config(pr_title_include_tags=["nominalbot"])
         event = self._lifecycle("test: webhook [nominalbot]")
 
-        assert _should_process_event(event, config) is True
+        assert _should_process_event(event=event, config=config) is True
 
     def test_include_tags_set_but_no_match_filters(self):
         config = _make_config(pr_title_include_tags=["nominalbot"])
         event = self._lifecycle("test: unrelated change")
 
-        assert _should_process_event(event, config) is False
+        assert _should_process_event(event=event, config=config) is False
 
     def test_exclude_takes_priority_over_include(self):
         config = _make_config(
@@ -685,43 +685,43 @@ class TestTitleTagFilter:
         )
         event = self._lifecycle("test: [nominalbot] [skip]")
 
-        assert _should_process_event(event, config) is False
+        assert _should_process_event(event=event, config=config) is False
 
     def test_case_insensitive_matching(self):
         config = _make_config(pr_title_include_tags=["nominalbot"])
         event = self._lifecycle("test: [NominalBot] feature")
 
-        assert _should_process_event(event, config) is True
+        assert _should_process_event(event=event, config=config) is True
 
     def test_comment_event_with_pr_title_filtered(self):
         config = _make_config(pr_title_include_tags=["nominalbot"])
         event = self._comment("test: unrelated change")
 
-        assert _should_process_event(event, config) is False
+        assert _should_process_event(event=event, config=config) is False
 
     def test_comment_event_with_pr_title_accepted(self):
         config = _make_config(pr_title_include_tags=["nominalbot"])
         event = self._comment("test: [nominalbot] feature")
 
-        assert _should_process_event(event, config) is True
+        assert _should_process_event(event=event, config=config) is True
 
     def test_multiple_include_tags_any_match(self):
         config = _make_config(pr_title_include_tags=["alpha", "beta"])
         event = self._lifecycle("test: [beta] feature")
 
-        assert _should_process_event(event, config) is True
+        assert _should_process_event(event=event, config=config) is True
 
     def test_multiple_exclude_tags_any_match(self):
         config = _make_config(pr_title_exclude_tags=["skip", "ignore"])
         event = self._lifecycle("test: [ignore] feature")
 
-        assert _should_process_event(event, config) is False
+        assert _should_process_event(event=event, config=config) is False
 
     def test_exclude_only_no_match_accepts(self):
         config = _make_config(pr_title_exclude_tags=["skip"])
         event = self._lifecycle("test: normal feature")
 
-        assert _should_process_event(event, config) is True
+        assert _should_process_event(event=event, config=config) is True
 
 
 class TestAllowedReposFilter:
@@ -730,7 +730,7 @@ class TestAllowedReposFilter:
         config = _make_config(allowed_repos=[])
         github_platform = _make_github_platform()
         platforms = {"github": github_platform}
-        runner = _make_runner(config, platforms)
+        runner = _make_runner(config=config, platforms=platforms)
 
         comment = CommentEvent(
             platform=PlatformName.GITHUB,
@@ -752,7 +752,7 @@ class TestAllowedReposFilter:
         client = await aiohttp_client(app)
 
         with patch(
-            "nominal_code.server.app.run_pre_flight",
+            "nominal_code.server.app.acknowledge_event",
             new_callable=AsyncMock,
             return_value=True,
         ):
@@ -767,7 +767,7 @@ class TestAllowedReposFilter:
         config = _make_config(allowed_repos=["owner/allowed-repo"])
         github_platform = _make_github_platform()
         platforms = {"github": github_platform}
-        runner = _make_runner(config, platforms)
+        runner = _make_runner(config=config, platforms=platforms)
 
         comment = CommentEvent(
             platform=PlatformName.GITHUB,
@@ -798,7 +798,7 @@ class TestAllowedReposFilter:
         config = _make_config(allowed_repos=["owner/allowed-repo"])
         github_platform = _make_github_platform()
         platforms = {"github": github_platform}
-        runner = _make_runner(config, platforms)
+        runner = _make_runner(config=config, platforms=platforms)
 
         comment = CommentEvent(
             platform=PlatformName.GITHUB,
@@ -820,7 +820,7 @@ class TestAllowedReposFilter:
         client = await aiohttp_client(app)
 
         with patch(
-            "nominal_code.server.app.run_pre_flight",
+            "nominal_code.server.app.acknowledge_event",
             new_callable=AsyncMock,
             return_value=True,
         ):
@@ -838,7 +838,7 @@ class TestAllowedReposFilter:
         )
         github_platform = _make_github_platform()
         platforms = {"github": github_platform}
-        runner = _make_runner(config, platforms)
+        runner = _make_runner(config=config, platforms=platforms)
 
         event = LifecycleEvent(
             platform=PlatformName.GITHUB,

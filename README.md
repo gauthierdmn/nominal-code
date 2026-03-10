@@ -88,6 +88,20 @@ uv run nominal-code
 
 The server supports **GitHub App authentication** as an alternative to PATs, **auto-triggering** reviews on PR lifecycle events, and **multi-turn conversations** that carry context across comments. See [Getting Started](https://gauthierdmn.github.io/nominal-code/getting-started/) for the full setup.
 
+### Kubernetes
+
+Deploy the webhook server to Kubernetes for production-grade scaling. The server pod receives webhooks and dispatches each review as a separate Kubernetes Job — no shared state, horizontal scaling out of the box.
+
+```bash
+# Local development with minikube
+cp deploy/overlays/local/secret.yaml.template deploy/overlays/local/secret.yaml
+# fill in your API keys and tokens
+make -C deploy deploy
+make -C deploy port-forward   # localhost:9090
+```
+
+See [Kubernetes Deployment](https://gauthierdmn.github.io/nominal-code/deployment/kubernetes/) for the full guide, including production cluster setup.
+
 ## Configuration highlights
 
 | What | How |
@@ -109,7 +123,7 @@ Full reference: [Configuration](https://gauthierdmn.github.io/nominal-code/refer
 - **Bots:** [Reviewer](https://gauthierdmn.github.io/nominal-code/bots/reviewer/) | [Worker (Beta)](https://gauthierdmn.github.io/nominal-code/bots/worker/)
 - **Reference:** [Configuration](https://gauthierdmn.github.io/nominal-code/reference/configuration/) | [Environment Variables](https://gauthierdmn.github.io/nominal-code/reference/env-vars/)
 - [Architecture](https://gauthierdmn.github.io/nominal-code/architecture/) — request flow, agent runners, workspace layout
-- [Deployment](https://gauthierdmn.github.io/nominal-code/deployment/) — production setup, Docker, health checks
+- [Deployment](https://gauthierdmn.github.io/nominal-code/deployment/) — standalone server, Kubernetes, health checks
 - [Security](https://gauthierdmn.github.io/nominal-code/security/) — trust model, LLM risks, authentication
 
 ## Development

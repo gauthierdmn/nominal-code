@@ -26,27 +26,27 @@ def build_event() -> PullRequestEvent:
     """
 
     repo_full_name: str = os.environ.get("CI_PROJECT_PATH", "")
-    mr_iid_raw: str = os.environ.get("CI_MERGE_REQUEST_IID", "")
+    mr_iid_env: str = os.environ.get("CI_MERGE_REQUEST_IID", "")
     pr_branch: str = os.environ.get(
         "CI_MERGE_REQUEST_SOURCE_BRANCH_NAME",
         "",
     )
 
-    if not repo_full_name or not mr_iid_raw or not pr_branch:
+    if not repo_full_name or not mr_iid_env or not pr_branch:
         logger.error(
             "Missing GitLab CI variables: CI_PROJECT_PATH=%s, "
             "CI_MERGE_REQUEST_IID=%s, "
             "CI_MERGE_REQUEST_SOURCE_BRANCH_NAME=%s",
             repo_full_name,
-            mr_iid_raw,
+            mr_iid_env,
             pr_branch,
         )
         sys.exit(1)
 
     try:
-        pr_number: int = int(mr_iid_raw)
+        pr_number: int = int(mr_iid_env)
     except ValueError:
-        logger.error("CI_MERGE_REQUEST_IID is not an integer: %s", mr_iid_raw)
+        logger.error("CI_MERGE_REQUEST_IID is not an integer: %s", mr_iid_env)
         sys.exit(1)
 
     return PullRequestEvent(

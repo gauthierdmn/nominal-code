@@ -47,7 +47,7 @@ async def _run_review(
     config = Config.for_cli()
 
     with patch(
-        "nominal_code.agent.cli.session.run_agent",
+        "nominal_code.agent.cli.runner.run",
         new_callable=AsyncMock,
         return_value=canned_result,
     ):
@@ -88,9 +88,18 @@ async def test_cli_review_dry_run_does_not_post(
     platform = _build_platform(gitlab_token)
     event = _build_event(buggy_mr)
 
-    await _run_review(platform, event, BUGGY_AGENT_RESULT, dry_run=True)
+    await _run_review(
+        platform=platform,
+        event=event,
+        canned_result=BUGGY_AGENT_RESULT,
+        dry_run=True,
+    )
 
-    notes = await fetch_mr_notes(gitlab_token, GITLAB_TEST_REPO, buggy_mr.number)
+    notes = await fetch_mr_notes(
+        token=gitlab_token,
+        repo=GITLAB_TEST_REPO,
+        mr_iid=buggy_mr.number,
+    )
     user_notes = [note for note in notes if not note.get("system", False)]
     assert not user_notes
 
@@ -103,16 +112,25 @@ async def test_cli_review_posts_review(
     platform = _build_platform(gitlab_token)
     event = _build_event(buggy_mr)
 
-    await _run_review(platform, event, BUGGY_AGENT_RESULT, dry_run=False)
+    await _run_review(
+        platform=platform,
+        event=event,
+        canned_result=BUGGY_AGENT_RESULT,
+        dry_run=False,
+    )
 
-    notes = await fetch_mr_notes(gitlab_token, GITLAB_TEST_REPO, buggy_mr.number)
+    notes = await fetch_mr_notes(
+        token=gitlab_token,
+        repo=GITLAB_TEST_REPO,
+        mr_iid=buggy_mr.number,
+    )
     note_bodies = [note["body"] for note in notes]
     assert any("Found issues" in body for body in note_bodies)
 
     discussions = await fetch_mr_discussions(
-        gitlab_token,
-        GITLAB_TEST_REPO,
-        buggy_mr.number,
+        token=gitlab_token,
+        repo=GITLAB_TEST_REPO,
+        mr_iid=buggy_mr.number,
     )
     inline_discussions = [
         disc
@@ -130,8 +148,17 @@ async def test_cli_review_no_findings_posts_comment(
     platform = _build_platform(gitlab_token)
     event = _build_event(clean_mr)
 
-    await _run_review(platform, event, CLEAN_AGENT_RESULT, dry_run=False)
+    await _run_review(
+        platform=platform,
+        event=event,
+        canned_result=CLEAN_AGENT_RESULT,
+        dry_run=False,
+    )
 
-    notes = await fetch_mr_notes(gitlab_token, GITLAB_TEST_REPO, clean_mr.number)
+    notes = await fetch_mr_notes(
+        token=gitlab_token,
+        repo=GITLAB_TEST_REPO,
+        mr_iid=clean_mr.number,
+    )
     note_bodies = [note["body"] for note in notes]
     assert any("No issues found" in body for body in note_bodies)

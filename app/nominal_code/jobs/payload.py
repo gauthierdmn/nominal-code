@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass
+from typing import Any
 
 from nominal_code.models import EventType
 from nominal_code.platforms.base import (
@@ -17,52 +18,18 @@ class JobPayload:
     """
     Serializable job payload wrapping a platform event.
 
-    Contains the event plus the extra context (prompt, bot type) needed
-    to execute a review job. Auth tokens are not included — those come
-    from K8s Secrets as environment variables.
+    Contains the event plus the bot type needed to execute a review job.
+    The mention prompt (if any) lives on the ``CommentEvent`` itself.
+    Auth tokens are not included — those come from K8s Secrets as
+    environment variables.
 
     Attributes:
         event (CommentEvent | LifecycleEvent): The platform event.
-        prompt (str): Extracted prompt after mention parsing.
         bot_type (str): Bot personality (``"reviewer"`` or ``"worker"``).
     """
 
     event: CommentEvent | LifecycleEvent
-    prompt: str
     bot_type: str
-
-    @property
-    def platform(self) -> str:
-        """
-        Platform identifier from the wrapped event.
-
-        Returns:
-            str: The platform name (e.g. ``"github"``).
-        """
-
-        return self.event.platform
-
-    @property
-    def repo_full_name(self) -> str:
-        """
-        Repository full name from the wrapped event.
-
-        Returns:
-            str: The full repository name (e.g. ``"owner/repo"``).
-        """
-
-        return self.event.repo_full_name
-
-    @property
-    def pr_number(self) -> int:
-        """
-        Pull request number from the wrapped event.
-
-        Returns:
-            int: The PR/MR number.
-        """
-
-        return self.event.pr_number
 
     def serialize(self) -> str:
         """
@@ -75,13 +42,12 @@ class JobPayload:
             str: JSON representation of all fields.
         """
 
-        event_dict: dict[str, object] = asdict(self.event)
+        event_dict: dict[str, object] = asdict(obj=self.event)
         event_dict["is_comment_event"] = isinstance(self.event, CommentEvent)
 
         return json.dumps(
             {
                 "event": event_dict,
-                "prompt": self.prompt,
                 "bot_type": self.bot_type,
             }
         )
@@ -103,15 +69,20 @@ class JobPayload:
             KeyError: If required fields are missing.
         """
 
-        json_data: dict[str, object] = json.loads(data)
-        event_data: dict[str, object] = json_data["event"]  # type: ignore[assignment]
-        is_comment: bool = event_data.pop("is_comment_event")  # type: ignore[assignment]
+        json_data: Any = json.loads(data)
+        event_data: dict[str, Any] = json_data["event"]
+        is_comment: bool = event_data.pop("is_comment_event")
 
         event: PullRequestEvent
 
         pr_number: int = int(str(event_data["pr_number"]))
 
         if is_comment:
+            mention_prompt_val: object = event_data.get("mention_prompt")
+            mention_prompt: str | None = (
+                str(mention_prompt_val) if mention_prompt_val is not None else None
+            )
+
             event = CommentEvent(
                 platform=PlatformName(str(event_data["platform"])),
                 repo_full_name=str(event_data["repo_full_name"]),
@@ -126,6 +97,7 @@ class JobPayload:
                 diff_hunk=str(event_data.get("diff_hunk", "")),
                 file_path=str(event_data.get("file_path", "")),
                 discussion_id=str(event_data.get("discussion_id", "")),
+                mention_prompt=mention_prompt,
             )
         else:
             event = LifecycleEvent(
@@ -141,6 +113,5 @@ class JobPayload:
 
         return cls(
             event=event,
-            prompt=str(json_data["prompt"]),
             bot_type=str(json_data["bot_type"]),
         )

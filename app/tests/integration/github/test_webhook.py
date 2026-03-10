@@ -10,7 +10,6 @@ import pytest
 from aiohttp import web
 from aiohttp.pytest_plugin import AiohttpClient
 
-from nominal_code.agent.cli.queue import JobQueue
 from nominal_code.config import (
     CliAgentConfig,
     Config,
@@ -19,6 +18,7 @@ from nominal_code.config import (
 )
 from nominal_code.conversation.memory import MemoryConversationStore
 from nominal_code.jobs.process import ProcessRunner
+from nominal_code.jobs.queue import AsyncioJobQueue
 from nominal_code.models import EventType
 from nominal_code.platforms.github import GitHubPlatform
 from nominal_code.platforms.github.auth import GitHubPatAuth
@@ -43,9 +43,9 @@ ALLOWED_USER = "test-user"
 
 def _sign_payload(payload: bytes) -> str:
     signature = hmac.new(
-        WEBHOOK_SECRET.encode(),
-        payload,
-        hashlib.sha256,
+        key=WEBHOOK_SECRET.encode(),
+        msg=payload,
+        digestmod=hashlib.sha256,
     ).hexdigest()
 
     return f"sha256={signature}"
@@ -118,19 +118,19 @@ def _build_pull_request_payload(
 def _create_test_app(
     token: str,
     config: Config,
-) -> tuple[web.Application, MemoryConversationStore, JobQueue]:
+) -> tuple[web.Application, MemoryConversationStore, AsyncioJobQueue]:
     platform = GitHubPlatform(
         auth=GitHubPatAuth(token=token),
         webhook_secret=WEBHOOK_SECRET,
     )
     conversation_store = MemoryConversationStore()
-    job_queue = JobQueue()
+    job_queue = AsyncioJobQueue()
     platforms = {"github": platform}
     runner = ProcessRunner(
         config=config,
         platforms=platforms,
         conversation_store=conversation_store,
-        job_queue=job_queue,
+        queue=job_queue,
     )
     app = create_app(
         config=config,
@@ -148,7 +148,9 @@ async def test_webhook_reviewer_mention_posts_review(
     aiohttp_client: AiohttpClient,
 ) -> None:
     config = _build_webhook_config()
-    app, conversation_store, job_queue = _create_test_app(github_token, config)
+    app, conversation_store, job_queue = _create_test_app(
+        token=github_token, config=config
+    )
     client = await aiohttp_client(app)
 
     payload = _build_issue_comment_payload(
@@ -159,7 +161,7 @@ async def test_webhook_reviewer_mention_posts_review(
     signature = _sign_payload(payload_bytes)
 
     with patch(
-        "nominal_code.agent.cli.session.run_agent",
+        "nominal_code.agent.cli.runner.run",
         new_callable=AsyncMock,
         return_value=BUGGY_AGENT_RESULT,
     ):
@@ -178,7 +180,11 @@ async def test_webhook_reviewer_mention_posts_review(
 
         await wait_for_queue_drain(job_queue)
 
-    reviews = await fetch_pr_reviews(github_token, GITHUB_TEST_REPO, buggy_pr.number)
+    reviews = await fetch_pr_reviews(
+        token=github_token,
+        repo=GITHUB_TEST_REPO,
+        pr_number=buggy_pr.number,
+    )
     assert len(reviews) >= 1
     assert "Found issues" in reviews[-1]["body"]
 
@@ -190,7 +196,9 @@ async def test_webhook_worker_mention_posts_reply(
     aiohttp_client: AiohttpClient,
 ) -> None:
     config = _build_webhook_config()
-    app, conversation_store, job_queue = _create_test_app(github_token, config)
+    app, conversation_store, job_queue = _create_test_app(
+        token=github_token, config=config
+    )
     client = await aiohttp_client(app)
 
     worker_result = BUGGY_AGENT_RESULT
@@ -204,7 +212,7 @@ async def test_webhook_worker_mention_posts_reply(
 
     with (
         patch(
-            "nominal_code.agent.cli.session.run_agent",
+            "nominal_code.agent.cli.runner.run",
             new_callable=AsyncMock,
             return_value=worker_result,
         ),
@@ -228,7 +236,11 @@ async def test_webhook_worker_mention_posts_reply(
 
         await wait_for_queue_drain(job_queue)
 
-    comments = await fetch_pr_comments(github_token, GITHUB_TEST_REPO, buggy_pr.number)
+    comments = await fetch_pr_comments(
+        token=github_token,
+        repo=GITHUB_TEST_REPO,
+        pr_number=buggy_pr.number,
+    )
     # The worker handler is mocked, so we just assert the job was dispatched.
     # The "eyes" reaction is posted by enqueue_job before the worker runs.
     assert mock_review_and_fix.called or len(comments) >= 0
@@ -243,7 +255,9 @@ async def test_webhook_lifecycle_auto_trigger(
     config = _build_webhook_config(
         reviewer_triggers=frozenset({EventType.PR_OPENED}),
     )
-    app, conversation_store, job_queue = _create_test_app(github_token, config)
+    app, conversation_store, job_queue = _create_test_app(
+        token=github_token, config=config
+    )
     client = await aiohttp_client(app)
 
     payload = _build_pull_request_payload(
@@ -255,7 +269,7 @@ async def test_webhook_lifecycle_auto_trigger(
     signature = _sign_payload(payload_bytes)
 
     with patch(
-        "nominal_code.agent.cli.session.run_agent",
+        "nominal_code.agent.cli.runner.run",
         new_callable=AsyncMock,
         return_value=BUGGY_AGENT_RESULT,
     ):
@@ -274,7 +288,11 @@ async def test_webhook_lifecycle_auto_trigger(
 
         await wait_for_queue_drain(job_queue)
 
-    reviews = await fetch_pr_reviews(github_token, GITHUB_TEST_REPO, buggy_pr.number)
+    reviews = await fetch_pr_reviews(
+        token=github_token,
+        repo=GITHUB_TEST_REPO,
+        pr_number=buggy_pr.number,
+    )
     assert len(reviews) >= 1
     assert "Found issues" in reviews[-1]["body"]
 
@@ -286,7 +304,7 @@ async def test_webhook_invalid_signature_returns_401(
     aiohttp_client: AiohttpClient,
 ) -> None:
     config = _build_webhook_config()
-    app, _, _ = _create_test_app(github_token, config)
+    app, _, _ = _create_test_app(token=github_token, config=config)
     client = await aiohttp_client(app)
 
     payload = _build_issue_comment_payload(
@@ -315,7 +333,7 @@ async def test_webhook_unauthorized_user_ignored(
     aiohttp_client: AiohttpClient,
 ) -> None:
     config = _build_webhook_config()
-    app, _, job_queue = _create_test_app(github_token, config)
+    app, _, job_queue = _create_test_app(token=github_token, config=config)
     client = await aiohttp_client(app)
 
     payload = _build_issue_comment_payload(
@@ -342,6 +360,10 @@ async def test_webhook_unauthorized_user_ignored(
 
     assert not job_queue._consumers, "Unauthorized user should not trigger a job"
 
-    reviews = await fetch_pr_reviews(github_token, GITHUB_TEST_REPO, buggy_pr.number)
+    reviews = await fetch_pr_reviews(
+        token=github_token,
+        repo=GITHUB_TEST_REPO,
+        pr_number=buggy_pr.number,
+    )
     review_with_findings = [review for review in reviews if review.get("body")]
     assert not review_with_findings

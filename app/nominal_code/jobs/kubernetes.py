@@ -3,13 +3,14 @@ from __future__ import annotations
 import logging
 import os
 import re
-import time
+import uuid
 from typing import Any
 
 import httpx
 
 from nominal_code.config import KubernetesConfig
 from nominal_code.jobs.payload import JobPayload
+from nominal_code.jobs.redis_queue import RedisJobQueue
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -17,43 +18,101 @@ SERVICE_ACCOUNT_TOKEN_PATH: str = "/var/run/secrets/kubernetes.io/serviceaccount
 SERVICE_ACCOUNT_CA_PATH: str = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 API_SERVER_URL: str = "https://kubernetes.default.svc"
 JOB_NAME_MAX_LENGTH: int = 63
-SLUG_PATTERN: re.Pattern[str] = re.compile(r"[^a-z0-9]")
+SLUG_PATTERN: re.Pattern[str] = re.compile(pattern=r"[^a-z0-9]")
+DEFAULT_JOB_TIMEOUT_MARGIN_SECONDS: int = 10
 
 
 class KubernetesRunner:
     """
     Dispatches review jobs by creating Kubernetes ``batch/v1`` Jobs.
 
+    Jobs are enqueued via a ``RedisJobQueue`` for per-PR serial execution.
+    The runner creates K8s Jobs and awaits their completion via Redis
+    pub/sub signals.
+
     Attributes:
         _config (KubernetesConfig): Kubernetes-specific configuration.
+        _queue (RedisJobQueue): Redis-backed per-PR job queue.
     """
 
-    def __init__(self, config: KubernetesConfig) -> None:
+    def __init__(self, config: KubernetesConfig, queue: RedisJobQueue) -> None:
         """
         Initialize the Kubernetes runner.
 
+        Registers itself as the job callback on the queue so that
+        dequeued jobs are processed via ``_execute``.
+
         Args:
             config (KubernetesConfig): Kubernetes-specific configuration.
+            queue (RedisJobQueue): Redis-backed job queue.
         """
 
         self._config = config
+        self._queue = queue
+        self._queue.set_job_callback(self._execute)
 
-    async def run(self, job: JobPayload) -> None:
+    async def enqueue(self, job: JobPayload) -> None:
         """
-        Create a Kubernetes Job for the given review.
+        Enqueue a job for serial per-PR execution.
 
-        Builds the Job spec with the serialized payload as an env var,
-        references configured Secrets, and POSTs to the Kubernetes API.
+        The queue's consumer will call ``_execute`` for each
+        dequeued job.
 
         Args:
             job (JobPayload): The review job to dispatch.
         """
 
+        await self._queue.enqueue(job)
+
+    async def _execute(self, job: JobPayload) -> None:
+        """
+        Create a K8s Job and wait for it to complete via pub/sub.
+
+        Builds the Job spec, POSTs it to the K8s API, then waits for
+        the job pod to publish a completion signal on Redis.
+
+        Args:
+            job (JobPayload): The review job to execute.
+        """
+
         job_name: str = _build_job_name(
-            platform=job.platform,
-            repo_full_name=job.repo_full_name,
-            pr_number=job.pr_number,
+            platform=job.event.platform,
+            repo_full_name=job.event.repo_full_name,
+            pr_number=job.event.pr_number,
         )
+
+        await self._create_k8s_job(job_name=job_name, job=job)
+
+        timeout_seconds: float = (
+            self._config.active_deadline_seconds + DEFAULT_JOB_TIMEOUT_MARGIN_SECONDS
+        )
+
+        try:
+            status: str = await self._queue.await_job_completion(
+                job_name,
+                timeout_seconds,
+            )
+
+            logger.info(
+                "K8s Job %s completed with status: %s",
+                job_name,
+                status,
+            )
+        except TimeoutError:
+            logger.error(
+                "K8s Job %s timed out after %ds",
+                job_name,
+                timeout_seconds,
+            )
+
+    async def _create_k8s_job(self, job_name: str, job: JobPayload) -> None:
+        """
+        POST a Job spec to the Kubernetes API.
+
+        Args:
+            job_name (str): Unique name for the Job resource.
+            job (JobPayload): The review job payload.
+        """
 
         job_spec: dict[str, Any] = self._build_job_spec(
             job_name=job_name,
@@ -71,7 +130,7 @@ class KubernetesRunner:
             timeout=30.0,
         ) as client:
             response: httpx.Response = await client.post(
-                url,
+                url=url,
                 json=job_spec,
                 headers={
                     "Authorization": f"Bearer {token}",
@@ -91,8 +150,8 @@ class KubernetesRunner:
         logger.info(
             "Created K8s Job %s for %s#%d (%s)",
             job_name,
-            job.repo_full_name,
-            job.pr_number,
+            job.event.repo_full_name,
+            job.event.pr_number,
             job.bot_type,
         )
 
@@ -114,18 +173,19 @@ class KubernetesRunner:
             dict[str, Any]: The complete Job resource spec.
         """
 
-        repo_slug: str = _slugify(job.repo_full_name)
+        repo_slug: str = _slugify(job.event.repo_full_name)
 
         labels: dict[str, str] = {
             "app.kubernetes.io/name": "nominal-code",
             "app.kubernetes.io/component": "job",
-            "nominal-code/platform": job.platform,
+            "nominal-code/platform": job.event.platform,
             "nominal-code/repo": repo_slug,
-            "nominal-code/pr-number": str(job.pr_number),
+            "nominal-code/pr-number": str(job.event.pr_number),
         }
 
         env_vars: list[dict[str, str]] = [
             {"name": "REVIEW_JOB_PAYLOAD", "value": payload},
+            {"name": "K8S_JOB_NAME", "value": job_name},
         ]
 
         redis_url: str = os.environ.get("REDIS_URL", "")
@@ -219,8 +279,10 @@ def _build_job_name(
     """
     Generate a unique, K8s-valid Job name.
 
-    Format: ``nominal-review-{platform}-{repo_slug}-{pr}-{timestamp}``.
-    Truncated to 63 characters (K8s name limit).
+    Format: ``nominal-code-{uuid8}-{repo_slug}-{pr}``.
+    The 8-character UUID is placed early so truncation at the
+    63-character K8s limit only clips the descriptive suffix
+    (repo slug, PR number), which are also available in labels.
 
     Args:
         platform (str): Platform identifier.
@@ -231,9 +293,9 @@ def _build_job_name(
         str: A unique, DNS-compatible Job name.
     """
 
+    short_id: str = uuid.uuid4().hex[:8]
     repo_slug: str = _slugify(repo_full_name)
-    timestamp: str = str(int(time.time()))
-    name: str = f"nominal-review-{platform}-{repo_slug}-{pr_number}-{timestamp}"
+    name: str = f"nominal-code-{short_id}-{repo_slug}-{pr_number}"
 
     return name[:JOB_NAME_MAX_LENGTH].rstrip("-")
 
@@ -249,7 +311,7 @@ def _slugify(text: str) -> str:
         str: Lowercased slug with non-alphanumeric chars replaced by ``-``.
     """
 
-    return SLUG_PATTERN.sub("-", text.lower()).strip("-")
+    return SLUG_PATTERN.sub(repl="-", string=text.lower()).strip("-")
 
 
 def _read_service_account_token() -> str:
@@ -263,5 +325,5 @@ def _read_service_account_token() -> str:
         FileNotFoundError: If not running inside a Kubernetes pod.
     """
 
-    with open(SERVICE_ACCOUNT_TOKEN_PATH, encoding="utf-8") as token_file:
+    with open(file=SERVICE_ACCOUNT_TOKEN_PATH, encoding="utf-8") as token_file:
         return token_file.read().strip()

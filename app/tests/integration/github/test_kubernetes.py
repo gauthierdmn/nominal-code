@@ -1,15 +1,17 @@
+# type: ignore
+import asyncio
 import hashlib
 import hmac
 import json
 import os
 import signal
 import subprocess
-import time
-from collections.abc import Generator
+from collections.abc import AsyncGenerator
 from typing import Any
 
 import httpx
 import pytest
+import pytest_asyncio
 
 from tests.integration.conftest import PrInfo
 from tests.integration.github import api as github_api
@@ -28,31 +30,56 @@ JOB_COMPLETION_TIMEOUT = 300
 HEALTH_CHECK_RETRIES = 10
 
 
-def _kubectl(
+async def _kubectl(
     *args: str,
     check: bool = True,
     timeout: int = 30,
-) -> subprocess.CompletedProcess[str]:
+) -> tuple[str, str, int]:
 
-    return subprocess.run(
-        ["kubectl", *args],
-        capture_output=True,
-        text=True,
-        check=check,
-        timeout=timeout,
+    proc = await asyncio.create_subprocess_exec(
+        "kubectl",
+        *args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
     )
 
+    try:
+        stdout_bytes, stderr_bytes = await asyncio.wait_for(
+            proc.communicate(),
+            timeout=timeout,
+        )
+    except TimeoutError:
+        proc.kill()
+        await proc.communicate()
 
-def _kubectl_json(*args: str) -> dict[str, Any]:
+        raise
 
-    result = _kubectl(*args, "-o", "json")
+    returncode = proc.returncode or 0
 
-    return json.loads(result.stdout)
+    if check and returncode != 0:
+        raise subprocess.CalledProcessError(
+            returncode=returncode,
+            cmd=["kubectl", *args],
+            output=stderr_bytes.decode(),
+        )
+
+    return stdout_bytes.decode(), stderr_bytes.decode(), returncode
+
+
+async def _kubectl_json(*args: str) -> dict[str, Any]:
+
+    stdout, _, _ = await _kubectl(*args, "-o", "json")
+
+    return json.loads(stdout)
 
 
 def _sign_payload(payload: str, secret: str) -> str:
 
-    mac = hmac.new(secret.encode(), payload.encode(), hashlib.sha256)
+    mac = hmac.new(
+        key=secret.encode(),
+        msg=payload.encode(),
+        digestmod=hashlib.sha256,
+    )
 
     return f"sha256={mac.hexdigest()}"
 
@@ -79,8 +106,8 @@ def _build_webhook_payload(repo: str, pr_number: int) -> str:
     )
 
 
-@pytest.fixture()
-def port_forward() -> Generator[str]:
+@pytest_asyncio.fixture()
+async def port_forward() -> AsyncGenerator[str]:
 
     proc = subprocess.Popen(
         [
@@ -95,16 +122,17 @@ def port_forward() -> Generator[str]:
         stderr=subprocess.PIPE,
     )
 
-    time.sleep(2)
+    await asyncio.sleep(2)
 
     for _ in range(HEALTH_CHECK_RETRIES):
         try:
-            resp = httpx.get(f"{SERVER_URL}/health", timeout=2.0)
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(f"{SERVER_URL}/health", timeout=2.0)
 
-            if resp.status_code == 200:
-                break
+                if resp.status_code == 200:
+                    break
         except httpx.ConnectError:
-            time.sleep(1)
+            await asyncio.sleep(1)
     else:
         proc.kill()
         pytest.fail("Server health check failed after port-forward")
@@ -129,8 +157,8 @@ async def test_kubernetes_job_dispatch(
     pr_info = buggy_pr
     base_url = port_forward
 
-    payload = _build_webhook_payload(pr_info.repo, pr_info.number)
-    signature = _sign_payload(payload, WEBHOOK_SECRET)
+    payload = _build_webhook_payload(repo=pr_info.repo, pr_number=pr_info.number)
+    signature = _sign_payload(payload=payload, secret=WEBHOOK_SECRET)
 
     async with httpx.AsyncClient() as client:
         resp = await client.post(
@@ -148,7 +176,7 @@ async def test_kubernetes_job_dispatch(
     job_json: dict[str, Any] | None = None
 
     for _ in range(JOB_CREATION_TIMEOUT // 2):
-        result = _kubectl(
+        stdout, _, returncode = await _kubectl(
             "get",
             "jobs",
             "-n",
@@ -160,15 +188,15 @@ async def test_kubernetes_job_dispatch(
             check=False,
         )
 
-        if result.returncode == 0:
-            jobs = json.loads(result.stdout)
+        if returncode == 0:
+            jobs = json.loads(stdout)
 
             if jobs.get("items"):
                 job_json = jobs["items"][0]
 
                 break
 
-        time.sleep(2)
+        await asyncio.sleep(2)
 
     assert job_json is not None, f"No K8s Job created within {JOB_CREATION_TIMEOUT}s"
 
@@ -198,9 +226,9 @@ async def test_kubernetes_job_dispatch(
     assert payload_env is not None, "REVIEW_JOB_PAYLOAD env var not found on job pod"
 
     job_payload = json.loads(payload_env)
-    assert job_payload["platform"] == "github"
-    assert job_payload["pr_number"] == pr_info.number
-    assert job_payload["repo_full_name"] == pr_info.repo
+    assert job_payload["event"]["platform"] == "github"
+    assert job_payload["event"]["pr_number"] == pr_info.number
+    assert job_payload["event"]["repo_full_name"] == pr_info.repo
     assert job_payload["bot_type"] == "reviewer"
 
     env_from = container.get("envFrom", [])
@@ -211,7 +239,7 @@ async def test_kubernetes_job_dispatch(
 
     assert job_json["spec"]["backoffLimit"] == 0
 
-    _kubectl(
+    await _kubectl(
         "wait",
         "--for=condition=complete",
         f"job/{job_name}",
@@ -222,17 +250,17 @@ async def test_kubernetes_job_dispatch(
     )
 
     reviews = await github_api.fetch_pr_reviews(
-        github_token,
-        pr_info.repo,
-        pr_info.number,
+        token=github_token,
+        repo=pr_info.repo,
+        pr_number=pr_info.number,
     )
     reviews_with_body = [review for review in reviews if review.get("body")]
 
     if not reviews_with_body:
         comments = await github_api.fetch_pr_comments(
-            github_token,
-            pr_info.repo,
-            pr_info.number,
+            token=github_token,
+            repo=pr_info.repo,
+            pr_number=pr_info.number,
         )
 
         assert len(comments) > 0, f"No review or comment found on PR #{pr_info.number}"

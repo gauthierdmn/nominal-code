@@ -7,9 +7,8 @@ from dataclasses import dataclass
 
 import pytest
 
-from nominal_code.agent.cli.queue import JobQueue
-from nominal_code.models import BotType
-from nominal_code.platforms.base import PlatformName
+from nominal_code.jobs.payload import JobPayload
+from nominal_code.jobs.queue import AsyncioJobQueue
 from tests.integration.github import api as github_api
 from tests.integration.gitlab import api as gitlab_api
 
@@ -66,7 +65,7 @@ def unique_branch_name(prefix: str) -> str:
 
 
 async def wait_for_queue_drain(
-    job_queue: JobQueue,
+    job_queue: AsyncioJobQueue,
     timeout: float = 60.0,
 ) -> None:
     """
@@ -75,7 +74,7 @@ async def wait_for_queue_drain(
     Returns immediately if no consumers are present.
 
     Args:
-        job_queue (JobQueue): The job queue to monitor.
+        job_queue (AsyncioJobQueue): The job queue to monitor.
         timeout (float): Maximum wait time in seconds.
 
     Raises:
@@ -100,7 +99,7 @@ async def wait_for_queue_drain(
     raise TimeoutError("Job queue did not drain within timeout")
 
 
-def install_enqueue_hook(job_queue: JobQueue) -> asyncio.Event:
+def install_enqueue_hook(job_queue: AsyncioJobQueue) -> asyncio.Event:
     """
     Wrap ``job_queue.enqueue`` to set an event on the first call.
 
@@ -108,7 +107,7 @@ def install_enqueue_hook(job_queue: JobQueue) -> asyncio.Event:
     enqueued. This avoids modifying production code for test observability.
 
     Args:
-        job_queue (JobQueue): The queue to instrument.
+        job_queue (AsyncioJobQueue): The queue to instrument.
 
     Returns:
         asyncio.Event: An event that is set when a job is enqueued.
@@ -117,14 +116,8 @@ def install_enqueue_hook(job_queue: JobQueue) -> asyncio.Event:
     job_enqueued: asyncio.Event = asyncio.Event()
     original_enqueue = job_queue.enqueue
 
-    async def _hooked_enqueue(
-        platform: PlatformName,
-        repo: str,
-        pr_number: int,
-        bot_type: BotType,
-        job: Callable[[], Awaitable[None]],
-    ) -> None:
-        await original_enqueue(platform, repo, pr_number, bot_type, job)
+    async def _hooked_enqueue(job: JobPayload) -> None:
+        await original_enqueue(job)
         job_enqueued.set()
 
     job_queue.enqueue = _hooked_enqueue  # type: ignore[method-assign]
@@ -134,7 +127,7 @@ def install_enqueue_hook(job_queue: JobQueue) -> asyncio.Event:
 
 async def wait_for_webhook_processing(
     job_enqueued: asyncio.Event,
-    job_queue: JobQueue,
+    job_queue: AsyncioJobQueue,
     timeout: float = 120.0,
     attempt_redelivery: Callable[[], Awaitable[None]] | None = None,
 ) -> None:
@@ -150,7 +143,7 @@ async def wait_for_webhook_processing(
 
     Args:
         job_enqueued (asyncio.Event): Event set when a job is enqueued.
-        job_queue (JobQueue): The job queue to monitor.
+        job_queue (AsyncioJobQueue): The job queue to monitor.
         timeout (float): Maximum wait time in seconds.
         attempt_redelivery (Callable[[], Awaitable[None]] | None): Optional
             async callback that checks delivery status and requests
@@ -217,11 +210,16 @@ async def create_github_branch_with_file(
         commit_message (str): Commit message for the file push.
     """
 
-    sha = await github_api.get_branch_sha(token, repo, "main")
+    sha = await github_api.get_branch_sha(token=token, repo=repo, branch="main")
 
-    await github_api.create_branch(token, repo, branch_name, sha)
+    await github_api.create_branch(
+        token=token,
+        repo=repo,
+        branch=branch_name,
+        from_sha=sha,
+    )
 
-    await _wait_for_github_branch(token, repo, branch_name)
+    await _wait_for_github_branch(token=token, repo=repo, branch=branch_name)
 
     await github_api.create_or_update_file(
         token=token,
@@ -256,7 +254,12 @@ async def create_gitlab_branch_with_file(
         commit_message (str): Commit message for the file push.
     """
 
-    await gitlab_api.create_branch(token, repo, branch_name, "main")
+    await gitlab_api.create_branch(
+        token=token,
+        repo=repo,
+        branch=branch_name,
+        ref="main",
+    )
 
     await gitlab_api.create_or_update_file(
         token=token,
@@ -309,7 +312,7 @@ async def _wait_for_github_branch(
 
     while elapsed < BRANCH_POLL_TIMEOUT:
         try:
-            await github_api.get_branch_sha(token, repo, branch)
+            await github_api.get_branch_sha(token=token, repo=repo, branch=branch)
 
             return
         except Exception:

@@ -54,9 +54,9 @@ class GoogleProvider:
             from google import genai
         except ImportError as exc:
             raise MissingProviderError(
-                ProviderName.GOOGLE,
-                "google-genai",
-                INSTALL_INSTRUCTIONS[ProviderName.GOOGLE],
+                provider=ProviderName.GOOGLE,
+                library="google-genai",
+                instruction=INSTALL_INSTRUCTIONS[ProviderName.GOOGLE],
             ) from exc
 
         self._client: genai.Client = genai.Client()
@@ -101,8 +101,8 @@ class GoogleProvider:
         from google.genai import errors as genai_errors
         from google.genai import types as genai_types
 
-        api_contents: list[genai_types.Content] = _to_api_contents(messages)
-        api_tools: genai_types.Tool | None = _to_api_tools(tools)
+        api_contents: list[genai_types.Content] = _to_api_contents(messages=messages)
+        api_tools: genai_types.Tool | None = _to_api_tools(tools=tools)
 
         config: genai_types.GenerateContentConfig = genai_types.GenerateContentConfig(
             system_instruction=system_prompt,
@@ -129,7 +129,7 @@ class GoogleProvider:
         except genai_errors.ServerError as exc:
             raise ProviderError(str(exc)) from exc
 
-        return _to_llm_response(response)
+        return _to_llm_response(response=response)
 
 
 def _to_api_contents(messages: list[Message]) -> list[genai_types.Content]:

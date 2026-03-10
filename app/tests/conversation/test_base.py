@@ -5,14 +5,14 @@ from nominal_code.llm.messages import Message, TextBlock, ToolResultBlock
 
 class TestTruncateMessages:
     def test_empty_list(self):
-        assert truncate_messages([]) == []
+        assert truncate_messages(messages=[]) == []
 
     def test_within_budget_unchanged(self):
         messages = [
             Message(role="user", content=[TextBlock(text="hi")]),
             Message(role="assistant", content=[TextBlock(text="hello")]),
         ]
-        result = truncate_messages(messages, max_chars=100_000)
+        result = truncate_messages(messages=messages, max_chars=100_000)
 
         assert result == messages
 
@@ -23,7 +23,7 @@ class TestTruncateMessages:
             Message(role="user", content=[TextBlock(text="c" * 100)]),
             Message(role="assistant", content=[TextBlock(text="d" * 100)]),
         ]
-        result = truncate_messages(messages, max_chars=250)
+        result = truncate_messages(messages=messages, max_chars=250)
 
         assert len(result) == 2
         assert result[0].content[0].text == "c" * 100
@@ -33,7 +33,7 @@ class TestTruncateMessages:
         messages = [
             Message(role="user", content=[TextBlock(text="x" * 1000)]),
         ]
-        result = truncate_messages(messages, max_chars=10)
+        result = truncate_messages(messages=messages, max_chars=10)
 
         assert len(result) == 1
 
@@ -46,6 +46,6 @@ class TestTruncateMessages:
                 ],
             ),
         ]
-        result = truncate_messages(messages, max_chars=500_000)
+        result = truncate_messages(messages=messages, max_chars=500_000)
 
         assert result == messages

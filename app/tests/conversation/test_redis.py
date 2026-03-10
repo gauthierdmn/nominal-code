@@ -1,15 +1,8 @@
-# type: ignore
 from datetime import timedelta
 from unittest.mock import MagicMock
 
-import redis
+import pytest
 
-from nominal_code.conversation.redis import (
-    RedisConversationStore,
-    _build_key,
-    _deserialize_messages,
-    _serialize_messages,
-)
 from nominal_code.llm.messages import (
     Message,
     TextBlock,
@@ -19,18 +12,37 @@ from nominal_code.llm.messages import (
 from nominal_code.models import BotType
 from nominal_code.platforms.base import PlatformName
 
+pytest.importorskip("redis")
+
+import redis
+
+from nominal_code.conversation.redis import (
+    RedisConversationStore,
+    _build_key,
+    _deserialize_messages,
+    _serialize_messages,
+)
+
 
 class TestBuildKey:
     def test_build_key_messages(self):
         result = _build_key(
-            "msgs", PlatformName.GITHUB, "owner/repo", 42, BotType.WORKER
+            prefix="msgs",
+            platform=PlatformName.GITHUB,
+            repo="owner/repo",
+            pr_number=42,
+            bot_type=BotType.WORKER,
         )
 
         assert result == "nc:msgs:github:owner/repo:42:worker"
 
     def test_build_key_conversation(self):
         result = _build_key(
-            "conv", PlatformName.GITLAB, "group/project", 7, BotType.REVIEWER
+            prefix="conv",
+            platform=PlatformName.GITLAB,
+            repo="group/project",
+            pr_number=7,
+            bot_type=BotType.REVIEWER,
         )
 
         assert result == "nc:conv:gitlab:group/project:7:reviewer"
@@ -42,8 +54,8 @@ class TestSerializationRoundTrip:
             Message(role="user", content=[TextBlock(text="hello")]),
             Message(role="assistant", content=[TextBlock(text="world")]),
         ]
-        serialized = _serialize_messages(messages)
-        result = _deserialize_messages(serialized)
+        serialized = _serialize_messages(messages=messages)
+        result = _deserialize_messages(data=serialized)
 
         assert len(result) == 2
         assert result[0].role == "user"
@@ -64,8 +76,8 @@ class TestSerializationRoundTrip:
                 ],
             ),
         ]
-        serialized = _serialize_messages(messages)
-        result = _deserialize_messages(serialized)
+        serialized = _serialize_messages(messages=messages)
+        result = _deserialize_messages(data=serialized)
 
         block = result[0].content[0]
 
@@ -87,8 +99,8 @@ class TestSerializationRoundTrip:
                 ],
             ),
         ]
-        serialized = _serialize_messages(messages)
-        result = _deserialize_messages(serialized)
+        serialized = _serialize_messages(messages=messages)
+        result = _deserialize_messages(data=serialized)
 
         block = result[0].content[0]
 
@@ -110,8 +122,8 @@ class TestSerializationRoundTrip:
                 ],
             ),
         ]
-        serialized = _serialize_messages(messages)
-        result = _deserialize_messages(serialized)
+        serialized = _serialize_messages(messages=messages)
+        result = _deserialize_messages(data=serialized)
 
         block = result[0].content[0]
 
@@ -141,8 +153,8 @@ class TestSerializationRoundTrip:
                 ],
             ),
         ]
-        serialized = _serialize_messages(messages)
-        result = _deserialize_messages(serialized)
+        serialized = _serialize_messages(messages=messages)
+        result = _deserialize_messages(data=serialized)
 
         assert len(result) == 2
         assert len(result[0].content) == 2
@@ -151,8 +163,8 @@ class TestSerializationRoundTrip:
         assert isinstance(result[1].content[0], ToolResultBlock)
 
     def test_empty_messages_round_trip(self):
-        serialized = _serialize_messages([])
-        result = _deserialize_messages(serialized)
+        serialized = _serialize_messages(messages=[])
+        result = _deserialize_messages(data=serialized)
 
         assert result == []
 
@@ -161,10 +173,13 @@ class TestRedisConversationStoreGetConversationId:
     def test_get_returns_none_when_not_found(self):
         client = MagicMock(spec=redis.Redis)
         client.get.return_value = None
-        store = RedisConversationStore(client)
+        store = RedisConversationStore(client=client)
 
         result = store.get_conversation_id(
-            PlatformName.GITHUB, "owner/repo", 1, BotType.WORKER
+            platform=PlatformName.GITHUB,
+            repo="owner/repo",
+            pr_number=1,
+            bot_type=BotType.WORKER,
         )
 
         assert result is None
@@ -172,10 +187,13 @@ class TestRedisConversationStoreGetConversationId:
     def test_get_returns_value(self):
         client = MagicMock(spec=redis.Redis)
         client.get.return_value = b"conv-123"
-        store = RedisConversationStore(client)
+        store = RedisConversationStore(client=client)
 
         result = store.get_conversation_id(
-            PlatformName.GITHUB, "owner/repo", 42, BotType.REVIEWER
+            platform=PlatformName.GITHUB,
+            repo="owner/repo",
+            pr_number=42,
+            bot_type=BotType.REVIEWER,
         )
 
         assert result == "conv-123"
@@ -183,10 +201,13 @@ class TestRedisConversationStoreGetConversationId:
     def test_get_returns_none_on_redis_error(self):
         client = MagicMock(spec=redis.Redis)
         client.get.side_effect = redis.RedisError("connection lost")
-        store = RedisConversationStore(client)
+        store = RedisConversationStore(client=client)
 
         result = store.get_conversation_id(
-            PlatformName.GITHUB, "owner/repo", 1, BotType.WORKER
+            platform=PlatformName.GITHUB,
+            repo="owner/repo",
+            pr_number=1,
+            bot_type=BotType.WORKER,
         )
 
         assert result is None
@@ -195,10 +216,14 @@ class TestRedisConversationStoreGetConversationId:
 class TestRedisConversationStoreSetConversationId:
     def test_set_calls_redis_with_ttl(self):
         client = MagicMock(spec=redis.Redis)
-        store = RedisConversationStore(client, key_ttl=timedelta(hours=1))
+        store = RedisConversationStore(client=client, key_ttl=timedelta(hours=1))
 
         store.set_conversation_id(
-            PlatformName.GITHUB, "owner/repo", 42, BotType.REVIEWER, "conv-abc"
+            platform=PlatformName.GITHUB,
+            repo="owner/repo",
+            pr_number=42,
+            bot_type=BotType.REVIEWER,
+            value="conv-abc",
         )
 
         client.set.assert_called_once_with(
@@ -210,10 +235,14 @@ class TestRedisConversationStoreSetConversationId:
     def test_set_silently_catches_redis_error(self):
         client = MagicMock(spec=redis.Redis)
         client.set.side_effect = redis.RedisError("connection lost")
-        store = RedisConversationStore(client)
+        store = RedisConversationStore(client=client)
 
         store.set_conversation_id(
-            PlatformName.GITHUB, "owner/repo", 1, BotType.WORKER, "val"
+            platform=PlatformName.GITHUB,
+            repo="owner/repo",
+            pr_number=1,
+            bot_type=BotType.WORKER,
+            value="val",
         )
 
 
@@ -221,23 +250,29 @@ class TestRedisConversationStoreGetMessages:
     def test_get_returns_none_when_not_found(self):
         client = MagicMock(spec=redis.Redis)
         client.get.return_value = None
-        store = RedisConversationStore(client)
+        store = RedisConversationStore(client=client)
 
         result = store.get_messages(
-            PlatformName.GITHUB, "owner/repo", 1, BotType.WORKER
+            platform=PlatformName.GITHUB,
+            repo="owner/repo",
+            pr_number=1,
+            bot_type=BotType.WORKER,
         )
 
         assert result is None
 
     def test_get_deserializes_messages(self):
         messages = [Message(role="user", content=[TextBlock(text="hi")])]
-        serialized = _serialize_messages(messages)
+        serialized = _serialize_messages(messages=messages)
         client = MagicMock(spec=redis.Redis)
         client.get.return_value = serialized.encode("utf-8")
-        store = RedisConversationStore(client)
+        store = RedisConversationStore(client=client)
 
         result = store.get_messages(
-            PlatformName.GITHUB, "owner/repo", 42, BotType.REVIEWER
+            platform=PlatformName.GITHUB,
+            repo="owner/repo",
+            pr_number=42,
+            bot_type=BotType.REVIEWER,
         )
 
         assert result is not None
@@ -247,10 +282,13 @@ class TestRedisConversationStoreGetMessages:
     def test_get_returns_none_on_redis_error(self):
         client = MagicMock(spec=redis.Redis)
         client.get.side_effect = redis.RedisError("connection lost")
-        store = RedisConversationStore(client)
+        store = RedisConversationStore(client=client)
 
         result = store.get_messages(
-            PlatformName.GITHUB, "owner/repo", 1, BotType.WORKER
+            platform=PlatformName.GITHUB,
+            repo="owner/repo",
+            pr_number=1,
+            bot_type=BotType.WORKER,
         )
 
         assert result is None
@@ -258,10 +296,13 @@ class TestRedisConversationStoreGetMessages:
     def test_get_returns_none_on_corrupt_data(self):
         client = MagicMock(spec=redis.Redis)
         client.get.return_value = b"not valid json"
-        store = RedisConversationStore(client)
+        store = RedisConversationStore(client=client)
 
         result = store.get_messages(
-            PlatformName.GITHUB, "owner/repo", 1, BotType.WORKER
+            platform=PlatformName.GITHUB,
+            repo="owner/repo",
+            pr_number=1,
+            bot_type=BotType.WORKER,
         )
 
         assert result is None
@@ -270,11 +311,15 @@ class TestRedisConversationStoreGetMessages:
 class TestRedisConversationStoreSetMessages:
     def test_set_calls_redis_with_ttl(self):
         client = MagicMock(spec=redis.Redis)
-        store = RedisConversationStore(client, key_ttl=timedelta(hours=2))
+        store = RedisConversationStore(client=client, key_ttl=timedelta(hours=2))
         messages = [Message(role="user", content=[TextBlock(text="hello")])]
 
         store.set_messages(
-            PlatformName.GITHUB, "owner/repo", 42, BotType.WORKER, messages
+            platform=PlatformName.GITHUB,
+            repo="owner/repo",
+            pr_number=42,
+            bot_type=BotType.WORKER,
+            value=messages,
         )
 
         client.set.assert_called_once()
@@ -286,9 +331,13 @@ class TestRedisConversationStoreSetMessages:
     def test_set_silently_catches_redis_error(self):
         client = MagicMock(spec=redis.Redis)
         client.set.side_effect = redis.RedisError("connection lost")
-        store = RedisConversationStore(client)
+        store = RedisConversationStore(client=client)
         messages = [Message(role="user", content=[TextBlock(text="hi")])]
 
         store.set_messages(
-            PlatformName.GITHUB, "owner/repo", 1, BotType.WORKER, messages
+            platform=PlatformName.GITHUB,
+            repo="owner/repo",
+            pr_number=1,
+            bot_type=BotType.WORKER,
+            value=messages,
         )

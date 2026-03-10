@@ -43,28 +43,36 @@ class TestContextLengthError:
 class TestMissingProviderError:
     def test_inherits_from_provider_error(self):
         error = MissingProviderError(
-            "anthropic", "anthropic", 'pip install "nominal-code[anthropic]"'
+            provider="anthropic",
+            library="anthropic",
+            instruction='pip install "nominal-code[anthropic]"',
         )
 
         assert isinstance(error, ProviderError)
 
     def test_includes_provider_name(self):
         error = MissingProviderError(
-            "anthropic", "anthropic", 'pip install "nominal-code[anthropic]"'
+            provider="anthropic",
+            library="anthropic",
+            instruction='pip install "nominal-code[anthropic]"',
         )
 
         assert "anthropic" in str(error)
 
     def test_includes_install_instruction(self):
         error = MissingProviderError(
-            "openai", "openai", 'pip install "nominal-code[openai]"'
+            provider="openai",
+            library="openai",
+            instruction='pip install "nominal-code[openai]"',
         )
 
         assert 'pip install "nominal-code[openai]"' in str(error)
 
     def test_includes_library_name(self):
         error = MissingProviderError(
-            "google", "google-genai", 'pip install "nominal-code[google]"'
+            provider="google",
+            library="google-genai",
+            instruction='pip install "nominal-code[google]"',
         )
 
         assert "google-genai" in str(error)

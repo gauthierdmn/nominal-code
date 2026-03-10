@@ -6,7 +6,7 @@ import pytest
 from nominal_code.config import CliAgentConfig, ReviewerConfig, WorkerConfig
 from nominal_code.models import BotType, EventType
 from nominal_code.platforms.base import CommentEvent, LifecycleEvent, PlatformName
-from nominal_code.server.router import run_pre_flight
+from nominal_code.server.router import acknowledge_event
 
 
 def _make_config(allowed_users=None):
@@ -77,7 +77,7 @@ class TestRunPreFlight:
         platform = _make_platform()
         comment = _make_comment(author="eve")
 
-        result = await run_pre_flight(
+        result = await acknowledge_event(
             event=comment,
             bot_type=BotType.WORKER,
             config=config,
@@ -95,7 +95,7 @@ class TestRunPreFlight:
         platform = _make_platform()
         comment = _make_comment(author="alice")
 
-        result = await run_pre_flight(
+        result = await acknowledge_event(
             event=comment,
             bot_type=BotType.WORKER,
             config=config,
@@ -121,7 +121,7 @@ class TestRunPreFlight:
             pr_author="eve",
         )
 
-        result = await run_pre_flight(
+        result = await acknowledge_event(
             event=event,
             bot_type=BotType.REVIEWER,
             config=config,

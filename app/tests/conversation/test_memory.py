@@ -9,7 +9,10 @@ class TestConversationStoreConversationId:
     def test_get_returns_none_when_empty(self):
         store = MemoryConversationStore()
         result = store.get_conversation_id(
-            PlatformName.GITHUB, "owner/repo", 1, BotType.WORKER
+            platform=PlatformName.GITHUB,
+            repo="owner/repo",
+            pr_number=1,
+            bot_type=BotType.WORKER,
         )
 
         assert result is None
@@ -17,10 +20,17 @@ class TestConversationStoreConversationId:
     def test_set_and_get(self):
         store = MemoryConversationStore()
         store.set_conversation_id(
-            PlatformName.GITHUB, "owner/repo", 42, BotType.REVIEWER, "conv-123"
+            platform=PlatformName.GITHUB,
+            repo="owner/repo",
+            pr_number=42,
+            bot_type=BotType.REVIEWER,
+            value="conv-123",
         )
         result = store.get_conversation_id(
-            PlatformName.GITHUB, "owner/repo", 42, BotType.REVIEWER
+            platform=PlatformName.GITHUB,
+            repo="owner/repo",
+            pr_number=42,
+            bot_type=BotType.REVIEWER,
         )
 
         assert result == "conv-123"
@@ -28,21 +38,35 @@ class TestConversationStoreConversationId:
     def test_different_keys_are_independent(self):
         store = MemoryConversationStore()
         store.set_conversation_id(
-            PlatformName.GITHUB, "owner/repo", 1, BotType.WORKER, "conv-1"
+            platform=PlatformName.GITHUB,
+            repo="owner/repo",
+            pr_number=1,
+            bot_type=BotType.WORKER,
+            value="conv-1",
         )
         store.set_conversation_id(
-            PlatformName.GITHUB, "owner/repo", 1, BotType.REVIEWER, "conv-2"
+            platform=PlatformName.GITHUB,
+            repo="owner/repo",
+            pr_number=1,
+            bot_type=BotType.REVIEWER,
+            value="conv-2",
         )
 
         assert (
             store.get_conversation_id(
-                PlatformName.GITHUB, "owner/repo", 1, BotType.WORKER
+                platform=PlatformName.GITHUB,
+                repo="owner/repo",
+                pr_number=1,
+                bot_type=BotType.WORKER,
             )
             == "conv-1"
         )
         assert (
             store.get_conversation_id(
-                PlatformName.GITHUB, "owner/repo", 1, BotType.REVIEWER
+                platform=PlatformName.GITHUB,
+                repo="owner/repo",
+                pr_number=1,
+                bot_type=BotType.REVIEWER,
             )
             == "conv-2"
         )
@@ -50,15 +74,26 @@ class TestConversationStoreConversationId:
     def test_set_overwrites_existing(self):
         store = MemoryConversationStore()
         store.set_conversation_id(
-            PlatformName.GITHUB, "owner/repo", 1, BotType.WORKER, "old"
+            platform=PlatformName.GITHUB,
+            repo="owner/repo",
+            pr_number=1,
+            bot_type=BotType.WORKER,
+            value="old",
         )
         store.set_conversation_id(
-            PlatformName.GITHUB, "owner/repo", 1, BotType.WORKER, "new"
+            platform=PlatformName.GITHUB,
+            repo="owner/repo",
+            pr_number=1,
+            bot_type=BotType.WORKER,
+            value="new",
         )
 
         assert (
             store.get_conversation_id(
-                PlatformName.GITHUB, "owner/repo", 1, BotType.WORKER
+                platform=PlatformName.GITHUB,
+                repo="owner/repo",
+                pr_number=1,
+                bot_type=BotType.WORKER,
             )
             == "new"
         )
@@ -66,12 +101,19 @@ class TestConversationStoreConversationId:
     def test_different_pr_numbers(self):
         store = MemoryConversationStore()
         store.set_conversation_id(
-            PlatformName.GITHUB, "owner/repo", 1, BotType.WORKER, "conv-pr1"
+            platform=PlatformName.GITHUB,
+            repo="owner/repo",
+            pr_number=1,
+            bot_type=BotType.WORKER,
+            value="conv-pr1",
         )
 
         assert (
             store.get_conversation_id(
-                PlatformName.GITHUB, "owner/repo", 2, BotType.WORKER
+                platform=PlatformName.GITHUB,
+                repo="owner/repo",
+                pr_number=2,
+                bot_type=BotType.WORKER,
             )
             is None
         )
@@ -81,7 +123,10 @@ class TestConversationStoreMessages:
     def test_get_returns_none_when_empty(self):
         store = MemoryConversationStore()
         result = store.get_messages(
-            PlatformName.GITHUB, "owner/repo", 1, BotType.WORKER
+            platform=PlatformName.GITHUB,
+            repo="owner/repo",
+            pr_number=1,
+            bot_type=BotType.WORKER,
         )
 
         assert result is None
@@ -90,10 +135,17 @@ class TestConversationStoreMessages:
         store = MemoryConversationStore()
         messages = [Message(role="user", content=[TextBlock(text="hi")])]
         store.set_messages(
-            PlatformName.GITHUB, "owner/repo", 42, BotType.REVIEWER, messages
+            platform=PlatformName.GITHUB,
+            repo="owner/repo",
+            pr_number=42,
+            bot_type=BotType.REVIEWER,
+            value=messages,
         )
         result = store.get_messages(
-            PlatformName.GITHUB, "owner/repo", 42, BotType.REVIEWER
+            platform=PlatformName.GITHUB,
+            repo="owner/repo",
+            pr_number=42,
+            bot_type=BotType.REVIEWER,
         )
 
         assert result is messages
@@ -103,17 +155,37 @@ class TestConversationStoreMessages:
         store = MemoryConversationStore()
         msgs1 = [Message(role="user", content=[TextBlock(text="msg1")])]
         msgs2 = [Message(role="user", content=[TextBlock(text="msg2")])]
-        store.set_messages(PlatformName.GITHUB, "owner/repo", 1, BotType.WORKER, msgs1)
         store.set_messages(
-            PlatformName.GITHUB, "owner/repo", 1, BotType.REVIEWER, msgs2
+            platform=PlatformName.GITHUB,
+            repo="owner/repo",
+            pr_number=1,
+            bot_type=BotType.WORKER,
+            value=msgs1,
+        )
+        store.set_messages(
+            platform=PlatformName.GITHUB,
+            repo="owner/repo",
+            pr_number=1,
+            bot_type=BotType.REVIEWER,
+            value=msgs2,
         )
 
         assert (
-            store.get_messages(PlatformName.GITHUB, "owner/repo", 1, BotType.WORKER)
+            store.get_messages(
+                platform=PlatformName.GITHUB,
+                repo="owner/repo",
+                pr_number=1,
+                bot_type=BotType.WORKER,
+            )
             is msgs1
         )
         assert (
-            store.get_messages(PlatformName.GITHUB, "owner/repo", 1, BotType.REVIEWER)
+            store.get_messages(
+                platform=PlatformName.GITHUB,
+                repo="owner/repo",
+                pr_number=1,
+                bot_type=BotType.REVIEWER,
+            )
             is msgs2
         )
 
@@ -122,14 +194,25 @@ class TestConversationStoreMessages:
         old_msgs = [Message(role="user", content=[TextBlock(text="old")])]
         new_msgs = [Message(role="user", content=[TextBlock(text="new")])]
         store.set_messages(
-            PlatformName.GITHUB, "owner/repo", 1, BotType.WORKER, old_msgs
+            platform=PlatformName.GITHUB,
+            repo="owner/repo",
+            pr_number=1,
+            bot_type=BotType.WORKER,
+            value=old_msgs,
         )
         store.set_messages(
-            PlatformName.GITHUB, "owner/repo", 1, BotType.WORKER, new_msgs
+            platform=PlatformName.GITHUB,
+            repo="owner/repo",
+            pr_number=1,
+            bot_type=BotType.WORKER,
+            value=new_msgs,
         )
 
         result = store.get_messages(
-            PlatformName.GITHUB, "owner/repo", 1, BotType.WORKER
+            platform=PlatformName.GITHUB,
+            repo="owner/repo",
+            pr_number=1,
+            bot_type=BotType.WORKER,
         )
 
         assert result is new_msgs

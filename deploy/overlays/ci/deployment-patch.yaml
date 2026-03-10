@@ -11,5 +11,7 @@ spec:
           env:
             - name: ALLOWED_USERS
               value: "test-user"
+            - name: REVIEWER_BOT_USERNAME
+              value: "nominal-bot"
             - name: AGENT_PROVIDER
               value: "google"

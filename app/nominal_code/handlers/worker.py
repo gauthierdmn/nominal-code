@@ -4,9 +4,9 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from nominal_code.agent.cli.session import run_and_track_conversation
 from nominal_code.agent.errors import handle_agent_errors
 from nominal_code.agent.prompts import resolve_system_prompt
+from nominal_code.agent.router import handle_event
 from nominal_code.models import BotType
 from nominal_code.platforms.base import CommentEvent, CommentReply
 from nominal_code.workspace.setup import create_workspace, resolve_branch
@@ -47,7 +47,9 @@ async def review_and_fix(
     if effective_event is None:
         return
 
-    async with handle_agent_errors(event, platform, "worker"):
+    async with handle_agent_errors(
+        event=event, platform=platform, agent_label="worker"
+    ):
         workspace: GitWorkspace = create_workspace(
             event=event,
             config=config,
@@ -74,7 +76,7 @@ async def review_and_fix(
             deps_path=workspace.deps_path,
         )
 
-        result = await run_and_track_conversation(
+        result = await handle_event(
             event=event,
             bot_type=BotType.WORKER,
             system_prompt=system_prompt,

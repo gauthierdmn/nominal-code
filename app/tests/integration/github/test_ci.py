@@ -51,10 +51,16 @@ async def _run_ci_review(
     config: Config,
     canned_result: AgentResult,
 ) -> int:
-    with patch(
-        "nominal_code.agent.cli.session.run_agent",
-        new_callable=AsyncMock,
-        return_value=canned_result,
+    with (
+        patch(
+            "nominal_code.agent.api.runner.run",
+            new_callable=AsyncMock,
+            return_value=canned_result,
+        ),
+        patch(
+            "nominal_code.agent.api.runner.create_provider",
+            return_value=AsyncMock(),
+        ),
     ):
         result = await review(
             event=event,
@@ -92,20 +98,29 @@ async def test_ci_review_posts_findings_to_pr(
     event = _build_event(buggy_pr)
     config = _build_ci_config()
 
-    exit_code = await _run_ci_review(platform, event, config, BUGGY_AGENT_RESULT)
+    exit_code = await _run_ci_review(
+        platform=platform,
+        event=event,
+        config=config,
+        canned_result=BUGGY_AGENT_RESULT,
+    )
 
     assert exit_code == 0
 
-    reviews = await fetch_pr_reviews(github_token, GITHUB_TEST_REPO, buggy_pr.number)
+    reviews = await fetch_pr_reviews(
+        token=github_token,
+        repo=GITHUB_TEST_REPO,
+        pr_number=buggy_pr.number,
+    )
     assert len(reviews) >= 1
 
     latest_review = reviews[-1]
     assert "Found issues" in latest_review["body"]
 
     comments = await fetch_pr_review_comments(
-        github_token,
-        GITHUB_TEST_REPO,
-        buggy_pr.number,
+        token=github_token,
+        repo=GITHUB_TEST_REPO,
+        pr_number=buggy_pr.number,
     )
     assert len(comments) >= 1
 
@@ -122,15 +137,28 @@ async def test_ci_review_no_findings_posts_comment(
     event = _build_event(clean_pr)
     config = _build_ci_config()
 
-    exit_code = await _run_ci_review(platform, event, config, CLEAN_AGENT_RESULT)
+    exit_code = await _run_ci_review(
+        platform=platform,
+        event=event,
+        config=config,
+        canned_result=CLEAN_AGENT_RESULT,
+    )
 
     assert exit_code == 0
 
-    reviews = await fetch_pr_reviews(github_token, GITHUB_TEST_REPO, clean_pr.number)
+    reviews = await fetch_pr_reviews(
+        token=github_token,
+        repo=GITHUB_TEST_REPO,
+        pr_number=clean_pr.number,
+    )
     review_bodies = [review["body"] for review in reviews if review["body"]]
     assert not review_bodies
 
-    comments = await fetch_pr_comments(github_token, GITHUB_TEST_REPO, clean_pr.number)
+    comments = await fetch_pr_comments(
+        token=github_token,
+        repo=GITHUB_TEST_REPO,
+        pr_number=clean_pr.number,
+    )
     assert len(comments) >= 1
 
     comment_bodies = [comment["body"] for comment in comments]

@@ -24,13 +24,13 @@ class TestProviders:
 class TestCreateProvider:
     def test_raises_on_unknown_provider(self):
         with pytest.raises(ValueError, match="Unknown provider"):
-            create_provider("nonexistent")
+            create_provider(name="nonexistent")
 
     def test_creates_anthropic_provider(self):
         pytest.importorskip("anthropic")
         from nominal_code.llm.anthropic import AnthropicProvider
 
-        provider = create_provider("anthropic")
+        provider = create_provider(name="anthropic")
 
         assert isinstance(provider, AnthropicProvider)
 
@@ -39,7 +39,7 @@ class TestCreateProvider:
         from nominal_code.llm.openai import OpenAIProvider
 
         with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):
-            provider = create_provider("openai")
+            provider = create_provider(name="openai")
 
         assert isinstance(provider, OpenAIProvider)
 
@@ -48,7 +48,7 @@ class TestCreateProvider:
         from nominal_code.llm.google import GoogleProvider
 
         with patch.dict("os.environ", {"GOOGLE_API_KEY": "test-key"}):
-            provider = create_provider("google")
+            provider = create_provider(name="google")
 
         assert isinstance(provider, GoogleProvider)
 
@@ -60,7 +60,7 @@ class TestCreateProvider:
             "os.environ",
             {"DEEPSEEK_API_KEY": "test-key"},
         ):
-            provider = create_provider("deepseek")
+            provider = create_provider(name="deepseek")
 
         assert isinstance(provider, OpenAIProvider)
 
@@ -72,13 +72,13 @@ class TestCreateProvider:
             "os.environ",
             {"GROQ_API_KEY": "test-key"},
         ):
-            provider = create_provider("groq")
+            provider = create_provider(name="groq")
 
         assert isinstance(provider, OpenAIProvider)
 
     def test_error_message_lists_available_providers(self):
         with pytest.raises(ValueError) as exc_info:
-            create_provider("invalid")
+            create_provider(name="invalid")
 
         error_message = str(exc_info.value)
 

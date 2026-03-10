@@ -106,4 +106,4 @@ Webhook mode is the only mode with conversation continuity — multi-turn conver
 
 For the complete list of environment variables, see [Environment Variables](../reference/env-vars.md).
 
-For production deployment, see [Deployment](../deployment.md).
+For production deployment, see [Deployment](../deployment/index.md).

@@ -62,6 +62,8 @@ class CommentEvent(PullRequestEvent):
         diff_hunk (str): The diff hunk context around the comment.
         file_path (str): File path the comment is attached to.
         discussion_id (str): GitLab discussion ID for threaded replies.
+        mention_prompt (str | None): The user instruction extracted from
+            the ``@bot`` mention. ``None`` until mention parsing runs.
     """
 
     comment_id: int = 0
@@ -70,6 +72,7 @@ class CommentEvent(PullRequestEvent):
     diff_hunk: str = ""
     file_path: str = ""
     discussion_id: str = ""
+    mention_prompt: str | None = None
 
 
 @dataclass(frozen=True)

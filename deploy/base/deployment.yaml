@@ -42,14 +42,14 @@ spec:
               value: "nominal-code-secrets"
             - name: K8S_ACTIVE_DEADLINE_SECONDS
               value: "600"
-            - name: REVIEWER_BOT_USERNAME
-              value: "nominal-bot"
-            - name: ALLOWED_USERS
-              value: ""
-            - name: AGENT_PROVIDER
-              value: "google"
             - name: REDIS_URL
               value: "redis://redis.nominal-code.svc.cluster.local:6379/0"
+            - name: REVIEWER_TRIGGERS
+              value: "pr_opened"
+            - name: REVIEWER_BOT_USERNAME
+              value: "nominalbot"
+            - name: AGENT_PROVIDER
+              value: "google"
           livenessProbe:
             httpGet:
               path: /health

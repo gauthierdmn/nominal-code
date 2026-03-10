@@ -10,10 +10,9 @@ from typing import TYPE_CHECKING
 from json_repair import loads as json_repair_loads
 
 from nominal_code.agent.api.tools import SUBMIT_REVIEW_TOOL_NAME
-from nominal_code.agent.cli.session import run_and_track_conversation
 from nominal_code.agent.errors import handle_agent_errors
-from nominal_code.agent.prompts import resolve_system_prompt
-from nominal_code.agent.router import run_agent
+from nominal_code.agent.prompts import resolve_guidelines, resolve_system_prompt
+from nominal_code.agent.router import handle_event, run
 from nominal_code.config import ApiAgentConfig
 from nominal_code.models import (
     AgentReview,
@@ -212,8 +211,6 @@ async def review(
     file_paths: list[Path] = [Path(changed.file_path) for changed in changed_files]
 
     if workspace_path:
-        from nominal_code.agent.prompts import resolve_guidelines
-
         effective_guidelines: str = resolve_guidelines(
             repo_path=repo_path,
             default_guidelines=config.coding_guidelines,
@@ -236,7 +233,7 @@ async def review(
     if isinstance(config.agent, ApiAgentConfig):
         effective_allowed_tools.append(SUBMIT_REVIEW_TOOL_NAME)
 
-    result: AgentResult = await run_and_track_conversation(
+    result: AgentResult = await handle_event(
         event=event,
         bot_type=BotType.REVIEWER,
         system_prompt=combined_system_prompt,
@@ -247,7 +244,7 @@ async def review(
         conversation_store=conversation_store,
     )
 
-    review_result: AgentReview | None = parse_review_output(result.output)
+    review_result: AgentReview | None = parse_review_output(output=result.output)
 
     if review_result is None:
         logger.warning(
@@ -399,7 +396,9 @@ async def review_and_post(
 
     bot_username: str = config.reviewer.bot_username
 
-    async with handle_agent_errors(event, platform, "reviewer"):
+    async with handle_agent_errors(
+        event=event, platform=platform, agent_label="reviewer"
+    ):
         review_result: ReviewResult = await review(
             event=effective_event,
             prompt=prompt,
@@ -409,7 +408,11 @@ async def review_and_post(
             conversation_store=conversation_store,
         )
 
-        await post_review_result(event, review_result, platform)
+        await post_review_result(
+            event=event,
+            result=review_result,
+            platform=platform,
+        )
 
 
 def _build_reviewer_prompt(
@@ -607,7 +610,9 @@ def _filter_findings(
             (valid, rejected) findings.
     """
 
-    diff_index: dict[str, dict[DiffSide, set[int]]] = _build_diff_index(changed_files)
+    diff_index: dict[str, dict[DiffSide, set[int]]] = _build_diff_index(
+        changed_files=changed_files,
+    )
     valid: list[ReviewFinding] = []
     rejected: list[ReviewFinding] = []
 
@@ -751,7 +756,7 @@ async def _repair_review_output(
 
         logger.info("Attempting LLM JSON repair (attempt %d/2)", attempt)
 
-        fix_result: AgentResult = await run_agent(
+        fix_result: AgentResult = await run(
             prompt=prompt,
             cwd=cwd,
             system_prompt=JSON_FIX_SYSTEM_PROMPT,
@@ -759,7 +764,7 @@ async def _repair_review_output(
             agent_config=config.agent,
         )
 
-        parsed: AgentReview | None = parse_review_output(fix_result.output)
+        parsed: AgentReview | None = parse_review_output(output=fix_result.output)
 
         if parsed is not None:
             logger.info("LLM JSON repair succeeded on attempt %d", attempt)

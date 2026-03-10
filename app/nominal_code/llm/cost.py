@@ -132,7 +132,7 @@ def build_cost_summary(
         total_output_tokens=usage.output_tokens,
         total_cache_creation_tokens=usage.cache_creation_input_tokens,
         total_cache_read_tokens=usage.cache_read_input_tokens,
-        total_cost_usd=compute_cost(usage, model),
+        total_cost_usd=compute_cost(usage=usage, model=model),
         provider=provider,
         model=model,
         num_api_calls=num_api_calls,

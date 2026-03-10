@@ -43,7 +43,7 @@ async def run_ci_review(platform_name: str) -> int:
 
         return 1
 
-    platform_ci: ModuleType = _load_platform_ci(resolved_platform_name)
+    platform_ci: ModuleType = _load_platform_ci(platform_name=resolved_platform_name)
     event: PullRequestEvent = platform_ci.build_event()
     platform: ReviewerPlatform = platform_ci.build_platform()
     workspace_path: str = platform_ci.resolve_workspace()
@@ -83,8 +83,8 @@ async def run_ci_review(platform_name: str) -> int:
 
     if result.agent_review is None:
         await platform.post_reply(
-            event,
-            CommentReply(body=result.raw_output),
+            event=event,
+            reply=CommentReply(body=result.raw_output),
         )
 
         logger.info("Posted raw review output (JSON parse failed)")
@@ -133,13 +133,11 @@ def _build_ci_config() -> Config:
     """
 
     model: str = os.environ.get("INPUT_MODEL", "")
-    max_turns_raw: str = os.environ.get(
-        "INPUT_MAX_TURNS",
-        str(DEFAULT_AGENT_MAX_TURNS),
-    )
 
     try:
-        max_turns: int = int(max_turns_raw)
+        max_turns: int = int(
+            os.environ.get("INPUT_MAX_TURNS", str(DEFAULT_AGENT_MAX_TURNS))
+        )
     except ValueError:
         max_turns = 0
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from aiohttp import web
@@ -15,7 +16,7 @@ from nominal_code.platforms.base import (
     ReviewerPlatform,
 )
 from nominal_code.server.mention import extract_mention
-from nominal_code.server.router import run_pre_flight
+from nominal_code.server.router import acknowledge_event
 
 if TYPE_CHECKING:
     from nominal_code.config import Config
@@ -82,14 +83,14 @@ def create_app(
     app["platforms"] = platforms
     app["runner"] = runner
 
-    app.router.add_get("/health", _handle_health)
+    app.router.add_get(path="/health", handler=_handle_health)
 
     for platform_name in platforms:
         handler: Callable[
             [web.Request],
             Awaitable[web.Response],
         ] = _make_webhook_handler(platform_name)
-        app.router.add_post(f"/webhooks/{platform_name}", handler)
+        app.router.add_post(path=f"/webhooks/{platform_name}", handler=handler)
 
     return app
 
@@ -154,14 +155,14 @@ async def _handle_webhook(
 
         body: bytes = await request.read()
 
-        if not platform.verify_webhook(request, body):
+        if not platform.verify_webhook(request=request, body=body):
             logger.warning("Invalid webhook signature for %s", platform_name)
 
             return web.Response(status=401, text="Invalid signature")
 
         event: CommentEvent | LifecycleEvent | None = platform.parse_event(
-            request,
-            body,
+            request=request,
+            body=body,
         )
 
         if event is None:
@@ -175,7 +176,7 @@ async def _handle_webhook(
 
             return web.json_response({"status": "filtered"})
 
-        if not _should_process_event(event, config):
+        if not _should_process_event(event=event, config=config):
             return web.json_response({"status": "filtered"})
 
         if event.event_type in config.reviewer_triggers:
@@ -188,23 +189,19 @@ async def _handle_webhook(
             if not isinstance(platform, ReviewerPlatform):
                 return web.json_response({"status": "ignored"})
 
-            proceed: bool = await run_pre_flight(
+            await acknowledge_event(
                 event=event,
                 bot_type=BotType.REVIEWER,
                 config=config,
                 platform=platform,
             )
 
-            if not proceed:
-                return web.json_response({"status": "unauthorized"})
-
             job: JobPayload = JobPayload(
                 event=event,
-                prompt="",
                 bot_type=BotType.REVIEWER.value,
             )
 
-            await runner.run(job)
+            await runner.enqueue(job)
 
             return web.json_response({"status": "accepted"})
 
@@ -221,28 +218,28 @@ async def _handle_webhook(
 
         if config.worker is not None:
             worker_prompt = extract_mention(
-                comment_event.body,
-                config.worker.bot_username,
+                text=comment_event.body,
+                bot_username=config.worker.bot_username,
             )
 
         if config.reviewer is not None:
             reviewer_prompt = extract_mention(
-                comment_event.body,
-                config.reviewer.bot_username,
+                text=comment_event.body,
+                bot_username=config.reviewer.bot_username,
             )
 
         if worker_prompt is not None:
             bot_type: BotType = BotType.WORKER
-            prompt: str = worker_prompt
+            mention_prompt: str = worker_prompt
 
         elif reviewer_prompt is not None and isinstance(platform, ReviewerPlatform):
             bot_type = BotType.REVIEWER
-            prompt = reviewer_prompt
+            mention_prompt = reviewer_prompt
 
         else:
             return web.json_response({"status": "no_mention"})
 
-        proceed = await run_pre_flight(
+        proceed = await acknowledge_event(
             event=comment_event,
             bot_type=bot_type,
             config=config,
@@ -252,13 +249,17 @@ async def _handle_webhook(
         if not proceed:
             return web.json_response({"status": "unauthorized"})
 
+        mentioned_event: CommentEvent = replace(
+            comment_event,
+            mention_prompt=mention_prompt,
+        )
+
         job = JobPayload(
-            event=comment_event,
-            prompt=prompt,
+            event=mentioned_event,
             bot_type=bot_type.value,
         )
 
-        await runner.run(job)
+        await runner.enqueue(job)
 
         return web.json_response({"status": "accepted"})
 

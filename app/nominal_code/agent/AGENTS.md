@@ -6,8 +6,8 @@ Handles LLM agent invocation via two backends, prompt composition, and error han
 
 `router.py` dispatches to one of two backends based on the agent config type (`CliAgentConfig` or `ApiAgentConfig`):
 
-- **`api/runner.py`** — provider-agnostic agentic loop. Uses the `LLMProvider` protocol from `llm/provider.py` to call any LLM API. Implements the loop locally: send prompt → process tool_use blocks → execute tools via `api/tools.py` → send results back → repeat. Used in CI mode. Stateless (no conversation continuity).
-- **`cli/runner.py`** — spawns the Claude Code CLI via `claude_agent_sdk.query()`. Streams messages, captures conversation IDs. Used in webhook and CLI modes. Supports conversation resumption.
+- **`api/runner.py`** — provider-agnostic agentic loop. Uses the `LLMProvider` protocol from `llm/provider.py` to call any LLM API. Implements the loop locally: send prompt → process tool_use blocks → execute tools via `api/tools.py` → send results back → repeat. Used in CI mode. Exports `run()` (stateless) and `handle_event()` (with conversation persistence).
+- **`cli/runner.py`** — spawns the Claude Code CLI via `claude_agent_sdk.query()`. Streams messages, captures conversation IDs. Used in webhook and CLI modes. Exports `run()` (stateless) and `handle_event()` (with conversation persistence).
 
 The API runner's default model is resolved from `llm.registry.DEFAULT_MODELS` based on the provider name. The dispatcher in `router.py` creates the provider via `create_provider()` and resolves the default model. The CLI runner defers to the Claude Code CLI's configured model unless overridden.
 
@@ -26,26 +26,19 @@ The API runner's default model is resolved from `llm.registry.DEFAULT_MODELS` ba
 
 Tool definitions use canonical `ToolDefinition` (TypedDict with `name`, `description`, `input_schema`) — provider-agnostic.
 
-## Conversation tracking
-
-- **`cli/queue.py`** — `JobQueue`: per-PR async job queue. Auto-spawns a consumer task per key, self-cleans when drained.
-- **`cli/session.py`** — `run_and_track_conversation()` looks up/stores conversation IDs and messages around `run_agent()` calls.
-
 ## File tree
 
 ```
 agent/
-├── router.py        # Dispatcher: routes to api/ or cli/ runner based on agent config type
+├── router.py        # run() dispatches to api/ or cli/ runner; handle_event() dispatches with conversation persistence
 ├── result.py        # AgentResult dataclass (output, is_error, num_turns, duration_ms, conversation_id, cost)
 ├── prompts.py       # Guideline loading (.nominal/ overrides), language detection, system prompt composition
 ├── errors.py        # handle_agent_errors(): async context manager that catches and posts error replies
 ├── api/
-│   ├── runner.py    # Provider-agnostic agentic loop
+│   ├── runner.py    # Provider-agnostic agentic loop: run() + handle_event()
 │   └── tools.py     # Tool definitions and local execution (Read, Glob, Grep, Bash)
 └── cli/
-    ├── runner.py    # Claude Code CLI wrapper (claude_agent_sdk.query + SDK monkey-patch)
-    ├── queue.py     # JobQueue (per-PR async queue)
-    └── session.py   # run_and_track_conversation(): conversation lookup/store around agent runs
+    └── runner.py    # Claude Code CLI wrapper: run() + handle_event() (claude_agent_sdk.query + SDK monkey-patch)
 ```
 
 ## Non-obvious details
