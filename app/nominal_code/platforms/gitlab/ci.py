@@ -4,10 +4,13 @@ import logging
 import os
 import sys
 
+from environs import Env
+
 from nominal_code.models import EventType
 from nominal_code.platforms.base import PlatformName, PullRequestEvent, ReviewerPlatform
 from nominal_code.platforms.gitlab import GitLabPlatform
 
+_env: Env = Env()
 logger: logging.Logger = logging.getLogger(__name__)
 
 
@@ -25,12 +28,9 @@ def build_event() -> PullRequestEvent:
         SystemExit: If required environment variables are missing.
     """
 
-    repo_full_name: str = os.environ.get("CI_PROJECT_PATH", "")
-    mr_iid_env: str = os.environ.get("CI_MERGE_REQUEST_IID", "")
-    pr_branch: str = os.environ.get(
-        "CI_MERGE_REQUEST_SOURCE_BRANCH_NAME",
-        "",
-    )
+    repo_full_name: str = _env.str("CI_PROJECT_PATH", "")
+    mr_iid_env: str = _env.str("CI_MERGE_REQUEST_IID", "")
+    pr_branch: str = _env.str("CI_MERGE_REQUEST_SOURCE_BRANCH_NAME", "")
 
     if not repo_full_name or not mr_iid_env or not pr_branch:
         logger.error(
@@ -73,13 +73,13 @@ def build_platform() -> ReviewerPlatform:
         SystemExit: If ``$GITLAB_TOKEN`` is not set.
     """
 
-    gitlab_token: str = os.environ.get("GITLAB_TOKEN", "")
+    gitlab_token: str = _env.str("GITLAB_TOKEN", "")
 
     if not gitlab_token:
         logger.error("GITLAB_TOKEN is required for GitLab CI reviews")
         sys.exit(1)
 
-    gitlab_base_url: str = os.environ.get("CI_SERVER_URL", "")
+    gitlab_base_url: str = _env.str("CI_SERVER_URL", "")
 
     if gitlab_base_url:
         return GitLabPlatform(
@@ -98,4 +98,4 @@ def resolve_workspace() -> str:
         str: The absolute path to the repository checkout.
     """
 
-    return os.environ.get("CI_PROJECT_DIR", os.getcwd())
+    return _env.str("CI_PROJECT_DIR", os.getcwd())

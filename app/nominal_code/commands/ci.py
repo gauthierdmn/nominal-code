@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
 
-from nominal_code.config import DEFAULT_AGENT_MAX_TURNS, Config, resolve_provider_config
+from environs import Env
+
+from nominal_code.config import Config, load_config_for_ci, resolve_provider_config
 from nominal_code.handlers.review import ReviewResult, run_and_post_review
 from nominal_code.llm.cost import format_cost_summary
 from nominal_code.platforms import load_platform_ci
@@ -14,6 +15,7 @@ from nominal_code.platforms.base import (
     ReviewerPlatform,
 )
 
+_env: Env = Env()
 logger: logging.Logger = logging.getLogger(__name__)
 
 
@@ -50,7 +52,7 @@ async def run_ci_review(platform_name: str) -> int:
 
         return 1
 
-    custom_prompt: str = os.environ.get("INPUT_PROMPT", "")
+    custom_prompt: str = _env.str("INPUT_PROMPT", "")
 
     logger.info(
         "Running CI review for %s#%d on %s (workspace=%s)",
@@ -103,19 +105,17 @@ def _build_ci_config() -> Config:
         ValueError: If ``AGENT_PROVIDER`` is not a recognised provider.
     """
 
-    model: str = os.environ.get("INPUT_MODEL", "")
+    model: str = _env.str("INPUT_MODEL", "")
 
     try:
-        max_turns: int = int(
-            os.environ.get("INPUT_MAX_TURNS", str(DEFAULT_AGENT_MAX_TURNS))
-        )
+        max_turns: int = _env.int("INPUT_MAX_TURNS", 0)
     except ValueError:
         max_turns = 0
 
     provider_config = resolve_provider_config(default="anthropic")
-    guidelines: str = os.environ.get("INPUT_CODING_GUIDELINES", "")
+    guidelines: str = _env.str("INPUT_CODING_GUIDELINES", "")
 
-    return Config.for_ci(
+    return load_config_for_ci(
         provider=provider_config,
         model=model,
         max_turns=max_turns,

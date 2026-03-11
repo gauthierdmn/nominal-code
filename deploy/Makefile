@@ -5,7 +5,7 @@ TIMEOUT        ?= 120
 
 build: ## Build the image into minikube's Docker daemon
 	eval $$(minikube docker-env) && \
-	docker buildx build -f ../ci/Dockerfile -t $(IMAGE) --load ..
+	docker build -f ../ci/Dockerfile -t $(IMAGE) ..
 
 deploy: build ## Build + deploy the local overlay (fill in overlays/local/secret.yaml first)
 	@test -f overlays/local/secret.yaml || \

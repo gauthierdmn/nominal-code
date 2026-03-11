@@ -1,11 +1,14 @@
 from __future__ import annotations
 
-import os
 from typing import Any
+
+from environs import Env
 
 from nominal_code.config import ProviderConfig
 from nominal_code.llm.provider import LLMProvider
 from nominal_code.models import ProviderName
+
+_env: Env = Env()
 
 PROVIDERS: dict[ProviderName, ProviderConfig] = {
     ProviderName.ANTHROPIC: ProviderConfig(
@@ -94,8 +97,8 @@ def create_provider(name: str, **kwargs: Any) -> LLMProvider:
     provider_config = PROVIDERS[provider]
     api_key: str = (
         kwargs.pop("api_key", "")
-        or os.environ.get(provider_config.api_key_env, "")
-        or os.environ.get("OPENAI_API_KEY", "")
+        or _env.str(provider_config.api_key_env, "")
+        or _env.str("OPENAI_API_KEY", "")
     )
     base_url: str | None = kwargs.pop("base_url", None) or provider_config.base_url
 

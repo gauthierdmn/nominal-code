@@ -43,7 +43,7 @@ class RedisJobQueue:
 
         import redis.asyncio as _aioredis
 
-        self._redis: aioredis.Redis = _aioredis.from_url(redis_url)  # type: ignore[no-untyped-call]
+        self._redis: aioredis.Redis = _aioredis.from_url(redis_url)
         self._consumers: dict[str, asyncio.Task[None]] = {}
         self._on_job: Callable[[JobPayload], Awaitable[None]] | None = None
 
@@ -122,7 +122,7 @@ class RedisJobQueue:
 
     async def await_job_completion(
         self,
-        job_name: str,
+        channel_key: str,
         timeout_seconds: float,
     ) -> str:
         """
@@ -132,7 +132,7 @@ class RedisJobQueue:
         message containing the completion status.
 
         Args:
-            job_name (str): The Kubernetes Job name.
+            channel_key (str): The Redis pub/sub channel key.
             timeout_seconds (float): Maximum seconds to wait.
 
         Returns:
@@ -142,11 +142,10 @@ class RedisJobQueue:
             TimeoutError: If no completion signal arrives within the timeout.
         """
 
-        channel_name: str = f"{JOB_CHANNEL_PREFIX}:{job_name}:done"
         pubsub: aioredis.client.PubSub = self._redis.pubsub()
 
         try:
-            await pubsub.subscribe(channel_name)
+            await pubsub.subscribe(channel_key)
 
             deadline: float = asyncio.get_event_loop().time() + timeout_seconds
 
@@ -155,7 +154,7 @@ class RedisJobQueue:
 
                 if remaining <= 0:
                     raise TimeoutError(
-                        f"Timed out waiting for job {job_name} after "
+                        f"Timed out waiting for job on {channel_key} after "
                         f"{timeout_seconds}s",
                     )
 
@@ -172,7 +171,7 @@ class RedisJobQueue:
 
                     return str(data)
         finally:
-            await pubsub.unsubscribe(channel_name)
+            await pubsub.unsubscribe(channel_key)
             await pubsub.close()
 
     async def close(self) -> None:

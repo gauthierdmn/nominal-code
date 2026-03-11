@@ -1,5 +1,4 @@
 import base64
-import dataclasses
 import os
 
 from nominal_code.config import ProviderConfig
@@ -67,7 +66,7 @@ def _provider_defaults(provider: str) -> ProviderConfig:
     test_model = TEST_MODEL_OVERRIDES.get(provider_name)
 
     if test_model:
-        return dataclasses.replace(defaults, model=test_model)
+        return defaults.model_copy(update={"model": test_model})
 
     return defaults
 

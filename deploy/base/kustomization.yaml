@@ -7,3 +7,11 @@ resources:
   - redis.yaml
   - deployment.yaml
   - service.yaml
+
+configMapGenerator:
+  - name: nominal-code-config
+    namespace: nominal-code
+    files:
+      - config.yaml
+    options:
+      disableNameSuffixHash: true

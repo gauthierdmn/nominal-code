@@ -30,26 +30,12 @@ spec:
             - secretRef:
                 name: nominal-code-secrets
           env:
-            - name: JOB_RUNNER
-              value: "kubernetes"
-            - name: K8S_NAMESPACE
-              value: "nominal-code"
-            - name: K8S_IMAGE
-              value: "nominal-code"
-            - name: K8S_IMAGE_PULL_POLICY
-              value: "Never"
-            - name: K8S_ENV_FROM_SECRETS
-              value: "nominal-code-secrets"
-            - name: K8S_ACTIVE_DEADLINE_SECONDS
-              value: "600"
-            - name: REDIS_URL
-              value: "redis://redis.nominal-code.svc.cluster.local:6379/0"
-            - name: REVIEWER_TRIGGERS
-              value: "pr_opened"
-            - name: REVIEWER_BOT_USERNAME
-              value: "nominalbot"
-            - name: AGENT_PROVIDER
-              value: "google"
+            - name: CONFIG_PATH
+              value: "/etc/nominal-code/config.yaml"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nominal-code
+              readOnly: true
           livenessProbe:
             httpGet:
               path: /health
@@ -66,3 +52,7 @@ spec:
               memory: 128Mi
             limits:
               memory: 256Mi
+      volumes:
+        - name: config
+          configMap:
+            name: nominal-code-config

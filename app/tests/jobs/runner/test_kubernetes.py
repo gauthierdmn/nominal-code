@@ -9,8 +9,8 @@ from nominal_code.jobs.payload import JobPayload
 from nominal_code.jobs.queue.redis import RedisJobQueue
 from nominal_code.jobs.runner.kubernetes import (
     KubernetesRunner,
-    _build_job_name,
     _slugify,
+    build_job_channel_key,
     publish_job_completion,
 )
 from nominal_code.models import EventType
@@ -70,50 +70,17 @@ class TestSlugify:
         assert _slugify("/repo/") == "repo"
 
 
-class TestBuildJobName:
+class TestBuildJobChannelKey:
     def test_format(self):
-        name = _build_job_name(
-            platform="github", repo_full_name="owner/repo", pr_number=42
-        )
+        job = _make_job()
+        key = build_job_channel_key(job)
 
-        assert name.startswith("nominal-code-")
-        parts = name.split("-")
-        assert len(parts[2]) == 8
-        assert "owner-repo" in name
-        assert "42" in name
+        assert key == "nc:job:github:owner/repo:42:reviewer"
 
-    def test_uuid_uniqueness(self):
-        name_a = _build_job_name(
-            platform="github", repo_full_name="owner/repo", pr_number=42
-        )
-        name_b = _build_job_name(
-            platform="github", repo_full_name="owner/repo", pr_number=42
-        )
+    def test_deterministic(self):
+        job = _make_job()
 
-        assert name_a != name_b
-
-    def test_max_length(self):
-        name = _build_job_name(
-            platform="github",
-            repo_full_name="very-long-organization-name/very-long-repository-name",
-            pr_number=99999,
-        )
-
-        assert len(name) <= 63
-
-    def test_uniqueness_survives_truncation(self):
-        name_a = _build_job_name(
-            platform="github",
-            repo_full_name="very-long-organization-name/very-long-repository-name",
-            pr_number=99999,
-        )
-        name_b = _build_job_name(
-            platform="github",
-            repo_full_name="very-long-organization-name/very-long-repository-name",
-            pr_number=99999,
-        )
-
-        assert name_a != name_b
+        assert build_job_channel_key(job) == build_job_channel_key(job)
 
 
 class TestKubernetesRunnerBuildJobSpec:
@@ -123,14 +90,13 @@ class TestKubernetesRunnerBuildJobSpec:
         job = _make_job()
 
         spec = runner._build_job_spec(
-            job_name="test-job",
             payload='{"test": true}',
             job=job,
         )
 
         assert spec["apiVersion"] == "batch/v1"
         assert spec["kind"] == "Job"
-        assert spec["metadata"]["name"] == "test-job"
+        assert spec["metadata"]["generateName"] == "nominal-code-job-owner-repo-42-"
         assert spec["metadata"]["namespace"] == "nominal-code"
 
     def test_labels(self):
@@ -139,7 +105,6 @@ class TestKubernetesRunnerBuildJobSpec:
         job = _make_job()
 
         spec = runner._build_job_spec(
-            job_name="test-job",
             payload="{}",
             job=job,
         )
@@ -155,7 +120,6 @@ class TestKubernetesRunnerBuildJobSpec:
         job = _make_job()
 
         spec = runner._build_job_spec(
-            job_name="test-job",
             payload="{}",
             job=job,
         )
@@ -169,13 +133,12 @@ class TestKubernetesRunnerBuildJobSpec:
             "run-job",
         ]
 
-    def test_env_vars_include_job_name(self):
+    def test_env_vars_include_payload(self):
         config = _make_config()
         runner = KubernetesRunner(config=config, queue=_make_mock_queue())
         job = _make_job()
 
         spec = runner._build_job_spec(
-            job_name="test-job",
             payload='{"data": "value"}',
             job=job,
         )
@@ -184,7 +147,7 @@ class TestKubernetesRunnerBuildJobSpec:
 
         assert "REVIEW_JOB_PAYLOAD" in env_vars
         assert env_vars["REVIEW_JOB_PAYLOAD"] == '{"data": "value"}'
-        assert env_vars["K8S_JOB_NAME"] == "test-job"
+        assert "K8S_JOB_NAME" not in env_vars
 
     def test_env_from_secrets(self):
         config = _make_config()
@@ -192,7 +155,6 @@ class TestKubernetesRunnerBuildJobSpec:
         job = _make_job()
 
         spec = runner._build_job_spec(
-            job_name="test-job",
             payload="{}",
             job=job,
         )
@@ -208,7 +170,6 @@ class TestKubernetesRunnerBuildJobSpec:
         job = _make_job()
 
         spec = runner._build_job_spec(
-            job_name="test-job",
             payload="{}",
             job=job,
         )
@@ -223,7 +184,6 @@ class TestKubernetesRunnerBuildJobSpec:
         job = _make_job()
 
         spec = runner._build_job_spec(
-            job_name="test-job",
             payload="{}",
             job=job,
         )
@@ -237,7 +197,6 @@ class TestKubernetesRunnerBuildJobSpec:
         job = _make_job()
 
         spec = runner._build_job_spec(
-            job_name="test-job",
             payload="{}",
             job=job,
         )
@@ -251,7 +210,6 @@ class TestKubernetesRunnerBuildJobSpec:
         job = _make_job()
 
         spec = runner._build_job_spec(
-            job_name="test-job",
             payload="{}",
             job=job,
         )
@@ -268,7 +226,6 @@ class TestKubernetesRunnerBuildJobSpec:
         job = _make_job()
 
         spec = runner._build_job_spec(
-            job_name="test-job",
             payload="{}",
             job=job,
         )
@@ -283,7 +240,6 @@ class TestKubernetesRunnerBuildJobSpec:
 
         with patch.dict("os.environ", {"REDIS_URL": "redis://redis:6379/0"}):
             spec = runner._build_job_spec(
-                job_name="test-job",
                 payload="{}",
                 job=job,
             )
@@ -303,7 +259,6 @@ class TestKubernetesRunnerBuildJobSpec:
             {"REDIS_URL": "redis://redis:6379/0", "REDIS_KEY_TTL_SECONDS": "3600"},
         ):
             spec = runner._build_job_spec(
-                job_name="test-job",
                 payload="{}",
                 job=job,
             )
@@ -325,7 +280,6 @@ class TestKubernetesRunnerBuildJobSpec:
 
             with patch.dict("os.environ", env, clear=True):
                 spec = runner._build_job_spec(
-                    job_name="test-job",
                     payload="{}",
                     job=job,
                 )
@@ -498,12 +452,12 @@ class TestPublishJobCompletion:
 
             publish_job_completion(
                 redis_url="redis://localhost:6379",
-                job_name="nominal-code-abc12345-owner-repo-42",
+                channel_key="nc:job:github:owner/repo:42:reviewer",
                 status="succeeded",
             )
 
             mock_client.publish.assert_called_once_with(
-                "nc:job:nominal-code-abc12345-owner-repo-42:done",
+                "nc:job:github:owner/repo:42:reviewer",
                 "succeeded",
             )
             mock_client.close.assert_called_once()
@@ -517,12 +471,12 @@ class TestPublishJobCompletion:
 
             publish_job_completion(
                 redis_url="redis://localhost:6379",
-                job_name="test-job",
+                channel_key="nc:job:github:owner/repo:42:reviewer",
                 status="failed",
             )
 
             mock_client.publish.assert_called_once_with(
-                "nc:job:test-job:done",
+                "nc:job:github:owner/repo:42:reviewer",
                 "failed",
             )
 
@@ -534,6 +488,6 @@ class TestPublishJobCompletion:
 
             publish_job_completion(
                 redis_url="redis://localhost:6379",
-                job_name="test-job",
+                channel_key="nc:job:github:owner/repo:42:reviewer",
                 status="succeeded",
             )

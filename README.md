@@ -9,23 +9,29 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License: Apache 2.0"></a>
 </p>
 
-Nominal Code is an AI-powered code review agent for GitHub and GitLab pull requests. It uses an LLM to read your diffs and post structured inline reviews — all without leaving your PR.
+<p align="center">
+  Automated code reviews posted inline on your pull requests — GitHub and GitLab, any LLM provider, scales from solo dev to org-wide Kubernetes deployment.
+</p>
 
-It runs anywhere: as a **CI job** (GitHub Actions or GitLab CI), from the **command line**, or as a **self-hosted webhook server** for real-time interaction.
+---
 
-## What it does
+Nominal Code reads your PR diffs, runs an AI agent with read-only access to the repository, and posts structured inline reviews anchored to specific lines of code. It works as a **CI job**, a **CLI command**, or a **self-hosted webhook server** with real-time interaction.
 
-The **reviewer bot** fetches the PR diff, runs an AI agent with **read-only tools**, and posts structured inline code reviews anchored to specific diff lines.
+## Key Features
 
-It accepts a **custom prompt** to steer the review (e.g. *"focus on security"* or *"check for SQL injection"*), and respects **per-repo coding guidelines** placed in `.nominal/` at the root of your repository.
+- **Inline reviews on real diff lines** — not just a wall of text. Comments land exactly where the issue is, like a human reviewer.
+- **7 LLM providers or Claude Code CLI** — use any provider API (Anthropic, OpenAI, Google Gemini, DeepSeek, Groq, Together, Fireworks), or run via the Claude Code CLI with a Pro/Max subscription — no API key needed.
+- **GitHub + GitLab** — same bot, both platforms simultaneously. GitHub App and PAT authentication supported.
+- **Multi-turn conversations** — mention the bot again and it remembers the full PR discussion (webhook mode).
+- **Custom prompts and per-repo guidelines** — steer reviews with instructions like *"focus on security"*, or drop a `.nominal/guidelines.md` in your repo for persistent rules.
+- **Language-aware** — automatically applies language-specific guidelines when the diff contains Python, Go, TypeScript, etc.
+- **Auto-trigger or `@mention`** — run reviews automatically on PR open, push, reopen, or ready-for-review events, or trigger them on demand by mentioning the bot in a comment.
+- **Scales to any org size** — runs as a single process for small teams, or deploy to Kubernetes where each review runs as an isolated Job with automatic queuing and horizontal scaling.
+- **YAML config** — one structured file for all settings. Environment variables as overrides for secrets and runtime tuning.
 
-> **Beta:** A **worker bot** is also available — it can apply code changes and push commits directly to the PR branch. See [Worker Bot](https://gauthierdmn.github.io/nominal-code/bots/worker/) for details.
+## Get Started in 60 Seconds
 
-## How to run it
-
-### CI job
-
-The fastest way to get started. The example below uses GitHub Actions — GitLab CI is also supported (see [CI Mode](https://gauthierdmn.github.io/nominal-code/modes/ci/)).
+Add your API key as a repository secret, then create a workflow file:
 
 ```yaml
 # .github/workflows/review.yml
@@ -49,88 +55,89 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-Multiple LLM providers are supported (Anthropic, OpenAI, Google Gemini, DeepSeek, Groq, Together, Fireworks). Pass `provider` and the matching API key input. See [CI Mode](https://gauthierdmn.github.io/nominal-code/modes/ci/) for all provider examples.
+Open a pull request — the review runs automatically. Pass `provider` and the matching API key to use a different LLM. See [CI Mode](https://gauthierdmn.github.io/nominal-code/modes/ci/) for all provider examples and GitLab CI setup.
 
-Pin to a specific release tag (e.g. `@0.1.0`) for stability, or use `@main` to track the latest changes. You can also pass `model`, `max_turns`, `prompt`, and `coding_guidelines` as inputs.
+## All the Ways to Run It
 
-> CI mode calls the LLM provider API directly and does not require the Claude Code CLI.
+| Mode | Best for | What happens |
+|---|---|---|
+| [**CI**](https://gauthierdmn.github.io/nominal-code/modes/ci/) | Easiest setup | Runs in GitHub Actions or GitLab CI on every PR event |
+| [**CLI**](https://gauthierdmn.github.io/nominal-code/modes/cli/) | One-off reviews | `uv run nominal-code review owner/repo#42` from your terminal |
+| [**Webhook**](https://gauthierdmn.github.io/nominal-code/modes/webhook/) | Teams | Self-hosted server with `@mention` triggers and multi-turn conversations |
+| [**Kubernetes**](https://gauthierdmn.github.io/nominal-code/deployment/kubernetes/) | Production scale | Webhook server dispatches each review as a K8s Job |
 
 ### CLI
 
-Run a one-off review on any PR without deploying anything:
-
 ```bash
 cd nominal-code/app && uv sync
-
 export GITHUB_TOKEN=ghp_...
 
 uv run nominal-code review owner/repo#42
-uv run nominal-code review owner/repo#42 --dry-run
 uv run nominal-code review owner/repo#42 --prompt "focus on security"
+uv run nominal-code review owner/repo#42 --dry-run
 ```
 
-Supports `--platform`, `--model`, and `--max-turns`. Works with GitLab too (`--platform gitlab`).
-
-### Webhook server
-
-For teams that want real-time interaction — mention the bot in a PR comment and it responds:
+### Webhook Server
 
 ```bash
 cd nominal-code/app && uv sync
 
-export REVIEWER_BOT_USERNAME=my-reviewer
-export ALLOWED_USERS=alice,bob
+# config.yaml
+# reviewer:
+#   bot_username: "my-reviewer"
+#   triggers: [pr_opened]
+# access:
+#   allowed_users: [alice, bob]
+
 export GITHUB_TOKEN=ghp_...
 export GITHUB_WEBHOOK_SECRET=your-secret
+export CONFIG_PATH=config.yaml
 
 uv run nominal-code serve
 ```
 
-The server supports **GitHub App authentication** as an alternative to PATs, **auto-triggering** reviews on PR lifecycle events, and **multi-turn conversations** that carry context across comments. See [Getting Started](https://gauthierdmn.github.io/nominal-code/getting-started/) for the full setup.
+Mention `@my-reviewer` in a PR comment — the bot responds with a structured review. Supports **GitHub App auth**, **auto-triggering**, and **multi-turn conversations** that carry context across comments.
 
-### Kubernetes
+## Configuration
 
-Deploy the webhook server to Kubernetes for production-grade scaling. The server pod receives webhooks and dispatches each review as a separate Kubernetes Job — no shared state, horizontal scaling out of the box.
+Nominal Code uses a [YAML config file](https://gauthierdmn.github.io/nominal-code/reference/configuration/#yaml-config-file) as the primary configuration method. Environment variables always override the YAML file — use them for secrets and runtime tuning.
 
-```bash
-# Local development with minikube
-cp deploy/overlays/local/secret.yaml.template deploy/overlays/local/secret.yaml
-# fill in your API keys and tokens
-make -C deploy deploy
-make -C deploy port-forward   # localhost:9090
+```yaml
+# config.yaml
+reviewer:
+  bot_username: "my-reviewer"
+  triggers:
+    - pr_opened
+    - pr_push
+
+agent:
+  provider: "anthropic"
+  model: "claude-sonnet-4-6"
+
+access:
+  allowed_users:
+    - alice
+    - bob
+  allowed_repos:
+    - myorg/backend
+    - myorg/frontend
 ```
-
-See [Kubernetes Deployment](https://gauthierdmn.github.io/nominal-code/deployment/kubernetes/) for the full guide, including production cluster setup.
-
-## Configuration highlights
-
-| What | How |
-|---|---|
-| Model | `AGENT_MODEL` env var, `--model` flag, or `model` Action input |
-| Review prompt | `--prompt` flag, `INPUT_PROMPT` env var, or `prompt` Action input |
-| Coding guidelines | Global via `CODING_GUIDELINES`, per-repo via `.nominal/guidelines.md` |
-| Language-specific rules | `prompts/languages/` or `.nominal/languages/{lang}.md` per repo |
-| Auto-trigger | `REVIEWER_TRIGGERS=pr_opened,pr_push,pr_reopened,pr_ready_for_review` |
-| Allowed users | `ALLOWED_USERS=alice,bob` (webhook mode) |
 
 Full reference: [Configuration](https://gauthierdmn.github.io/nominal-code/reference/configuration/) | [Environment Variables](https://gauthierdmn.github.io/nominal-code/reference/env-vars/)
 
 ## Documentation
 
-- [Getting Started](https://gauthierdmn.github.io/nominal-code/getting-started/) — from zero to a working bot
+- [Getting Started](https://gauthierdmn.github.io/nominal-code/getting-started/) — from zero to a working review
 - **Modes:** [CI](https://gauthierdmn.github.io/nominal-code/modes/ci/) | [CLI](https://gauthierdmn.github.io/nominal-code/modes/cli/) | [Webhook](https://gauthierdmn.github.io/nominal-code/modes/webhook/)
 - **Platforms:** [GitHub](https://gauthierdmn.github.io/nominal-code/platforms/github/) | [GitLab](https://gauthierdmn.github.io/nominal-code/platforms/gitlab/)
 - **Bots:** [Reviewer](https://gauthierdmn.github.io/nominal-code/bots/reviewer/) | [Worker (Beta)](https://gauthierdmn.github.io/nominal-code/bots/worker/)
 - **Reference:** [Configuration](https://gauthierdmn.github.io/nominal-code/reference/configuration/) | [Environment Variables](https://gauthierdmn.github.io/nominal-code/reference/env-vars/)
-- [Architecture](https://gauthierdmn.github.io/nominal-code/architecture/) — request flow, agent runners, workspace layout
-- [Deployment](https://gauthierdmn.github.io/nominal-code/deployment/) — standalone server, Kubernetes, health checks
-- [Security](https://gauthierdmn.github.io/nominal-code/security/) — trust model, LLM risks, authentication
+- [Architecture](https://gauthierdmn.github.io/nominal-code/architecture/) | [Deployment](https://gauthierdmn.github.io/nominal-code/deployment/) | [Security](https://gauthierdmn.github.io/nominal-code/security/)
 
 ## Development
 
 ```bash
-cd app
-uv sync
+cd app && uv sync
 
 uv run ruff check nominal_code/ tests/
 uv run ruff format nominal_code/ tests/
@@ -140,4 +147,4 @@ uv run pytest
 
 ## Security
 
-Nominal Code includes webhook signature verification, tool restrictions, token separation, and resource limits. See the **[Security](https://gauthierdmn.github.io/nominal-code/security/)** page for the full trust model, LLM prompt injection risks, and hardening recommendations.
+Nominal Code includes webhook signature verification, tool restrictions, token separation, and resource limits. See [Security](https://gauthierdmn.github.io/nominal-code/security/) for the full trust model and hardening recommendations.

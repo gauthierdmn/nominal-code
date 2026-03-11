@@ -36,7 +36,7 @@ logger: logging.Logger = logging.getLogger(__name__)
 _original_parse_message = _sdk_parser.parse_message
 
 
-def _patched_parse_message(data: dict[str, Any]) -> Message:
+def _patched_parse_message(data: dict[str, Any]) -> Message | None:
     """
     Wrap the SDK's ``parse_message`` to gracefully handle unknown types.
 

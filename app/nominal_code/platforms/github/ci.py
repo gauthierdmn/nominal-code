@@ -7,6 +7,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from environs import Env
+
 from nominal_code.models import EventType
 from nominal_code.platforms.base import PlatformName, PullRequestEvent, ReviewerPlatform
 from nominal_code.platforms.github import (
@@ -16,6 +18,7 @@ from nominal_code.platforms.github import (
     load_private_key,
 )
 
+_env: Env = Env()
 logger: logging.Logger = logging.getLogger(__name__)
 
 
@@ -33,7 +36,7 @@ def build_event() -> PullRequestEvent:
         SystemExit: If required environment variables are missing.
     """
 
-    event_path: Path = Path(os.environ.get("GITHUB_EVENT_PATH", ""))
+    event_path: Path = Path(_env.str("GITHUB_EVENT_PATH", ""))
 
     if not event_path.is_file():
         logger.error("GITHUB_EVENT_PATH is not set or file does not exist")
@@ -86,11 +89,11 @@ def build_platform() -> ReviewerPlatform:
         SystemExit: If neither auth mode is configured.
     """
 
-    app_id: str = os.environ.get("GITHUB_APP_ID", "")
+    app_id: str = _env.str("GITHUB_APP_ID", "")
     private_key: str = load_private_key()
 
     if app_id and private_key:
-        installation_id: int = int(os.environ.get("GITHUB_INSTALLATION_ID", "0"))
+        installation_id: int = _env.int("GITHUB_INSTALLATION_ID", 0)
 
         return GitHubPlatform(
             auth=GitHubAppAuth(
@@ -100,7 +103,7 @@ def build_platform() -> ReviewerPlatform:
             ),
         )
 
-    github_token: str = os.environ.get("GITHUB_TOKEN", "")
+    github_token: str = _env.str("GITHUB_TOKEN", "")
 
     if not github_token:
         logger.error(
@@ -120,4 +123,4 @@ def resolve_workspace() -> str:
         str: The absolute path to the repository checkout.
     """
 
-    return os.environ.get("GITHUB_WORKSPACE", os.getcwd())
+    return _env.str("GITHUB_WORKSPACE", os.getcwd())

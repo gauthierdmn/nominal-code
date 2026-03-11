@@ -134,7 +134,7 @@ class TestRunWebhookServer:
     @pytest.mark.asyncio
     async def test_run_webhook_server_exits_on_config_error(self):
         with patch(
-            "nominal_code.commands.webhook.server.Config.from_env",
+            "nominal_code.commands.webhook.server.load_config",
             side_effect=ValueError("bad config"),
         ):
             with pytest.raises(SystemExit) as exc_info:
@@ -154,7 +154,7 @@ class TestRunWebhookServer:
         mock_config.webhook_port = 8080
 
         with patch(
-            "nominal_code.commands.webhook.server.Config.from_env",
+            "nominal_code.commands.webhook.server.load_config",
             return_value=mock_config,
         ):
             with patch(

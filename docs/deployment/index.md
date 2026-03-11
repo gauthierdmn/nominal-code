@@ -5,7 +5,7 @@ Nominal Code can be deployed as a **standalone server** (single process, no orch
 | | Standalone | Kubernetes |
 |---|---|---|
 | Job execution | Same process, asyncio queue | Separate K8s Job pod per event |
-| Agent runner | Claude Code CLI (default) or LLM provider API | LLM provider API (requires `AGENT_PROVIDER`) |
+| Agent runner | Claude Code CLI (default) or LLM provider API | LLM provider API (requires `agent.provider`) |
 | Conversation store | In-memory | Redis (required) |
 | Scaling | Single process | Unlimited concurrent Jobs |
 | Dependencies | Claude Code CLI on `PATH`, or an LLM provider API key | K8s cluster, container image, LLM provider API key |
@@ -15,6 +15,8 @@ Choose your deployment model:
 
 - **[Standalone](standalone.md)** — run the server directly, no orchestrator needed
 - **[Kubernetes](kubernetes.md)** — deploy to a K8s cluster with per-review Job isolation
+
+Both models support a [YAML config file](../reference/configuration.md#yaml-config-file) as the primary configuration method. See [Configuration](../reference/configuration.md) for the full schema.
 
 ## Health Endpoint
 
@@ -39,12 +41,12 @@ LOG_LEVEL=ERROR    # only errors
 
 ## Workspace Disk Usage
 
-The bot clones repositories into `WORKSPACE_BASE_DIR` (defaults to a system temp directory). Each PR gets its own shallow clone.
+The bot clones repositories into the workspace base directory (YAML: `workspace.base_dir`, env: `WORKSPACE_BASE_DIR`, default: system temp dir). Each PR gets its own shallow clone.
 
 To control disk usage:
 
-- Set `WORKSPACE_BASE_DIR` to a volume with sufficient space.
-- Tune `CLEANUP_INTERVAL_HOURS` (default: 6) to clean up stale workspaces more or less frequently.
-- Set `CLEANUP_INTERVAL_HOURS=0` to disable automatic cleanup and manage disk space manually.
+- Set `workspace.base_dir` (or `WORKSPACE_BASE_DIR`) to a volume with sufficient space.
+- Tune `workspace.cleanup_interval_hours` (or `CLEANUP_INTERVAL_HOURS`, default: 6) to clean up stale workspaces more or less frequently.
+- Set `cleanup_interval_hours` to `0` to disable automatic cleanup and manage disk space manually.
 
 The cleaner only removes workspaces for PRs that are no longer open. If an API check fails, the workspace is kept as a safety measure. See [Configuration — Workspace Cleanup](../reference/configuration.md#workspace-cleanup) for details.
