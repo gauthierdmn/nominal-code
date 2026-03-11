@@ -56,6 +56,7 @@ class RedisConversationStore:
         repo: str,
         pr_number: int,
         bot_type: BotType,
+        namespace: str = "",
     ) -> str | None:
         """
         Look up the conversation ID for a PR/MR thread from Redis.
@@ -65,6 +66,7 @@ class RedisConversationStore:
             repo (str): The full repository name.
             pr_number (int): The pull/merge request number.
             bot_type (BotType): The type of bot.
+            namespace (str): Logical namespace for key isolation.
 
         Returns:
             str | None: The stored conversation ID, or None if not found
@@ -77,6 +79,7 @@ class RedisConversationStore:
             repo=repo,
             pr_number=pr_number,
             bot_type=bot_type,
+            namespace=namespace,
         )
 
         try:
@@ -98,6 +101,7 @@ class RedisConversationStore:
         pr_number: int,
         bot_type: BotType,
         value: str,
+        namespace: str = "",
     ) -> None:
         """
         Store a conversation ID for a PR/MR thread in Redis.
@@ -108,6 +112,7 @@ class RedisConversationStore:
             pr_number (int): The pull/merge request number.
             bot_type (BotType): The type of bot.
             value (str): The conversation ID to store.
+            namespace (str): Logical namespace for key isolation.
         """
 
         key: str = _build_key(
@@ -116,6 +121,7 @@ class RedisConversationStore:
             repo=repo,
             pr_number=pr_number,
             bot_type=bot_type,
+            namespace=namespace,
         )
 
         try:
@@ -133,6 +139,7 @@ class RedisConversationStore:
         repo: str,
         pr_number: int,
         bot_type: BotType,
+        namespace: str = "",
     ) -> list[Message] | None:
         """
         Look up stored messages for a PR/MR thread from Redis.
@@ -142,6 +149,7 @@ class RedisConversationStore:
             repo (str): The full repository name.
             pr_number (int): The pull/merge request number.
             bot_type (BotType): The type of bot.
+            namespace (str): Logical namespace for key isolation.
 
         Returns:
             list[Message] | None: The stored messages, or None if not found
@@ -154,6 +162,7 @@ class RedisConversationStore:
             repo=repo,
             pr_number=pr_number,
             bot_type=bot_type,
+            namespace=namespace,
         )
 
         try:
@@ -180,6 +189,7 @@ class RedisConversationStore:
         pr_number: int,
         bot_type: BotType,
         value: list[Message],
+        namespace: str = "",
     ) -> None:
         """
         Store messages for a PR/MR thread in Redis.
@@ -190,6 +200,7 @@ class RedisConversationStore:
             pr_number (int): The pull/merge request number.
             bot_type (BotType): The type of bot.
             value (list[Message]): The messages to store.
+            namespace (str): Logical namespace for key isolation.
         """
 
         key: str = _build_key(
@@ -198,6 +209,7 @@ class RedisConversationStore:
             repo=repo,
             pr_number=pr_number,
             bot_type=bot_type,
+            namespace=namespace,
         )
 
         try:
@@ -217,6 +229,7 @@ def _build_key(
     repo: str,
     pr_number: int,
     bot_type: BotType,
+    namespace: str = "",
 ) -> str:
     """
     Build a Redis key for conversation data.
@@ -227,10 +240,17 @@ def _build_key(
         repo (str): The full repository name.
         pr_number (int): The pull/merge request number.
         bot_type (BotType): The type of bot.
+        namespace (str): Logical namespace inserted after ``nc:``.
 
     Returns:
         str: The Redis key.
     """
+
+    if namespace:
+        return (
+            f"nc:{namespace}:{prefix}:"
+            f"{platform.value}:{repo}:{pr_number}:{bot_type.value}"
+        )
 
     return f"nc:{prefix}:{platform.value}:{repo}:{pr_number}:{bot_type.value}"
 

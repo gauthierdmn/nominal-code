@@ -1,4 +1,5 @@
 from nominal_code.platforms.github.auth import (
+    CachedToken,
     GitHubAppAuth,
     GitHubAuth,
     GitHubPatAuth,
@@ -9,6 +10,7 @@ from nominal_code.platforms.github.platform import (
 )
 
 __all__: list[str] = [
+    "CachedToken",
     "GitHubAppAuth",
     "GitHubAuth",
     "GitHubPatAuth",

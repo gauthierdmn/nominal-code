@@ -254,11 +254,32 @@ class Platform(Protocol):
 
         ...
 
-    async def ensure_auth(self) -> None:
+    def extract_account_id(self, body: bytes) -> int:
+        """
+        Extract a platform-specific account identifier from a raw webhook body.
+
+        For GitHub this is the ``installation.id`` from the payload. Other
+        platforms return 0 if not applicable.
+
+        Args:
+            body (bytes): The raw webhook request body.
+
+        Returns:
+            int: The platform account identifier, or 0 if not applicable.
+        """
+
+        ...
+
+    async def ensure_auth(self, account_id: int = 0) -> None:
         """
         Ensure the platform has a valid authentication token.
 
         Refreshes expired tokens for App-based auth. No-op for static tokens.
+        When ``account_id`` is non-zero, auth is scoped to that specific
+        platform account (e.g. a GitHub App installation).
+
+        Args:
+            account_id (int): Optional platform-specific account identifier.
         """
 
         ...

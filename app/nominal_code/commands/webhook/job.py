@@ -139,6 +139,7 @@ async def _run_reviewer_job(
             config=config,
             platform=platform,
             conversation_store=conversation_store,
+            namespace=job.namespace,
         )
     except Exception:
         logger.exception(
@@ -207,6 +208,7 @@ async def _run_worker_job(
             config=config,
             platform=platform,
             conversation_store=conversation_store,
+            namespace=job.namespace,
         )
     except Exception:
         logger.exception(

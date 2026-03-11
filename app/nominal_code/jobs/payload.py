@@ -26,10 +26,13 @@ class JobPayload:
     Attributes:
         event (CommentEvent | LifecycleEvent): The platform event.
         bot_type (str): Bot personality (``"reviewer"`` or ``"worker"``).
+        namespace (str): Logical namespace for job isolation and
+            attribution. Empty string when unused.
     """
 
     event: CommentEvent | LifecycleEvent
     bot_type: str
+    namespace: str = ""
 
     def serialize(self) -> str:
         """
@@ -49,6 +52,7 @@ class JobPayload:
             {
                 "event": event_dict,
                 "bot_type": self.bot_type,
+                "namespace": self.namespace,
             }
         )
 
@@ -114,4 +118,5 @@ class JobPayload:
         return cls(
             event=event,
             bot_type=str(json_data["bot_type"]),
+            namespace=str(json_data.get("namespace", "")),
         )

@@ -237,7 +237,7 @@ class TestParseWebhook:
 
         assert platform.parse_event(request, body) is None
 
-    def test_parse_event_extracts_installation_id(self, platform):
+    def test_parse_event_does_not_mutate_auth(self, platform):
         payload = {
             "action": "created",
             "installation": {"id": 98765},
@@ -256,11 +256,6 @@ class TestParseWebhook:
         request = _make_request({"X-GitHub-Event": "issue_comment"})
 
         platform.parse_event(request, body)
-
-        from nominal_code.platforms.github import GitHubAppAuth
-
-        if isinstance(platform.auth, GitHubAppAuth):
-            assert platform.auth.installation_id == 98765
 
 
 class TestParsePullRequest:
@@ -1096,6 +1091,26 @@ class TestAuthHeaders:
         assert headers["Accept"] == "application/vnd.github.v3+json"
 
 
+class TestExtractAccountId:
+    def test_extract_account_id_returns_installation_id(self, platform):
+        payload = {
+            "installation": {"id": 98765},
+            "action": "created",
+        }
+        body = json.dumps(payload).encode()
+
+        assert platform.extract_account_id(body) == 98765
+
+    def test_extract_account_id_returns_zero_when_missing(self, platform):
+        payload = {"action": "created"}
+        body = json.dumps(payload).encode()
+
+        assert platform.extract_account_id(body) == 0
+
+    def test_extract_account_id_returns_zero_on_malformed_json(self, platform):
+        assert platform.extract_account_id(b"not json") == 0
+
+
 class TestEnsureAuth:
     @pytest.mark.asyncio
     async def test_ensure_auth_calls_refresh_if_needed(self, platform):
@@ -1103,6 +1118,20 @@ class TestEnsureAuth:
             await platform.ensure_auth()
 
             mock.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_ensure_auth_with_account_id_calls_refresh_for_installation(
+        self,
+        platform,
+    ):
+        with patch.object(
+            platform.auth,
+            "refresh_token_for_installation",
+            new=AsyncMock(),
+        ) as mock:
+            await platform.ensure_auth(account_id=12345)
+
+            mock.assert_awaited_once_with(12345)
 
 
 class TestFetchIssueComments:

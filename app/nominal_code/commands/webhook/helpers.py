@@ -52,6 +52,7 @@ async def acknowledge_event(
     bot_type: BotType,
     config: Config,
     platform: Platform,
+    account_id: int = 0,
 ) -> bool:
     """
     Authorize and acknowledge an event before dispatching a job.
@@ -66,6 +67,8 @@ async def acknowledge_event(
         bot_type (BotType): Which bot personality to use.
         config (Config): Application configuration.
         platform (Platform): The platform client for API calls.
+        account_id (int): Platform-specific account identifier for scoped
+            auth (e.g. GitHub App installation ID).
 
     Returns:
         bool: True if the job should proceed, False if it should be skipped.
@@ -89,7 +92,7 @@ async def acknowledge_event(
             event.body[:100],
         )
 
-        await platform.ensure_auth()
+        await platform.ensure_auth(account_id)
         await platform.post_reaction(event=event, reaction=EYES_REACTION)
 
     else:
@@ -102,7 +105,7 @@ async def acknowledge_event(
             event.pr_author,
         )
 
-        await platform.ensure_auth()
+        await platform.ensure_auth(account_id)
 
     await platform.post_pr_reaction(
         repo_full_name=event.repo_full_name,

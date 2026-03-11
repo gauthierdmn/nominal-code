@@ -125,6 +125,7 @@ class ProcessRunner:
                     config=self._config,
                     platform=platform,
                     conversation_store=self._conversation_store,
+                    namespace=job.namespace,
                 )
             elif isinstance(platform, ReviewerPlatform):
                 mention_prompt: str = ""
@@ -141,4 +142,5 @@ class ProcessRunner:
                     config=self._config,
                     platform=platform,
                     conversation_store=self._conversation_store,
+                    namespace=job.namespace,
                 )

@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import json
 import logging
+from contextvars import ContextVar
 from typing import Any
 
 import httpx
@@ -40,6 +41,11 @@ PR_ACTION_TO_EVENT_TYPE: dict[str, EventType] = {
 }
 
 logger: logging.Logger = logging.getLogger(__name__)
+
+_installation_ctx: ContextVar[int] = ContextVar(
+    "github_installation_id",
+    default=0,
+)
 
 
 def _format_suggestion_body(finding: ReviewFinding) -> str:
@@ -105,6 +111,27 @@ class GitHubPlatform:
 
         return "github"
 
+    def _active_installation_id(self) -> int:
+        """
+        Resolve the installation ID for the current request context.
+
+        Returns the ContextVar value if set, otherwise falls back to the
+        auth provider's default installation ID (for CLI/CI modes).
+
+        Returns:
+            int: The active installation ID.
+        """
+
+        ctx_id: int = _installation_ctx.get()
+
+        if ctx_id:
+            return ctx_id
+
+        if isinstance(self.auth, GitHubAppAuth):
+            return self.auth.installation_id
+
+        return 0
+
     def _auth_headers(self) -> dict[str, str]:
         """
         Build authorization headers for GitHub API requests.
@@ -113,8 +140,15 @@ class GitHubPlatform:
             dict[str, str]: Headers with Authorization and Accept fields.
         """
 
+        installation_id: int = self._active_installation_id()
+
+        if installation_id:
+            token: str = self.auth.get_token_for_installation(installation_id)
+        else:
+            token = self.auth.get_token()
+
         return {
-            "Authorization": f"token {self.auth.get_token()}",
+            "Authorization": f"token {token}",
             "Accept": "application/vnd.github.v3+json",
         }
 
@@ -147,12 +181,43 @@ class GitHubPlatform:
             **kwargs,
         )
 
-    async def ensure_auth(self) -> None:
+    def extract_account_id(self, body: bytes) -> int:
         """
-        Ensure the auth provider has a valid token, refreshing if needed.
+        Extract the GitHub App installation ID from a webhook payload.
+
+        Args:
+            body (bytes): The raw webhook request body.
+
+        Returns:
+            int: The installation ID, or 0 if not present.
         """
 
-        await self.auth.refresh_if_needed()
+        try:
+            payload: dict[str, Any] = json.loads(body)
+        except (json.JSONDecodeError, ValueError):
+            return 0
+
+        installation: dict[str, Any] = payload.get("installation", {})
+
+        return int(installation.get("id", 0))
+
+    async def ensure_auth(self, account_id: int = 0) -> None:
+        """
+        Ensure the auth provider has a valid token, refreshing if needed.
+
+        When ``account_id`` is non-zero, sets the request-scoped ContextVar
+        and refreshes the token for that specific installation.
+
+        Args:
+            account_id (int): The GitHub App installation ID to scope auth to.
+        """
+
+        if account_id:
+            _installation_ctx.set(account_id)
+
+            await self.auth.refresh_token_for_installation(account_id)
+        else:
+            await self.auth.refresh_if_needed()
 
     def verify_webhook(self, request: web.Request, body: bytes) -> bool:
         """
@@ -203,6 +268,9 @@ class GitHubPlatform:
         And lifecycle events:
         - ``pull_request`` (opened, synchronize, reopened, ready_for_review)
 
+        Auth is no longer mutated here. Call ``ensure_auth(account_id)``
+        before ``parse_event()`` in the webhook handler.
+
         Args:
             request (web.Request): The incoming HTTP request.
             body (bytes): The raw request body.
@@ -219,12 +287,6 @@ class GitHubPlatform:
             logger.warning("Malformed JSON in GitHub webhook payload")
 
             return None
-
-        installation: dict[str, Any] = payload.get("installation", {})
-        installation_id: int = installation.get("id", 0)
-
-        if installation_id:
-            self.auth.set_installation_id(installation_id)
 
         if event_header == "issue_comment":
             return self._parse_issue_comment(payload)
@@ -599,7 +661,14 @@ class GitHubPlatform:
             str: The authenticated HTTPS clone URL.
         """
 
-        effective_token: str = self.auth.get_reviewer_token()
+        installation_id: int = self._active_installation_id()
+
+        if installation_id and isinstance(self.auth, GitHubAppAuth):
+            effective_token: str = self.auth.get_token_for_installation(
+                installation_id,
+            )
+        else:
+            effective_token = self.auth.get_reviewer_token()
 
         return (
             f"https://x-access-token:{effective_token}@github.com/{repo_full_name}.git"
@@ -895,7 +964,14 @@ class GitHubPlatform:
             str: The authenticated HTTPS clone URL.
         """
 
-        return f"https://x-access-token:{self.auth.get_token()}@github.com/{repo_full_name}.git"
+        installation_id: int = self._active_installation_id()
+
+        if installation_id:
+            token: str = self.auth.get_token_for_installation(installation_id)
+        else:
+            token = self.auth.get_token()
+
+        return f"https://x-access-token:{token}@github.com/{repo_full_name}.git"
 
 
 def _create_github_platform() -> GitHubPlatform | None:

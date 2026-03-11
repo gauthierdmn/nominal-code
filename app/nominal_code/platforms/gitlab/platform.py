@@ -619,9 +619,27 @@ class GitLabPlatform:
                     pr_number,
                 )
 
-    async def ensure_auth(self) -> None:
+    def extract_account_id(self, body: bytes) -> int:
+        """
+        Extract a platform-specific account identifier from a webhook body.
+
+        GitLab does not use installation-scoped auth, so this always returns 0.
+
+        Args:
+            body (bytes): The raw webhook request body.
+
+        Returns:
+            int: Always 0.
+        """
+
+        return 0
+
+    async def ensure_auth(self, account_id: int = 0) -> None:
         """
         No-op for GitLab PAT authentication.
+
+        Args:
+            account_id (int): Ignored for GitLab.
         """
 
     def build_reviewer_clone_url(self, repo_full_name: str) -> str:
