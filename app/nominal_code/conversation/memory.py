@@ -9,7 +9,8 @@ class MemoryConversationStore:
     """
     In-memory store for per-PR conversation state.
 
-    Holds two parallel dicts keyed by ``(platform, repo, pr_number, bot_type)``:
+    Holds two parallel dicts keyed by
+    ``(platform, repo, pr_number, bot_type, namespace)``:
     lightweight conversation IDs (CLI session IDs or provider response IDs)
     and full message histories (API mode only).
     """
@@ -28,6 +29,7 @@ class MemoryConversationStore:
         repo: str,
         pr_number: int,
         bot_type: BotType,
+        namespace: str = "",
     ) -> str | None:
         """
         Look up the conversation ID for a PR/MR thread.
@@ -37,13 +39,14 @@ class MemoryConversationStore:
             repo (str): The full repository name.
             pr_number (int): The pull/merge request number.
             bot_type (BotType): The type of bot.
+            namespace (str): Logical namespace for key isolation.
 
         Returns:
             str | None: The stored conversation ID, or None if none exists.
         """
 
         return self._conversation_ids.get(
-            (platform.value, repo, pr_number, bot_type.value),
+            (platform.value, repo, pr_number, bot_type.value, namespace),
         )
 
     def set_conversation_id(
@@ -53,6 +56,7 @@ class MemoryConversationStore:
         pr_number: int,
         bot_type: BotType,
         value: str,
+        namespace: str = "",
     ) -> None:
         """
         Store a conversation ID for a PR/MR thread.
@@ -63,11 +67,12 @@ class MemoryConversationStore:
             pr_number (int): The pull/merge request number.
             bot_type (BotType): The type of bot.
             value (str): The conversation ID to store.
+            namespace (str): Logical namespace for key isolation.
         """
 
-        self._conversation_ids[(platform.value, repo, pr_number, bot_type.value)] = (
-            value
-        )
+        self._conversation_ids[
+            (platform.value, repo, pr_number, bot_type.value, namespace)
+        ] = value
 
     def get_messages(
         self,
@@ -75,6 +80,7 @@ class MemoryConversationStore:
         repo: str,
         pr_number: int,
         bot_type: BotType,
+        namespace: str = "",
     ) -> list[Message] | None:
         """
         Look up stored messages for a PR/MR thread.
@@ -84,13 +90,14 @@ class MemoryConversationStore:
             repo (str): The full repository name.
             pr_number (int): The pull/merge request number.
             bot_type (BotType): The type of bot.
+            namespace (str): Logical namespace for key isolation.
 
         Returns:
             list[Message] | None: The stored messages, or None if none exist.
         """
 
         return self._messages.get(
-            (platform.value, repo, pr_number, bot_type.value),
+            (platform.value, repo, pr_number, bot_type.value, namespace),
         )
 
     def set_messages(
@@ -100,6 +107,7 @@ class MemoryConversationStore:
         pr_number: int,
         bot_type: BotType,
         value: list[Message],
+        namespace: str = "",
     ) -> None:
         """
         Store messages for a PR/MR thread.
@@ -110,6 +118,9 @@ class MemoryConversationStore:
             pr_number (int): The pull/merge request number.
             bot_type (BotType): The type of bot.
             value (list[Message]): The messages to store.
+            namespace (str): Logical namespace for key isolation.
         """
 
-        self._messages[(platform.value, repo, pr_number, bot_type.value)] = value
+        self._messages[(platform.value, repo, pr_number, bot_type.value, namespace)] = (
+            value
+        )
