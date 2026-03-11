@@ -28,6 +28,7 @@ from nominal_code.platforms.github.auth import (
 from nominal_code.platforms.http import request_with_retry
 from nominal_code.platforms.registry import register_platform
 
+_env: Env = Env()
 GITHUB_API_BASE: str = "https://api.github.com"
 FILES_PER_PAGE: int = 100
 
@@ -909,14 +910,13 @@ def _create_github_platform() -> GitHubPlatform | None:
         GitHubPlatform | None: A configured client, or None.
     """
 
-    env: Env = Env()
-    webhook_secret: str = env.str("GITHUB_WEBHOOK_SECRET", "")
+    webhook_secret: str = _env.str("GITHUB_WEBHOOK_SECRET", "")
 
-    app_id: str = env.str("GITHUB_APP_ID", "")
+    app_id: str = _env.str("GITHUB_APP_ID", "")
     private_key: str = load_private_key()
 
     if app_id and private_key:
-        installation_id: int = env.int("GITHUB_INSTALLATION_ID", 0)
+        installation_id: int = _env.int("GITHUB_INSTALLATION_ID", 0)
         auth: GitHubAuth = GitHubAppAuth(
             app_id=app_id,
             private_key=private_key,
@@ -925,12 +925,12 @@ def _create_github_platform() -> GitHubPlatform | None:
 
         return GitHubPlatform(auth=auth, webhook_secret=webhook_secret)
 
-    token: str = env.str("GITHUB_TOKEN", "")
+    token: str = _env.str("GITHUB_TOKEN", "")
 
     if not token:
         return None
 
-    reviewer_token: str = env.str("GITHUB_REVIEWER_TOKEN", "")
+    reviewer_token: str = _env.str("GITHUB_REVIEWER_TOKEN", "")
     auth = GitHubPatAuth(token=token, reviewer_token=reviewer_token)
 
     return GitHubPlatform(auth=auth, webhook_secret=webhook_secret)

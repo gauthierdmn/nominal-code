@@ -9,6 +9,7 @@ import httpx
 import jwt
 from environs import Env
 
+_env: Env = Env()
 logger: logging.Logger = logging.getLogger(__name__)
 
 JWT_EXPIRY_SECONDS: int = 600
@@ -297,7 +298,6 @@ def load_private_key() -> str:
         str: The PEM private key contents, or empty string if not configured.
     """
 
-    _env: Env = Env()
     inline_key: str = _env.str("GITHUB_APP_PRIVATE_KEY", "")
 
     if inline_key:

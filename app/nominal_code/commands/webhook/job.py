@@ -1,21 +1,26 @@
 from __future__ import annotations
 
 import logging
-import os
 from datetime import timedelta
 
-from nominal_code.config import Config, resolve_provider_config
+from environs import Env
+
+from nominal_code.config import Config, load_config_for_ci, resolve_provider_config
 from nominal_code.conversation.base import ConversationStore
 from nominal_code.handlers.review import run_and_post_review
 from nominal_code.handlers.worker import review_and_fix
 from nominal_code.jobs.payload import JobPayload
-from nominal_code.jobs.runner.kubernetes import publish_job_completion
+from nominal_code.jobs.runner.kubernetes import (
+    build_job_channel_key,
+    publish_job_completion,
+)
 from nominal_code.llm.cost import format_cost_summary
 from nominal_code.models import BotType
 from nominal_code.platforms import load_platform_ci
 from nominal_code.platforms.base import CommentEvent, PlatformName, ReviewerPlatform
 from nominal_code.workspace.setup import prepare_job_event
 
+_env: Env = Env()
 logger: logging.Logger = logging.getLogger(__name__)
 
 
@@ -31,7 +36,7 @@ async def run_job_main() -> int:
         int: Exit code (0 on success, 1 on failure).
     """
 
-    payload: str = os.environ.get("REVIEW_JOB_PAYLOAD", "")
+    payload: str = _env.str("REVIEW_JOB_PAYLOAD", "")
 
     if not payload:
         logger.error("REVIEW_JOB_PAYLOAD environment variable is not set")
@@ -52,7 +57,7 @@ async def run_job_main() -> int:
 
         return 1
 
-    conversation_store: ConversationStore | None = _build_conversation_store()
+    conversation_store: ConversationStore | None = _build_conversation_store(config)
 
     platform_name: PlatformName = PlatformName(job.event.platform)
     platform: ReviewerPlatform = _build_platform(platform_name)
@@ -74,7 +79,7 @@ async def run_job_main() -> int:
             conversation_store=conversation_store,
         )
 
-    _publish_completion(exit_code)
+    _publish_completion(exit_code=exit_code, job=job)
 
     return exit_code
 
@@ -119,6 +124,12 @@ async def _run_reviewer_job(
 
         if isinstance(prepared_event, CommentEvent) and prepared_event.mention_prompt:
             mention_prompt = prepared_event.mention_prompt
+
+        logger.info(
+            "Starting review for %s#%d",
+            job.event.repo_full_name,
+            job.event.pr_number,
+        )
 
         result = await run_and_post_review(
             event=prepared_event,
@@ -213,41 +224,36 @@ async def _run_worker_job(
     return 0
 
 
-def _build_conversation_store() -> ConversationStore | None:
+def _build_conversation_store(config: Config) -> ConversationStore | None:
     """
-    Build a Redis-backed conversation store when ``REDIS_URL`` is set.
+    Build a Redis-backed conversation store when ``redis_url`` is configured.
 
-    Returns ``None`` when the env var is absent or when the Redis client
+    Returns ``None`` when the URL is empty or when the Redis client
     cannot be created.
+
+    Args:
+        config (Config): Application configuration with Redis settings.
 
     Returns:
         ConversationStore | None: The conversation store, or ``None``.
     """
 
-    redis_url: str = os.environ.get("REDIS_URL", "")
-
-    if not redis_url:
+    if not config.redis_url:
         return None
 
     try:
         import redis
 
-        from nominal_code.conversation.redis import (
-            DEFAULT_KEY_TTL,
-            RedisConversationStore,
-        )
+        from nominal_code.conversation.redis import RedisConversationStore
 
-        ttl_env: str = os.environ.get("REDIS_KEY_TTL_SECONDS", "")
-        key_ttl: timedelta = (
-            timedelta(seconds=int(ttl_env)) if ttl_env else DEFAULT_KEY_TTL
-        )
+        key_ttl: timedelta = timedelta(seconds=config.redis_key_ttl_seconds)
 
-        client: redis.Redis = redis.Redis.from_url(url=redis_url)
+        client: redis.Redis = redis.Redis.from_url(url=config.redis_url)
         store: RedisConversationStore = RedisConversationStore(
             client=client, key_ttl=key_ttl
         )
 
-        logger.info("Using Redis conversation store at %s", redis_url)
+        logger.info("Using Redis conversation store at %s", config.redis_url)
 
         return store
 
@@ -284,7 +290,7 @@ def _build_job_config() -> Config:
     Build a Config suitable for job execution.
 
     Reads ``AGENT_PROVIDER``, ``AGENT_MODEL``, and ``AGENT_MAX_TURNS``
-    from environment variables. Uses the same ``Config.for_ci()``
+    from environment variables. Uses the same ``load_config_for_ci()``
     pattern as CI mode.
 
     Returns:
@@ -295,37 +301,27 @@ def _build_job_config() -> Config:
     """
 
     provider_config = resolve_provider_config(default="google")
-    model: str = os.environ.get("AGENT_MODEL", "")
 
-    try:
-        max_turns: int = int(os.environ.get("AGENT_MAX_TURNS", "0"))
-    except ValueError:
-        max_turns = 0
-
-    return Config.for_ci(
-        provider=provider_config,
-        model=model,
-        max_turns=max_turns,
-    )
+    return load_config_for_ci(provider=provider_config)
 
 
-def _publish_completion(exit_code: int) -> None:
+def _publish_completion(exit_code: int, job: JobPayload) -> None:
     """
     Publish a job completion signal to Redis if running as a K8s Job.
 
-    Checks for ``K8S_JOB_NAME`` and ``REDIS_URL`` environment variables.
-    When both are set, publishes a completion message so the server
-    can move on to the next queued job.
+    Checks for ``REDIS_URL`` to determine whether Redis pub/sub is
+    available. The channel key is derived from the job payload.
 
     Args:
         exit_code (int): The job exit code (0 = succeeded).
+        job (JobPayload): The job payload (used to build the channel key).
     """
 
-    job_name: str = os.environ.get("K8S_JOB_NAME", "")
-    redis_url: str = os.environ.get("REDIS_URL", "")
+    redis_url: str = _env.str("REDIS_URL", "")
 
-    if not job_name or not redis_url:
+    if not redis_url:
         return
 
+    channel_key: str = build_job_channel_key(job)
     status: str = "succeeded" if exit_code == 0 else "failed"
-    publish_job_completion(redis_url=redis_url, job_name=job_name, status=status)
+    publish_job_completion(redis_url=redis_url, channel_key=channel_key, status=status)

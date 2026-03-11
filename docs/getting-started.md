@@ -56,7 +56,7 @@ Minimal steps to go from zero to a working review.
 
     **Next:** [CLI Mode full guide](modes/cli.md) (all options, platform examples)
 
-=== "Webhook"
+=== "Webhook (env vars)"
 
     ```bash
     git clone https://github.com/gauthierdmn/nominal-code.git
@@ -75,9 +75,43 @@ Minimal steps to go from zero to a working review.
 
     **Next:** [Webhook Mode full guide](modes/webhook.md) (platform setup, auto-trigger, multi-platform)
 
+=== "Webhook (YAML config)"
+
+    Create a `config.yaml`:
+
+    ```yaml
+    reviewer:
+      bot_username: "my-reviewer"
+      triggers:
+        - pr_opened
+
+    access:
+      allowed_users:
+        - alice
+        - bob
+    ```
+
+    Then run:
+
+    ```bash
+    git clone https://github.com/gauthierdmn/nominal-code.git
+    cd nominal-code/app
+    uv sync
+
+    export GITHUB_TOKEN=ghp_...
+    export GITHUB_WEBHOOK_SECRET=your-secret
+    export CONFIG_PATH=../config.yaml
+
+    uv run nominal-code serve
+    ```
+
+    Secrets stay as env vars, everything else lives in the YAML file.
+
+    **Next:** [Configuration](reference/configuration.md#yaml-config-file) (full YAML schema, examples)
+
 ## Next Steps
 
-- **[Configuration](reference/configuration.md)** — prompts, guidelines, auto-trigger, per-repo overrides
+- **[Configuration](reference/configuration.md)** — YAML config file, prompts, guidelines, auto-trigger, per-repo overrides
 - **[Environment Variables](reference/env-vars.md)** — full variable reference grouped by feature
 - **Platforms:** [GitHub](platforms/github.md) | [GitLab](platforms/gitlab.md)
 - **Bots:** [Reviewer](bots/reviewer.md) | [Worker (Beta)](bots/worker.md)

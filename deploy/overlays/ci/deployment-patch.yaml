@@ -9,6 +9,8 @@ spec:
       containers:
         - name: server
           env:
+            - name: CONFIG_PATH
+              value: "/etc/nominal-code/config.yaml"
             - name: ALLOWED_USERS
               value: "test-user"
             - name: REVIEWER_BOT_USERNAME

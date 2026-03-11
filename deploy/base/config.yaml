@@ -1,0 +1,22 @@
+webhook:
+  host: "0.0.0.0"
+  port: 8080
+
+reviewer:
+  bot_username: "nominalbot"
+  triggers:
+    - pr_opened
+
+agent:
+  provider: "google"
+
+redis:
+  url: "redis://redis.nominal-code.svc.cluster.local:6379/0"
+
+kubernetes:
+  image: "nominal-code"
+  namespace: "nominal-code"
+  image_pull_policy: "Never"
+  active_deadline_seconds: 600
+  env_from_secrets:
+    - "nominal-code-secrets"

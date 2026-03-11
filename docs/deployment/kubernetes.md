@@ -11,7 +11,6 @@ GitHub/GitLab webhook
 ┌──────────────────────┐
 │  Webhook Server Pod  │
 │  (aiohttp)           │
-│  JOB_RUNNER=kubernetes│
 └──────────┬───────────┘
            │ POST /apis/batch/v1/...
            ▼
@@ -21,7 +20,7 @@ GitHub/GitLab webhook
 └──────────────────────┘       └─────────┘
 ```
 
-**Server pod** — runs the webhook server with `JOB_RUNNER=kubernetes`. On each webhook event, it serializes a `JobPayload` and creates a Kubernetes Job via the in-cluster API.
+**Server pod** — runs the webhook server. When `kubernetes.image` is set in the config (via YAML or the `K8S_IMAGE` env var), the Kubernetes job runner is automatically enabled. On each webhook event, it serializes a `JobPayload` and creates a Kubernetes Job via the in-cluster API.
 
 **Job pod** — runs `nominal-code run-job`, deserializes the payload, calls the LLM provider API, and posts results back to the PR. Each job is independent and short-lived.
 
@@ -32,7 +31,7 @@ GitHub/GitLab webhook
 | | In-process (default) | Kubernetes |
 |---|---|---|
 | Job execution | Same process, asyncio queue | Separate K8s Job pod per event |
-| Agent runner | Claude Code CLI (default) or LLM provider API | LLM provider API (requires `AGENT_PROVIDER`) |
+| Agent runner | Claude Code CLI (default) or LLM provider API | LLM provider API (requires `agent.provider`) |
 | Conversation store | In-memory | Redis (required) |
 | Scaling | Single process | Unlimited concurrent Jobs |
 | Dependencies | Claude Code CLI on `PATH`, or an LLM provider API key | K8s cluster, container image, LLM provider API key |
@@ -118,10 +117,13 @@ The base manifests live in `deploy/base/`. Use kustomize overlays to customize f
 | Manifest | Purpose |
 |---|---|
 | `namespace.yaml` | Creates the `nominal-code` namespace |
-| `deployment.yaml` | Webhook server pod |
+| `deployment.yaml` | Webhook server pod with config volume mount |
 | `service.yaml` | ClusterIP service (port 80 → 8080) |
 | `rbac.yaml` | ServiceAccount + Role granting `batch/v1 jobs` permissions |
 | `redis.yaml` | Redis deployment + service for conversation persistence |
+| `config.yaml` | YAML config file, loaded as a ConfigMap by kustomize |
+
+The base `deployment.yaml` mounts the config file at `/etc/nominal-code/config.yaml` via a ConfigMap volume. All non-secret configuration lives in this file. Secrets are injected via `envFrom: secretRef`.
 
 ### Create an Overlay
 
@@ -141,9 +143,45 @@ resources:
   - ../../base
 patchesStrategicMerge:
   - deployment-patch.yaml
+configMapGenerator:
+  - name: nominal-code-config
+    namespace: nominal-code
+    behavior: replace
+    files:
+      - config.yaml
+    options:
+      disableNameSuffixHash: true
 ```
 
-Create a `deployment-patch.yaml` to override the image, pull policy, and environment:
+Create a `config.yaml` with your production settings:
+
+```yaml
+reviewer:
+  bot_username: "nominalbot"
+  triggers:
+    - pr_opened
+
+agent:
+  provider: "anthropic"
+
+access:
+  allowed_users:
+    - alice
+    - bob
+
+redis:
+  url: "redis://redis.nominal-code.svc.cluster.local:6379/0"
+
+kubernetes:
+  image: "your-registry.com/nominal-code:latest"
+  namespace: "nominal-code"
+  image_pull_policy: "Always"
+  active_deadline_seconds: 600
+  env_from_secrets:
+    - "nominal-code-secrets"
+```
+
+Create a `deployment-patch.yaml` to override the container image:
 
 ```yaml
 apiVersion: apps/v1
@@ -158,15 +196,6 @@ spec:
         - name: server
           image: your-registry.com/nominal-code:latest
           imagePullPolicy: Always
-          env:
-            - name: K8S_IMAGE
-              value: "your-registry.com/nominal-code:latest"
-            - name: K8S_IMAGE_PULL_POLICY
-              value: "Always"
-            - name: ALLOWED_USERS
-              value: "alice,bob"
-            - name: AGENT_PROVIDER
-              value: "anthropic"
 ```
 
 Create secrets in the namespace:
@@ -217,24 +246,26 @@ Then set your GitHub/GitLab webhook URL to `https://bot.example.com/webhooks/git
 
 ## Configuration
 
-All Kubernetes-specific behavior is controlled via environment variables on the server pod. These are set in `deploy/base/deployment.yaml` and can be overridden in your overlay.
+Kubernetes-specific settings are configured in the YAML config file under `kubernetes`, or via environment variables as overrides. Setting `kubernetes.image` (or `K8S_IMAGE`) automatically enables the Kubernetes job runner — no separate `JOB_RUNNER` variable is needed.
 
-| Variable | Default | Description |
-|---|---|---|
-| `JOB_RUNNER` | — | Set to `kubernetes` to enable K8s job dispatch |
-| `K8S_NAMESPACE` | `default` | Namespace for spawned Job pods |
-| `K8S_IMAGE` | — | Container image for Job pods (required) |
-| `K8S_IMAGE_PULL_POLICY` | — | `Always`, `Never`, or `IfNotPresent` |
-| `K8S_SERVICE_ACCOUNT` | — | ServiceAccount for Job pods |
-| `K8S_ENV_FROM_SECRETS` | — | Comma-separated Secret names to mount as env vars in Job pods |
-| `K8S_BACKOFF_LIMIT` | `0` | Job retry attempts |
-| `K8S_ACTIVE_DEADLINE_SECONDS` | `600` | Per-job timeout in seconds |
-| `K8S_TTL_AFTER_FINISHED` | `3600` | Seconds before completed Jobs are cleaned up |
-| `K8S_RESOURCE_REQUESTS_CPU` | — | CPU request for Job pods |
-| `K8S_RESOURCE_REQUESTS_MEMORY` | — | Memory request for Job pods |
-| `K8S_RESOURCE_LIMITS_CPU` | — | CPU limit for Job pods |
-| `K8S_RESOURCE_LIMITS_MEMORY` | — | Memory limit for Job pods |
-| `REDIS_URL` | — | Redis connection URL (required). Used for job queue serialization, pub/sub completion, and conversation persistence |
+| YAML path | Env var | Default | Description |
+|---|---|---|---|
+| `kubernetes.image` | `K8S_IMAGE` | — | Container image for Job pods. When set, enables the Kubernetes job runner |
+| `kubernetes.namespace` | `K8S_NAMESPACE` | `default` | Namespace for spawned Job pods |
+| `kubernetes.image_pull_policy` | `K8S_IMAGE_PULL_POLICY` | — | `Always`, `Never`, or `IfNotPresent` |
+| `kubernetes.service_account` | `K8S_SERVICE_ACCOUNT` | — | ServiceAccount for Job pods |
+| `kubernetes.env_from_secrets` | `K8S_ENV_FROM_SECRETS` | — | Comma-separated Secret names to mount as env vars in Job pods |
+| `kubernetes.backoff_limit` | `K8S_BACKOFF_LIMIT` | `0` | Job retry attempts |
+| `kubernetes.active_deadline_seconds` | `K8S_ACTIVE_DEADLINE_SECONDS` | `600` | Per-job timeout in seconds |
+| `kubernetes.ttl_after_finished` | `K8S_TTL_AFTER_FINISHED` | `3600` | Seconds before completed Jobs are cleaned up |
+| `kubernetes.resources.requests.cpu` | `K8S_RESOURCE_REQUESTS_CPU` | — | CPU request for Job pods |
+| `kubernetes.resources.requests.memory` | `K8S_RESOURCE_REQUESTS_MEMORY` | — | Memory request for Job pods |
+| `kubernetes.resources.limits.cpu` | `K8S_RESOURCE_LIMITS_CPU` | — | CPU limit for Job pods |
+| `kubernetes.resources.limits.memory` | `K8S_RESOURCE_LIMITS_MEMORY` | — | Memory limit for Job pods |
+| `redis.url` | `REDIS_URL` | — | Redis connection URL. Required when using Kubernetes job runner |
+| `redis.key_ttl_seconds` | `REDIS_KEY_TTL_SECONDS` | `86400` | TTL for Redis conversation keys in seconds |
+
+See [Configuration](../reference/configuration.md) for the full YAML schema and [Environment Variables](../reference/env-vars.md) for the complete variable reference.
 
 ## Job Serialization
 
@@ -249,7 +280,7 @@ This architecture enables safe multi-replica server deployments: any replica can
 
 If a Job pod crashes before publishing its completion signal, the server-side timeout (`K8S_ACTIVE_DEADLINE_SECONDS` + 10s margin) fires and the consumer moves on to the next job.
 
-`REDIS_URL` is **required** when `JOB_RUNNER=kubernetes`. The server will refuse to start without it.
+`redis.url` (or `REDIS_URL`) is **required** when the Kubernetes job runner is enabled. The server will refuse to start without it.
 
 ## RBAC
 

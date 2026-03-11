@@ -123,7 +123,6 @@ class TestPublishCompletion:
         monkeypatch.setenv("AGENT_PROVIDER", "anthropic")
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
         monkeypatch.setenv("GITHUB_TOKEN", "test-token")
-        monkeypatch.setenv("K8S_JOB_NAME", "test-job-123")
         monkeypatch.setenv("REDIS_URL", "redis://localhost:6379")
 
         mock_review_result = MagicMock()
@@ -160,7 +159,7 @@ class TestPublishCompletion:
         assert result == 0
         mock_publish.assert_called_once_with(
             redis_url="redis://localhost:6379",
-            job_name="test-job-123",
+            channel_key="nc:job:github:owner/repo:42:reviewer",
             status="succeeded",
         )
 
@@ -171,7 +170,6 @@ class TestPublishCompletion:
         monkeypatch.setenv("AGENT_PROVIDER", "anthropic")
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
         monkeypatch.setenv("GITHUB_TOKEN", "test-token")
-        monkeypatch.setenv("K8S_JOB_NAME", "test-job-123")
         monkeypatch.setenv("REDIS_URL", "redis://localhost:6379")
 
         mock_platform = MagicMock()
@@ -199,18 +197,17 @@ class TestPublishCompletion:
         assert result == 1
         mock_publish.assert_called_once_with(
             redis_url="redis://localhost:6379",
-            job_name="test-job-123",
+            channel_key="nc:job:github:owner/repo:42:reviewer",
             status="failed",
         )
 
     @pytest.mark.asyncio
-    async def test_skips_publish_without_env_vars(self, monkeypatch):
+    async def test_skips_publish_without_redis_url(self, monkeypatch):
         job = _make_reviewer_job()
         monkeypatch.setenv("REVIEW_JOB_PAYLOAD", job.serialize())
         monkeypatch.setenv("AGENT_PROVIDER", "anthropic")
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
         monkeypatch.setenv("GITHUB_TOKEN", "test-token")
-        monkeypatch.delenv("K8S_JOB_NAME", raising=False)
         monkeypatch.delenv("REDIS_URL", raising=False)
 
         mock_review_result = MagicMock()

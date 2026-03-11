@@ -5,14 +5,12 @@ from unittest.mock import patch
 
 import pytest
 
-from nominal_code.config import (
-    ApiAgentConfig,
-    CliAgentConfig,
-    Config,
-    _load_file_content,
-    _load_language_guidelines,
-    _parse_reviewer_triggers,
-    _parse_title_tags,
+from nominal_code.config import ApiAgentConfig, CliAgentConfig, Config
+from nominal_code.config.settings import (
+    load_file_content,
+    load_language_guidelines,
+    parse_reviewer_triggers,
+    parse_title_tags,
 )
 from nominal_code.models import EventType, ProviderName
 
@@ -321,125 +319,123 @@ class TestFromEnv:
 
 
 class TestParseReviewerTriggers:
-    def test_parse_reviewer_triggers_empty_string(self):
-        result = _parse_reviewer_triggers("")
+    def testparse_reviewer_triggers_empty_string(self):
+        result = parse_reviewer_triggers("")
 
         assert result == frozenset()
 
-    def test_parse_reviewer_triggers_whitespace_only(self):
-        result = _parse_reviewer_triggers("   ")
+    def testparse_reviewer_triggers_whitespace_only(self):
+        result = parse_reviewer_triggers("   ")
 
         assert result == frozenset()
 
-    def test_parse_reviewer_triggers_single_value(self):
-        result = _parse_reviewer_triggers("pr_opened")
+    def testparse_reviewer_triggers_single_value(self):
+        result = parse_reviewer_triggers("pr_opened")
 
         assert result == frozenset({EventType.PR_OPENED})
 
-    def test_parse_reviewer_triggers_multiple_values(self):
-        result = _parse_reviewer_triggers("pr_opened,pr_push,pr_reopened")
+    def testparse_reviewer_triggers_multiple_values(self):
+        result = parse_reviewer_triggers("pr_opened,pr_push,pr_reopened")
 
         assert result == frozenset(
             {EventType.PR_OPENED, EventType.PR_PUSH, EventType.PR_REOPENED},
         )
 
-    def test_parse_reviewer_triggers_with_whitespace(self):
-        result = _parse_reviewer_triggers(" pr_opened , pr_push ")
+    def testparse_reviewer_triggers_with_whitespace(self):
+        result = parse_reviewer_triggers(" pr_opened , pr_push ")
 
         assert result == frozenset({EventType.PR_OPENED, EventType.PR_PUSH})
 
-    def test_parse_reviewer_triggers_invalid_value_skipped(self):
-        result = _parse_reviewer_triggers("pr_opened,invalid_event,pr_push")
+    def testparse_reviewer_triggers_invalid_value_skipped(self):
+        result = parse_reviewer_triggers("pr_opened,invalid_event,pr_push")
 
         assert result == frozenset({EventType.PR_OPENED, EventType.PR_PUSH})
 
-    def test_parse_reviewer_triggers_all_invalid(self):
-        result = _parse_reviewer_triggers("foo,bar")
+    def testparse_reviewer_triggers_all_invalid(self):
+        result = parse_reviewer_triggers("foo,bar")
 
         assert result == frozenset()
 
-    def test_parse_reviewer_triggers_trailing_comma(self):
-        result = _parse_reviewer_triggers("pr_opened,")
+    def testparse_reviewer_triggers_trailing_comma(self):
+        result = parse_reviewer_triggers("pr_opened,")
 
         assert result == frozenset({EventType.PR_OPENED})
 
 
 class TestLoadFileContent:
-    def test_load_file_content_reads_existing_file(self, tmp_path):
+    def testload_file_content_reads_existing_file(self, tmp_path):
         target = tmp_path / "prompt.md"
         target.write_text("  System prompt here  \n", encoding="utf-8")
 
-        result = _load_file_content(target)
+        result = load_file_content(target)
 
         assert result == "System prompt here"
 
-    def test_load_file_content_returns_empty_for_missing_file(self, tmp_path):
-        result = _load_file_content(tmp_path / "nonexistent.md")
+    def testload_file_content_returns_empty_for_missing_file(self, tmp_path):
+        result = load_file_content(tmp_path / "nonexistent.md")
 
         assert result == ""
 
-    def test_load_file_content_strips_whitespace(self, tmp_path):
+    def testload_file_content_strips_whitespace(self, tmp_path):
         target = tmp_path / "file.md"
         target.write_text("\n\nContent\n\n", encoding="utf-8")
 
-        result = _load_file_content(target)
+        result = load_file_content(target)
 
         assert result == "Content"
 
-    def test_load_file_content_empty_file_returns_empty(self, tmp_path):
+    def testload_file_content_empty_file_returns_empty(self, tmp_path):
         target = tmp_path / "empty.md"
         target.write_text("", encoding="utf-8")
 
-        result = _load_file_content(target)
+        result = load_file_content(target)
 
         assert result == ""
 
 
 class TestLoadLanguageGuidelines:
-    def test_load_language_guidelines_reads_md_files(self, tmp_path):
+    def testload_language_guidelines_reads_md_files(self, tmp_path):
         lang_dir = tmp_path / "languages"
         lang_dir.mkdir()
         (lang_dir / "python.md").write_text("Python rules.", encoding="utf-8")
         (lang_dir / "go.md").write_text("Go rules.", encoding="utf-8")
 
-        result = _load_language_guidelines(lang_dir)
+        result = load_language_guidelines(lang_dir)
 
         assert result["python"] == "Python rules."
         assert result["go"] == "Go rules."
 
-    def test_load_language_guidelines_returns_empty_dict_for_missing_dir(
-        self, tmp_path
-    ):
-        result = _load_language_guidelines(tmp_path / "nonexistent")
+    def testload_language_guidelines_returns_empty_dict_for_missing_dir(self, tmp_path):
+        result = load_language_guidelines(tmp_path / "nonexistent")
 
         assert result == {}
 
-    def test_load_language_guidelines_skips_empty_files(self, tmp_path):
+    def testload_language_guidelines_skips_empty_files(self, tmp_path):
         lang_dir = tmp_path / "languages"
         lang_dir.mkdir()
         (lang_dir / "python.md").write_text("", encoding="utf-8")
         (lang_dir / "go.md").write_text("  \n  ", encoding="utf-8")
 
-        result = _load_language_guidelines(lang_dir)
+        result = load_language_guidelines(lang_dir)
 
         assert result == {}
 
-    def test_load_language_guidelines_ignores_non_md_files(self, tmp_path):
+    def testload_language_guidelines_ignores_non_md_files(self, tmp_path):
         lang_dir = tmp_path / "languages"
         lang_dir.mkdir()
         (lang_dir / "python.txt").write_text("Should be ignored.", encoding="utf-8")
         (lang_dir / "python.md").write_text("Python rules.", encoding="utf-8")
 
-        result = _load_language_guidelines(lang_dir)
+        result = load_language_guidelines(lang_dir)
 
         assert list(result.keys()) == ["python"]
 
-    def test_load_language_guidelines_uses_stem_as_key(self, tmp_path):
+    def testload_language_guidelines_uses_stem_as_key(self, tmp_path):
         lang_dir = tmp_path / "languages"
         lang_dir.mkdir()
         (lang_dir / "typescript.md").write_text("TS rules.", encoding="utf-8")
 
-        result = _load_language_guidelines(lang_dir)
+        result = load_language_guidelines(lang_dir)
 
         assert "typescript" in result
 
@@ -526,43 +522,43 @@ class TestConfigForCli:
 
 
 class TestParseTitleTags:
-    def test_parse_title_tags_empty_string(self):
-        result = _parse_title_tags("")
+    def testparse_title_tags_empty_string(self):
+        result = parse_title_tags("")
 
         assert result == frozenset()
 
-    def test_parse_title_tags_whitespace_only(self):
-        result = _parse_title_tags("   ")
+    def testparse_title_tags_whitespace_only(self):
+        result = parse_title_tags("   ")
 
         assert result == frozenset()
 
-    def test_parse_title_tags_single_value(self):
-        result = _parse_title_tags("nominalbot")
+    def testparse_title_tags_single_value(self):
+        result = parse_title_tags("nominalbot")
 
         assert result == frozenset({"nominalbot"})
 
-    def test_parse_title_tags_multiple_values(self):
-        result = _parse_title_tags("alpha,beta,gamma")
+    def testparse_title_tags_multiple_values(self):
+        result = parse_title_tags("alpha,beta,gamma")
 
         assert result == frozenset({"alpha", "beta", "gamma"})
 
-    def test_parse_title_tags_strips_whitespace(self):
-        result = _parse_title_tags(" alpha , beta ")
+    def testparse_title_tags_strips_whitespace(self):
+        result = parse_title_tags(" alpha , beta ")
 
         assert result == frozenset({"alpha", "beta"})
 
-    def test_parse_title_tags_lowercases(self):
-        result = _parse_title_tags("NominalBot,CI")
+    def testparse_title_tags_lowercases(self):
+        result = parse_title_tags("NominalBot,CI")
 
         assert result == frozenset({"nominalbot", "ci"})
 
-    def test_parse_title_tags_trailing_comma(self):
-        result = _parse_title_tags("alpha,")
+    def testparse_title_tags_trailing_comma(self):
+        result = parse_title_tags("alpha,")
 
         assert result == frozenset({"alpha"})
 
-    def test_parse_title_tags_empty_segments_skipped(self):
-        result = _parse_title_tags("alpha,,beta,")
+    def testparse_title_tags_empty_segments_skipped(self):
+        result = parse_title_tags("alpha,,beta,")
 
         assert result == frozenset({"alpha", "beta"})
 

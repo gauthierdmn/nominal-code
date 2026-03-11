@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import logging
-import os
 import re
-import uuid
 from typing import TYPE_CHECKING, Any
 
 import httpx
+from environs import Env
 
 from nominal_code.config import KubernetesConfig
 from nominal_code.jobs.payload import JobPayload
@@ -15,6 +14,7 @@ from nominal_code.jobs.queue.redis import RedisJobQueue
 if TYPE_CHECKING:
     import redis
 
+_env: Env = Env()
 logger: logging.Logger = logging.getLogger(__name__)
 
 SERVICE_ACCOUNT_TOKEN_PATH: str = "/var/run/secrets/kubernetes.io/serviceaccount/token"
@@ -79,13 +79,8 @@ class KubernetesRunner:
             job (JobPayload): The review job to execute.
         """
 
-        job_name: str = _build_job_name(
-            platform=job.event.platform,
-            repo_full_name=job.event.repo_full_name,
-            pr_number=job.event.pr_number,
-        )
-
-        await self._create_k8s_job(job_name=job_name, job=job)
+        channel_key: str = build_job_channel_key(job)
+        await self._create_k8s_job(job=job)
 
         timeout_seconds: float = (
             self._config.active_deadline_seconds + DEFAULT_JOB_TIMEOUT_MARGIN_SECONDS
@@ -93,33 +88,35 @@ class KubernetesRunner:
 
         try:
             status: str = await self._queue.await_job_completion(
-                job_name,
+                channel_key,
                 timeout_seconds,
             )
 
             logger.info(
-                "K8s Job %s completed with status: %s",
-                job_name,
+                "K8s Job for %s#%d (%s) completed with status: %s",
+                job.event.repo_full_name,
+                job.event.pr_number,
+                job.bot_type,
                 status,
             )
         except TimeoutError:
             logger.error(
-                "K8s Job %s timed out after %ds",
-                job_name,
+                "K8s Job for %s#%d (%s) timed out after %ds",
+                job.event.repo_full_name,
+                job.event.pr_number,
+                job.bot_type,
                 timeout_seconds,
             )
 
-    async def _create_k8s_job(self, job_name: str, job: JobPayload) -> None:
+    async def _create_k8s_job(self, job: JobPayload) -> None:
         """
         POST a Job spec to the Kubernetes API.
 
         Args:
-            job_name (str): Unique name for the Job resource.
             job (JobPayload): The review job payload.
         """
 
         job_spec: dict[str, Any] = self._build_job_spec(
-            job_name=job_name,
             payload=job.serialize(),
             job=job,
         )
@@ -144,16 +141,16 @@ class KubernetesRunner:
 
         if response.status_code >= 400:
             logger.error(
-                "Failed to create K8s Job %s: %d %s",
-                job_name,
+                "Failed to create K8s Job for %s#%d: %d %s",
+                job.event.repo_full_name,
+                job.event.pr_number,
                 response.status_code,
                 response.text,
             )
             response.raise_for_status()
 
         logger.info(
-            "Created K8s Job %s for %s#%d (%s)",
-            job_name,
+            "Created K8s Job for %s#%d (%s)",
             job.event.repo_full_name,
             job.event.pr_number,
             job.bot_type,
@@ -161,7 +158,6 @@ class KubernetesRunner:
 
     def _build_job_spec(
         self,
-        job_name: str,
         payload: str,
         job: JobPayload,
     ) -> dict[str, Any]:
@@ -169,7 +165,6 @@ class KubernetesRunner:
         Build the Kubernetes Job spec as a JSON-serializable dict.
 
         Args:
-            job_name (str): Unique name for the Job resource.
             payload (str): Serialized JobPayload JSON.
             job (JobPayload): The job payload for label metadata.
 
@@ -187,17 +182,19 @@ class KubernetesRunner:
             "nominal-code/pr-number": str(job.event.pr_number),
         }
 
+        generate_name: str = f"nominal-code-job-{repo_slug}-{job.event.pr_number}-"
+        generate_name = generate_name[:JOB_NAME_MAX_LENGTH].rstrip("-") + "-"
+
         env_vars: list[dict[str, str]] = [
             {"name": "REVIEW_JOB_PAYLOAD", "value": payload},
-            {"name": "K8S_JOB_NAME", "value": job_name},
         ]
 
-        redis_url: str = os.environ.get("REDIS_URL", "")
+        redis_url: str = _env.str("REDIS_URL", "")
 
         if redis_url:
             env_vars.append({"name": "REDIS_URL", "value": redis_url})
 
-            redis_ttl: str = os.environ.get("REDIS_KEY_TTL_SECONDS", "")
+            redis_ttl: str = _env.str("REDIS_KEY_TTL_SECONDS", "")
 
             if redis_ttl:
                 env_vars.append(
@@ -257,7 +254,7 @@ class KubernetesRunner:
             "apiVersion": "batch/v1",
             "kind": "Job",
             "metadata": {
-                "name": job_name,
+                "generateName": generate_name,
                 "namespace": self._config.namespace,
                 "labels": labels,
             },
@@ -277,7 +274,7 @@ class KubernetesRunner:
 
 def publish_job_completion(
     redis_url: str,
-    job_name: str,
+    channel_key: str,
     status: str,
 ) -> None:
     """
@@ -288,57 +285,48 @@ def publish_job_completion(
 
     Args:
         redis_url (str): Redis connection URL.
-        job_name (str): The Kubernetes Job name.
+        channel_key (str): The Redis channel key for this job.
         status (str): Completion status (``"succeeded"`` or ``"failed"``).
     """
 
     import redis as _redis
 
-    channel: str = f"{JOB_CHANNEL_PREFIX}:{job_name}:done"
-
     try:
         client: redis.Redis = _redis.Redis.from_url(redis_url)
 
         try:
-            client.publish(channel, status)
-            logger.info("Published completion for job %s: %s", job_name, status)
+            client.publish(channel_key, status)
+            logger.info("Published completion on %s: %s", channel_key, status)
         finally:
             client.close()
     except _redis.RedisError:
         logger.warning(
-            "Failed to publish completion for job %s",
-            job_name,
+            "Failed to publish completion on %s",
+            channel_key,
             exc_info=True,
         )
 
 
-def _build_job_name(
-    platform: str,
-    repo_full_name: str,
-    pr_number: int,
-) -> str:
+def build_job_channel_key(job: JobPayload) -> str:
     """
-    Generate a unique, K8s-valid Job name.
+    Build a deterministic Redis pub/sub channel key for a job.
 
-    Format: ``nominal-code-{uuid8}-{repo_slug}-{pr}``.
-    The 8-character UUID is placed early so truncation at the
-    63-character K8s limit only clips the descriptive suffix
-    (repo slug, PR number), which are also available in labels.
+    The key is derived from ``(platform, repo, pr_number, bot_type)``
+    which uniquely identifies the serialized job slot. Since the job
+    queue guarantees only one job runs per slot at a time, this key
+    is safe to use without a UUID.
 
     Args:
-        platform (str): Platform identifier.
-        repo_full_name (str): Full repository name.
-        pr_number (int): PR/MR number.
+        job (JobPayload): The job payload.
 
     Returns:
-        str: A unique, DNS-compatible Job name.
+        str: The Redis channel key.
     """
 
-    short_id: str = uuid.uuid4().hex[:8]
-    repo_slug: str = _slugify(repo_full_name)
-    name: str = f"nominal-code-{short_id}-{repo_slug}-{pr_number}"
-
-    return name[:JOB_NAME_MAX_LENGTH].rstrip("-")
+    return (
+        f"{JOB_CHANNEL_PREFIX}:{job.event.platform}:"
+        f"{job.event.repo_full_name}:{job.event.pr_number}:{job.bot_type}"
+    )
 
 
 def _slugify(text: str) -> str:

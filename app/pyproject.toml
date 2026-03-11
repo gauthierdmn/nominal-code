@@ -5,18 +5,20 @@ description = "A bot that monitors GitHub PRs and GitLab MRs for review comments
 requires-python = ">=3.13"
 dependencies = [
     "aiohttp==3.13.3",
-    "claude-agent-sdk==0.1.39",
+    "claude-agent-sdk==0.1.48",
     "httpx==0.28.1",
-    "PyJWT[crypto]>=2.9.0,<3",
-    "environs>=14.1,<15",
-    "json-repair==0.58.3",
+    "PyJWT[crypto]==2.11.0",
+    "pydantic==2.12.5",
+    "environs==14.6.0",
+    "PyYAML==6.0.3",
+    "json-repair==0.58.5",
 ]
 
 [project.optional-dependencies]
 anthropic = ["anthropic==0.84.0"]
 openai = ["openai==2.26.0"]
 google = ["google-genai==1.66.0"]
-redis = ["redis>=5.0,<6"]
+redis = ["redis==7.3.0"]
 all = ["nominal-code[anthropic]", "nominal-code[openai]", "nominal-code[google]", "nominal-code[redis]"]
 
 [project.scripts]
@@ -39,7 +41,8 @@ dev = [
     {include-group = "test"},
     "nominal-code[all]",
     "mypy==1.19.1",
-    "ruff==0.15.2",
+    "types-PyYAML==6.0.12.20250915",
+    "ruff==0.15.5",
 ]
 
 [tool.ruff]
@@ -62,6 +65,7 @@ python_version = "3.13"
 strict = true
 warn_return_any = true
 warn_unused_configs = true
+plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
 module = ["openai", "openai.*", "anthropic", "anthropic.*", "google.genai", "google.genai.*"]

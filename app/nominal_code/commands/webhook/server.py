@@ -9,10 +9,9 @@ from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from aiohttp import web
-from environs import Env
 
 from nominal_code.commands.webhook.helpers import acknowledge_event, extract_mention
-from nominal_code.config import Config
+from nominal_code.config import Config, load_config
 from nominal_code.conversation.memory import MemoryConversationStore
 from nominal_code.jobs.payload import JobPayload
 from nominal_code.jobs.queue.asyncio import AsyncioJobQueue
@@ -32,7 +31,6 @@ if TYPE_CHECKING:
     from nominal_code.jobs.runner.base import JobRunner
 
 logger: logging.Logger = logging.getLogger(__name__)
-env: Env = Env()
 
 
 async def run_webhook_server() -> None:
@@ -43,7 +41,7 @@ async def run_webhook_server() -> None:
     logger.info("Loading configuration from environment")
 
     try:
-        config: Config = Config.from_env()
+        config: Config = load_config()
     except (OSError, ValueError) as exc:
         logger.error("Configuration error: %s", exc)
         sys.exit(1)
@@ -60,9 +58,7 @@ async def run_webhook_server() -> None:
     runner: JobRunner
 
     if config.kubernetes is not None:
-        redis_url: str = env.str("REDIS_URL", "")
-
-        if not redis_url:
+        if not config.redis_url:
             logger.error("REDIS_URL is required when JOB_RUNNER=kubernetes")
             sys.exit(1)
 
@@ -70,7 +66,7 @@ async def run_webhook_server() -> None:
         from nominal_code.jobs.queue.redis import RedisJobQueue
         from nominal_code.jobs.runner.kubernetes import KubernetesRunner
 
-        redis_queue: RedisJobQueue = RedisJobQueue(redis_url)
+        redis_queue: RedisJobQueue = RedisJobQueue(config.redis_url)
 
         runner = KubernetesRunner(
             config=config.kubernetes,

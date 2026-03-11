@@ -129,10 +129,11 @@ class TestRedisJobQueueAwaitCompletion:
             )
 
             queue = RedisJobQueue("redis://localhost:6379")
-            status = await queue.await_job_completion("test-job", timeout_seconds=5.0)
+            channel_key = "nc:job:github:owner/repo:42:reviewer"
+            status = await queue.await_job_completion(channel_key, timeout_seconds=5.0)
 
             assert status == "succeeded"
-            mock_pubsub.subscribe.assert_called_once_with("nc:job:test-job:done")
+            mock_pubsub.subscribe.assert_called_once_with(channel_key)
 
     @pytest.mark.asyncio
     async def test_await_job_completion_timeout(self):

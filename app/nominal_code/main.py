@@ -6,8 +6,8 @@ import sys
 
 from environs import Env
 
+_env: Env = Env()
 logger: logging.Logger = logging.getLogger(__name__)
-env: Env = Env()
 
 USAGE: str = """\
 Usage: nominal-code <command> [args]
@@ -26,7 +26,7 @@ def setup_logging() -> None:
     Respects the ``LOG_LEVEL`` environment variable (default: ``INFO``).
     """
 
-    level_name: str = env.str("LOG_LEVEL", "INFO").upper()
+    level_name: str = _env.str("LOG_LEVEL", "INFO").upper()
     level: int = getattr(logging, level_name, logging.INFO)
 
     logging.basicConfig(

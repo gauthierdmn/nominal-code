@@ -31,6 +31,7 @@ from nominal_code.platforms.registry import register_platform
 GITLAB_API_BASE: str = "https://gitlab.com"
 DISCUSSIONS_PER_PAGE: int = 100
 
+_env: Env = Env()
 logger: logging.Logger = logging.getLogger(__name__)
 
 
@@ -768,15 +769,14 @@ def _create_gitlab_platform() -> GitLabPlatform | None:
         GitLabPlatform | None: A configured client, or None.
     """
 
-    env: Env = Env()
-    token: str = env.str("GITLAB_TOKEN", "")
+    token: str = _env.str("GITLAB_TOKEN", "")
 
     if not token:
         return None
 
-    webhook_secret: str = env.str("GITLAB_WEBHOOK_SECRET", "")
-    base_url: str = env.str("GITLAB_API_BASE", GITLAB_API_BASE)
-    reviewer_token: str = env.str("GITLAB_REVIEWER_TOKEN", "")
+    webhook_secret: str = _env.str("GITLAB_WEBHOOK_SECRET", "")
+    base_url: str = _env.str("GITLAB_API_BASE", GITLAB_API_BASE)
+    reviewer_token: str = _env.str("GITLAB_REVIEWER_TOKEN", "")
 
     return GitLabPlatform(
         token=token,
