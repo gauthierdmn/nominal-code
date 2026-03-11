@@ -12,7 +12,7 @@ from aiohttp import web
 
 from nominal_code.commands.webhook.helpers import acknowledge_event, extract_mention
 from nominal_code.config import Config, load_config
-from nominal_code.conversation.memory import MemoryConversationStore
+from nominal_code.conversation.base import ConversationStore, build_conversation_store
 from nominal_code.jobs.payload import JobPayload
 from nominal_code.jobs.queue.asyncio import AsyncioJobQueue
 from nominal_code.jobs.runner.process import ProcessRunner
@@ -62,7 +62,6 @@ async def run_webhook_server() -> None:
             logger.error("REDIS_URL is required when JOB_RUNNER=kubernetes")
             sys.exit(1)
 
-        # import in function as this is an optional dependency
         from nominal_code.jobs.queue.redis import RedisJobQueue
         from nominal_code.jobs.runner.kubernetes import KubernetesRunner
 
@@ -73,7 +72,10 @@ async def run_webhook_server() -> None:
             queue=redis_queue,
         )
     else:
-        conversation_store: MemoryConversationStore = MemoryConversationStore()
+        conversation_store: ConversationStore = build_conversation_store(
+            redis_url=config.redis_url,
+            redis_key_ttl_seconds=config.redis_key_ttl_seconds,
+        )
         job_queue: AsyncioJobQueue = AsyncioJobQueue()
 
         runner = ProcessRunner(
