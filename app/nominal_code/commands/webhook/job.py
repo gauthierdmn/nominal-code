@@ -125,6 +125,12 @@ async def _run_reviewer_job(
         if isinstance(prepared_event, CommentEvent) and prepared_event.mention_prompt:
             mention_prompt = prepared_event.mention_prompt
 
+        logger.info(
+            "Starting review for %s#%d",
+            job.event.repo_full_name,
+            job.event.pr_number,
+        )
+
         result = await run_and_post_review(
             event=prepared_event,
             prompt=mention_prompt,
