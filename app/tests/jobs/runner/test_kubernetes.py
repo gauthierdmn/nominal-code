@@ -5,13 +5,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from nominal_code.config import KubernetesConfig
-from nominal_code.jobs.kubernetes import (
+from nominal_code.jobs.payload import JobPayload
+from nominal_code.jobs.queue.redis import RedisJobQueue
+from nominal_code.jobs.runner.kubernetes import (
     KubernetesRunner,
     _build_job_name,
     _slugify,
+    publish_job_completion,
 )
-from nominal_code.jobs.payload import JobPayload
-from nominal_code.jobs.redis_queue import RedisJobQueue
 from nominal_code.models import EventType
 from nominal_code.platforms.base import CommentEvent, PlatformName
 
@@ -376,11 +377,11 @@ class TestKubernetesRunnerExecute:
 
         with (
             patch(
-                "nominal_code.jobs.kubernetes._read_service_account_token",
+                "nominal_code.jobs.runner.kubernetes._read_service_account_token",
                 return_value="test-token",
             ),
             patch(
-                "nominal_code.jobs.kubernetes.httpx.AsyncClient",
+                "nominal_code.jobs.runner.kubernetes.httpx.AsyncClient",
                 return_value=mock_client,
             ),
         ):
@@ -410,11 +411,11 @@ class TestKubernetesRunnerExecute:
 
         with (
             patch(
-                "nominal_code.jobs.kubernetes._read_service_account_token",
+                "nominal_code.jobs.runner.kubernetes._read_service_account_token",
                 return_value="test-token",
             ),
             patch(
-                "nominal_code.jobs.kubernetes.httpx.AsyncClient",
+                "nominal_code.jobs.runner.kubernetes.httpx.AsyncClient",
                 return_value=mock_client,
             ),
         ):
@@ -441,11 +442,11 @@ class TestKubernetesRunnerExecute:
 
         with (
             patch(
-                "nominal_code.jobs.kubernetes._read_service_account_token",
+                "nominal_code.jobs.runner.kubernetes._read_service_account_token",
                 return_value="test-token",
             ),
             patch(
-                "nominal_code.jobs.kubernetes.httpx.AsyncClient",
+                "nominal_code.jobs.runner.kubernetes.httpx.AsyncClient",
                 return_value=mock_client,
             ),
         ):
@@ -475,13 +476,64 @@ class TestKubernetesRunnerExecute:
 
         with (
             patch(
-                "nominal_code.jobs.kubernetes._read_service_account_token",
+                "nominal_code.jobs.runner.kubernetes._read_service_account_token",
                 return_value="test-token",
             ),
             patch(
-                "nominal_code.jobs.kubernetes.httpx.AsyncClient",
+                "nominal_code.jobs.runner.kubernetes.httpx.AsyncClient",
                 return_value=mock_client,
             ),
             pytest.raises(Exception, match="403"),
         ):
             await runner._execute(job)
+
+
+class TestPublishJobCompletion:
+    def test_publishes_to_correct_channel(self):
+        pytest.importorskip("redis")
+        mock_client = MagicMock()
+
+        with patch("redis.Redis") as mock_redis_cls:
+            mock_redis_cls.from_url.return_value = mock_client
+
+            publish_job_completion(
+                redis_url="redis://localhost:6379",
+                job_name="nominal-code-abc12345-owner-repo-42",
+                status="succeeded",
+            )
+
+            mock_client.publish.assert_called_once_with(
+                "nc:job:nominal-code-abc12345-owner-repo-42:done",
+                "succeeded",
+            )
+            mock_client.close.assert_called_once()
+
+    def test_publishes_failed_status(self):
+        pytest.importorskip("redis")
+        mock_client = MagicMock()
+
+        with patch("redis.Redis") as mock_redis_cls:
+            mock_redis_cls.from_url.return_value = mock_client
+
+            publish_job_completion(
+                redis_url="redis://localhost:6379",
+                job_name="test-job",
+                status="failed",
+            )
+
+            mock_client.publish.assert_called_once_with(
+                "nc:job:test-job:done",
+                "failed",
+            )
+
+    def test_handles_redis_error_gracefully(self):
+        redis = pytest.importorskip("redis")
+
+        with patch("redis.Redis") as mock_redis_cls:
+            mock_redis_cls.from_url.side_effect = redis.RedisError("connection failed")
+
+            publish_job_completion(
+                redis_url="redis://localhost:6379",
+                job_name="test-job",
+                status="succeeded",
+            )

@@ -4,7 +4,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from claude_agent_sdk import ResultMessage, SystemMessage
 
-from nominal_code.agent.router import AgentResult, run
+from nominal_code.agent.invoke import invoke_agent
+from nominal_code.agent.result import AgentResult
 
 
 def _make_result_message(
@@ -52,7 +53,7 @@ class TestRunClaude:
             yield result_msg
 
         with patch("nominal_code.agent.cli.runner.query", mock_query):
-            result = await run(
+            result = await invoke_agent(
                 prompt="fix the bug",
                 cwd="/tmp/workspace",
             )
@@ -69,7 +70,7 @@ class TestRunClaude:
             yield
 
         with patch("nominal_code.agent.cli.runner.query", mock_query):
-            result = await run(prompt="test", cwd="/tmp")
+            result = await invoke_agent(prompt="test", cwd="/tmp")
 
         assert result.is_error is True
         assert result.output == "No result received from the agent."
@@ -87,7 +88,7 @@ class TestRunClaude:
             yield result_msg
 
         with patch("nominal_code.agent.cli.runner.query", mock_query):
-            result = await run(prompt="test", cwd="/tmp")
+            result = await invoke_agent(prompt="test", cwd="/tmp")
 
         assert result.output == "Done, no output."
 
@@ -108,7 +109,7 @@ class TestRunClaude:
             yield result_msg
 
         with patch("nominal_code.agent.cli.runner.query", mock_query):
-            await run(
+            await invoke_agent(
                 prompt="fix it",
                 cwd="/tmp",
                 system_prompt="Be concise.",
@@ -133,7 +134,7 @@ class TestRunClaude:
             yield result_msg
 
         with patch("nominal_code.agent.cli.runner.query", mock_query):
-            await run(prompt="fix it", cwd="/tmp")
+            await invoke_agent(prompt="fix it", cwd="/tmp")
 
         assert captured_options["options"].system_prompt is None
 
@@ -154,7 +155,7 @@ class TestRunClaude:
             yield result_msg
 
         with patch("nominal_code.agent.cli.runner.query", mock_query):
-            await run(
+            await invoke_agent(
                 prompt="review it",
                 cwd="/tmp",
                 allowed_tools=["Read", "Glob", "Grep"],
@@ -183,7 +184,7 @@ class TestRunClaude:
             yield result_msg
 
         with patch("nominal_code.agent.cli.runner.query", mock_query):
-            await run(prompt="fix it", cwd="/tmp")
+            await invoke_agent(prompt="fix it", cwd="/tmp")
 
         assert captured_options["options"].allowed_tools == []
 
@@ -204,7 +205,7 @@ class TestRunClaude:
             yield result_msg
 
         with patch("nominal_code.agent.cli.runner.query", mock_query):
-            await run(prompt="fix it", cwd="/tmp")
+            await invoke_agent(prompt="fix it", cwd="/tmp")
 
         assert captured_options["options"].permission_mode == "bypassPermissions"
 
@@ -314,15 +315,15 @@ class TestRunAgentApiDispatch:
 
         with (
             patch(
-                "nominal_code.agent.router.run_api",
+                "nominal_code.agent.invoke.run_api_agent",
                 side_effect=mock_run_api,
             ),
             patch(
-                "nominal_code.agent.router.create_provider",
+                "nominal_code.agent.invoke.create_provider",
                 return_value=AsyncMock(),
             ),
         ):
-            await run(
+            await invoke_agent(
                 prompt="test",
                 cwd="/tmp",
                 agent_config=ApiAgentConfig(

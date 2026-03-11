@@ -2,14 +2,31 @@
 
 Handles LLM agent invocation via two backends, prompt composition, and error handling. LLM providers live in `llm/`, conversation persistence in `conversation/`.
 
-## Dual runner architecture
+## Processing layers
 
-`router.py` dispatches to one of two backends based on the agent config type (`CliAgentConfig` or `ApiAgentConfig`):
+The call chain follows four conceptual layers:
 
-- **`api/runner.py`** — provider-agnostic agentic loop. Uses the `LLMProvider` protocol from `llm/provider.py` to call any LLM API. Implements the loop locally: send prompt → process tool_use blocks → execute tools via `api/tools.py` → send results back → repeat. Used in CI mode. Exports `run()` (stateless) and `handle_event()` (with conversation persistence).
-- **`cli/runner.py`** — spawns the Claude Code CLI via `claude_agent_sdk.query()`. Streams messages, captures conversation IDs. Used in webhook and CLI modes. Exports `run()` (stateless) and `handle_event()` (with conversation persistence).
+1. **Receive** — `commands/webhook/server.py` receives webhooks, `commands/` handles CLI/CI entry points.
+2. **Prepare** — `workspace/setup.py::prepare_job_event()` resolves clone URLs and branches. `jobs/runner/process.py` wraps execution with error handling and queue management.
+3. **Orchestrate** — `handlers/review.py` and `handlers/worker.py` contain business logic (diff fetching, prompt building, output parsing).
+4. **Invoke** — `agent/invoke.py` provides agent execution with explicit conversation lifecycle.
 
-The API runner's default model is resolved from `llm.registry.DEFAULT_MODELS` based on the provider name. The dispatcher in `router.py` creates the provider via `create_provider()` and resolves the default model. The CLI runner defers to the Claude Code CLI's configured model unless overridden.
+## Agent invocation
+
+`invoke.py` provides three public functions for conversation lifecycle:
+
+- **`prepare_conversation()`** — loads conversation ID and prior messages from the store. Called before `invoke_agent()`.
+- **`invoke_agent()`** — dispatches to the CLI or API runner. Routes based on `CliAgentConfig` vs `ApiAgentConfig`. Stateless — takes conversation ID and prior messages as explicit parameters.
+- **`save_conversation()`** — persists conversation state after agent execution. Called after `invoke_agent()`.
+
+Callers that don't need conversation persistence (e.g. `handlers/output.py` for JSON repair) call `invoke_agent()` directly without prepare/save.
+
+Both runners:
+
+- **`api/runner.py::run_api_agent()`** — provider-agnostic agentic loop. Uses the `LLMProvider` protocol from `llm/provider.py` to call any LLM API. Implements the loop locally: send prompt -> process tool_use blocks -> execute tools via `api/tools.py` -> send results back -> repeat. Used in CI mode.
+- **`cli/runner.py::run_cli_agent()`** — spawns the Claude Code CLI via `claude_agent_sdk.query()`. Streams messages, captures conversation IDs. Used in webhook and CLI modes.
+
+The API runner's default model is resolved from `llm.registry.DEFAULT_MODELS` based on the provider name. `invoke.py` creates the provider via `create_provider()` and resolves the default model. The CLI runner defers to the Claude Code CLI's configured model unless overridden.
 
 ## SDK monkey-patching
 
@@ -30,15 +47,16 @@ Tool definitions use canonical `ToolDefinition` (TypedDict with `name`, `descrip
 
 ```
 agent/
-├── router.py        # run() dispatches to api/ or cli/ runner; handle_event() dispatches with conversation persistence
+├── __init__.py      # Re-exports: invoke_agent, prepare_conversation, save_conversation, AgentResult
+├── invoke.py        # prepare_conversation() + invoke_agent() + save_conversation()
 ├── result.py        # AgentResult dataclass (output, is_error, num_turns, duration_ms, conversation_id, cost)
 ├── prompts.py       # Guideline loading (.nominal/ overrides), language detection, system prompt composition
 ├── errors.py        # handle_agent_errors(): async context manager that catches and posts error replies
 ├── api/
-│   ├── runner.py    # Provider-agnostic agentic loop: run() + handle_event()
+│   ├── runner.py    # Provider-agnostic agentic loop: run_api_agent()
 │   └── tools.py     # Tool definitions and local execution (Read, Glob, Grep, Bash)
 └── cli/
-    └── runner.py    # Claude Code CLI wrapper: run() + handle_event() (claude_agent_sdk.query + SDK monkey-patch)
+    └── runner.py    # Claude Code CLI wrapper: run_cli_agent() (claude_agent_sdk.query + SDK monkey-patch)
 ```
 
 ## Non-obvious details

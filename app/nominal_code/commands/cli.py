@@ -9,11 +9,10 @@ import sys
 from environs import Env
 
 from nominal_code.config import Config
-from nominal_code.handlers.review import ReviewResult, review
+from nominal_code.handlers.review import ReviewResult, post_review_result, review
 from nominal_code.main import setup_logging
 from nominal_code.models import EventType, ProviderName
 from nominal_code.platforms.base import (
-    CommentReply,
     PlatformName,
     PullRequestEvent,
     ReviewerPlatform,
@@ -302,7 +301,7 @@ async def _run_review(args: argparse.Namespace) -> int:
         repo_full_name=repo_full_name,
         pr_number=pr_number,
         pr_branch=branch,
-        clone_url=platform.build_clone_url(repo_full_name),
+        clone_url=platform.build_reviewer_clone_url(repo_full_name),
         event_type=EventType.PR_OPENED,
     )
 
@@ -325,19 +324,11 @@ async def _run_review(args: argparse.Namespace) -> int:
     _print_review(result)
 
     if not args.dry_run and result.agent_review is not None:
-        if result.valid_findings:
-            await platform.submit_review(
-                repo_full_name=repo_full_name,
-                pr_number=pr_number,
-                findings=result.valid_findings,
-                summary=result.effective_summary,
-                event=event,
-            )
-        else:
-            await platform.post_reply(
-                event=event,
-                reply=CommentReply(body=result.effective_summary),
-            )
+        await post_review_result(
+            event=event,
+            result=result,
+            platform=platform,
+        )
 
         logger.info("Review posted to %s#%d", repo_full_name, pr_number)
 

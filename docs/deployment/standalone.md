@@ -6,7 +6,7 @@ The simplest deployment model. The webhook server runs as a single process — i
 
 ```bash
 cd app
-uv run nominal-code
+uv run nominal-code serve
 ```
 
 The process runs until terminated. It handles multiple concurrent webhook events using asyncio, with per-PR serial processing enforced by the job queue.

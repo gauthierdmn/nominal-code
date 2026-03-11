@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nominal_code.commands.job import run_job_main
+from nominal_code.commands.webhook.job import run_job_main
 from nominal_code.jobs.payload import JobPayload
 from nominal_code.models import EventType
 from nominal_code.platforms.base import CommentEvent, PlatformName
@@ -55,10 +55,7 @@ class TestRunJobMain:
         monkeypatch.setenv("GITHUB_TOKEN", "test-token")
 
         mock_review_result = MagicMock()
-        mock_review_result.agent_review = MagicMock()
         mock_review_result.valid_findings = []
-        mock_review_result.effective_summary = "LGTM"
-        mock_review_result.raw_output = '{"summary": "LGTM", "comments": []}'
         mock_review_result.cost = None
 
         mock_platform = MagicMock()
@@ -69,23 +66,24 @@ class TestRunJobMain:
 
         with (
             patch(
-                "nominal_code.commands.job._build_platform",
+                "nominal_code.commands.webhook.job._build_platform",
                 return_value=mock_platform,
             ),
             patch(
-                "nominal_code.commands.job.review",
+                "nominal_code.commands.webhook.job.prepare_job_event",
                 new_callable=AsyncMock,
-                return_value=mock_review_result,
+                return_value=job.event,
             ),
             patch(
-                "nominal_code.commands.job.post_review_result",
+                "nominal_code.commands.webhook.job.run_and_post_review",
                 new_callable=AsyncMock,
-            ) as mock_post,
+                return_value=mock_review_result,
+            ) as mock_review,
         ):
             result = await run_job_main()
 
         assert result == 0
-        mock_post.assert_called_once()
+        mock_review.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_review_exception_returns_1(self, monkeypatch):
@@ -103,11 +101,11 @@ class TestRunJobMain:
 
         with (
             patch(
-                "nominal_code.commands.job._build_platform",
+                "nominal_code.commands.webhook.job._build_platform",
                 return_value=mock_platform,
             ),
             patch(
-                "nominal_code.commands.job.review",
+                "nominal_code.commands.webhook.job.prepare_job_event",
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("Agent failed"),
             ),
@@ -129,10 +127,7 @@ class TestPublishCompletion:
         monkeypatch.setenv("REDIS_URL", "redis://localhost:6379")
 
         mock_review_result = MagicMock()
-        mock_review_result.agent_review = MagicMock()
         mock_review_result.valid_findings = []
-        mock_review_result.effective_summary = "LGTM"
-        mock_review_result.raw_output = '{"summary": "LGTM", "comments": []}'
         mock_review_result.cost = None
 
         mock_platform = MagicMock()
@@ -143,20 +138,21 @@ class TestPublishCompletion:
 
         with (
             patch(
-                "nominal_code.commands.job._build_platform",
+                "nominal_code.commands.webhook.job._build_platform",
                 return_value=mock_platform,
             ),
             patch(
-                "nominal_code.commands.job.review",
+                "nominal_code.commands.webhook.job.prepare_job_event",
+                new_callable=AsyncMock,
+                return_value=job.event,
+            ),
+            patch(
+                "nominal_code.commands.webhook.job.run_and_post_review",
                 new_callable=AsyncMock,
                 return_value=mock_review_result,
             ),
             patch(
-                "nominal_code.commands.job.post_review_result",
-                new_callable=AsyncMock,
-            ),
-            patch(
-                "nominal_code.commands.job.publish_job_completion",
+                "nominal_code.commands.webhook.job.publish_job_completion",
             ) as mock_publish,
         ):
             result = await run_job_main()
@@ -186,16 +182,16 @@ class TestPublishCompletion:
 
         with (
             patch(
-                "nominal_code.commands.job._build_platform",
+                "nominal_code.commands.webhook.job._build_platform",
                 return_value=mock_platform,
             ),
             patch(
-                "nominal_code.commands.job.review",
+                "nominal_code.commands.webhook.job.prepare_job_event",
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("Agent failed"),
             ),
             patch(
-                "nominal_code.commands.job.publish_job_completion",
+                "nominal_code.commands.webhook.job.publish_job_completion",
             ) as mock_publish,
         ):
             result = await run_job_main()
@@ -218,10 +214,7 @@ class TestPublishCompletion:
         monkeypatch.delenv("REDIS_URL", raising=False)
 
         mock_review_result = MagicMock()
-        mock_review_result.agent_review = MagicMock()
         mock_review_result.valid_findings = []
-        mock_review_result.effective_summary = "LGTM"
-        mock_review_result.raw_output = '{"summary": "LGTM", "comments": []}'
         mock_review_result.cost = None
 
         mock_platform = MagicMock()
@@ -232,20 +225,21 @@ class TestPublishCompletion:
 
         with (
             patch(
-                "nominal_code.commands.job._build_platform",
+                "nominal_code.commands.webhook.job._build_platform",
                 return_value=mock_platform,
             ),
             patch(
-                "nominal_code.commands.job.review",
+                "nominal_code.commands.webhook.job.prepare_job_event",
+                new_callable=AsyncMock,
+                return_value=job.event,
+            ),
+            patch(
+                "nominal_code.commands.webhook.job.run_and_post_review",
                 new_callable=AsyncMock,
                 return_value=mock_review_result,
             ),
             patch(
-                "nominal_code.commands.job.post_review_result",
-                new_callable=AsyncMock,
-            ),
-            patch(
-                "nominal_code.commands.job.publish_job_completion",
+                "nominal_code.commands.webhook.job.publish_job_completion",
             ) as mock_publish,
         ):
             result = await run_job_main()

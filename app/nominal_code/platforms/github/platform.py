@@ -10,7 +10,6 @@ import httpx
 from aiohttp import web
 from environs import Env
 
-from nominal_code.http import request_with_retry
 from nominal_code.models import ChangedFile, EventType, FileStatus, ReviewFinding
 from nominal_code.platforms.base import (
     CommentEvent,
@@ -26,6 +25,7 @@ from nominal_code.platforms.github.auth import (
     GitHubPatAuth,
     load_private_key,
 )
+from nominal_code.platforms.http import request_with_retry
 from nominal_code.platforms.registry import register_platform
 
 GITHUB_API_BASE: str = "https://api.github.com"
@@ -127,7 +127,7 @@ class GitHubPlatform:
         Send an authenticated HTTP request with transient retry.
 
         Injects authorization headers and delegates to
-        :func:`~nominal_code.http.request_with_retry`.
+        :func:`~nominal_code.platforms.http.request_with_retry`.
 
         Args:
             method (str): HTTP method (GET, POST, PUT, PATCH, DELETE).

@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import pytest_asyncio
 
+from nominal_code.commands.webhook.server import _should_process_event, create_app
 from nominal_code.config import CliAgentConfig, ReviewerConfig, WorkerConfig
 from nominal_code.models import EventType
 from nominal_code.platforms.base import (
@@ -13,7 +14,6 @@ from nominal_code.platforms.base import (
     PlatformName,
     ReviewerPlatform,
 )
-from nominal_code.server.app import _should_process_event, create_app
 
 
 def _make_config(
@@ -172,7 +172,7 @@ class TestGitHubWebhook:
         app["platforms"]["github"].parse_event.return_value = comment
 
         with patch(
-            "nominal_code.server.app.acknowledge_event",
+            "nominal_code.commands.webhook.server.acknowledge_event",
             new_callable=AsyncMock,
             return_value=True,
         ):
@@ -207,7 +207,7 @@ class TestGitHubWebhook:
         app["platforms"]["github"].parse_event.return_value = comment
 
         with patch(
-            "nominal_code.server.app.acknowledge_event",
+            "nominal_code.commands.webhook.server.acknowledge_event",
             new_callable=AsyncMock,
             return_value=True,
         ):
@@ -246,7 +246,7 @@ class TestGitHubWebhook:
         app["platforms"]["github"].parse_event.return_value = comment
 
         with patch(
-            "nominal_code.server.app.acknowledge_event",
+            "nominal_code.commands.webhook.server.acknowledge_event",
             new_callable=AsyncMock,
             return_value=True,
         ):
@@ -370,7 +370,7 @@ class TestAutoTrigger:
         app["platforms"]["github"].parse_event.return_value = event
 
         with patch(
-            "nominal_code.server.app.acknowledge_event",
+            "nominal_code.commands.webhook.server.acknowledge_event",
             new_callable=AsyncMock,
             return_value=True,
         ):
@@ -485,7 +485,7 @@ class TestHandleHealth:
 
 class TestMakeWebhookHandler:
     def test_make_webhook_handler_returns_callable(self, app):
-        from nominal_code.server.app import _make_webhook_handler
+        from nominal_code.commands.webhook.server import _make_webhook_handler
 
         handler = _make_webhook_handler("github")
 
@@ -567,7 +567,7 @@ class TestHandleWebhook:
         app["platforms"]["github"].parse_event.return_value = event
 
         with patch(
-            "nominal_code.server.app.acknowledge_event",
+            "nominal_code.commands.webhook.server.acknowledge_event",
             new=AsyncMock(return_value=True),
         ):
             response = await client.post("/webhooks/github", data=b"{}")
@@ -600,7 +600,7 @@ class TestAutoTriggerJob:
         app["platforms"]["github"].parse_event.return_value = event
 
         with patch(
-            "nominal_code.server.app.acknowledge_event",
+            "nominal_code.commands.webhook.server.acknowledge_event",
             new=AsyncMock(return_value=True),
         ):
             response = await client.post("/webhooks/github", data=b"{}")
@@ -752,7 +752,7 @@ class TestAllowedReposFilter:
         client = await aiohttp_client(app)
 
         with patch(
-            "nominal_code.server.app.acknowledge_event",
+            "nominal_code.commands.webhook.server.acknowledge_event",
             new_callable=AsyncMock,
             return_value=True,
         ):
@@ -820,7 +820,7 @@ class TestAllowedReposFilter:
         client = await aiohttp_client(app)
 
         with patch(
-            "nominal_code.server.app.acknowledge_event",
+            "nominal_code.commands.webhook.server.acknowledge_event",
             new_callable=AsyncMock,
             return_value=True,
         ):

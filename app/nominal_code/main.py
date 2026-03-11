@@ -3,21 +3,20 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
-from datetime import timedelta
 
-from aiohttp import web
 from environs import Env
-
-from nominal_code.config import Config
-from nominal_code.conversation.memory import MemoryConversationStore
-from nominal_code.jobs.queue import AsyncioJobQueue
-from nominal_code.platforms import build_platforms
-from nominal_code.platforms.base import Platform
-from nominal_code.server.app import create_app
-from nominal_code.workspace.cleanup import WorkspaceCleaner
 
 logger: logging.Logger = logging.getLogger(__name__)
 env: Env = Env()
+
+USAGE: str = """\
+Usage: nominal-code <command> [args]
+
+Commands:
+  serve              Start the webhook server
+  review             One-shot CLI review (e.g. nominal-code review owner/repo#42)
+  ci <platform>      Run a CI review (github or gitlab)
+  run-job            Execute a single job in a K8s pod (internal)"""
 
 
 def setup_logging() -> None:
@@ -38,158 +37,55 @@ def setup_logging() -> None:
     )
 
 
-async def _async_main() -> None:
-    """
-    Async core: load config, build platforms, create app, and start server.
-    """
-
-    logger.info("Loading configuration from environment")
-
-    try:
-        config: Config = Config.from_env()
-    except (OSError, ValueError) as exc:
-        logger.error("Configuration error: %s", exc)
-        sys.exit(1)
-
-    platforms: dict[str, Platform] = build_platforms()
-
-    if not platforms:
-        logger.error(
-            "No platforms configured. "
-            "Set GITHUB_TOKEN or GITLAB_TOKEN to enable a platform."
-        )
-        sys.exit(1)
-
-    conversation_store: MemoryConversationStore = MemoryConversationStore()
-    job_queue: AsyncioJobQueue = AsyncioJobQueue()
-
-    if config.kubernetes is not None:
-        redis_url: str = env.str("REDIS_URL", "")
-
-        if not redis_url:
-            logger.error("REDIS_URL is required when JOB_RUNNER=kubernetes")
-            sys.exit(1)
-
-        from nominal_code.jobs.kubernetes import KubernetesRunner
-        from nominal_code.jobs.redis_queue import RedisJobQueue
-
-        redis_queue: RedisJobQueue = RedisJobQueue(redis_url)
-
-        runner: KubernetesRunner | ProcessRunner = KubernetesRunner(
-            config=config.kubernetes,
-            queue=redis_queue,
-        )
-    else:
-        from nominal_code.jobs.process import ProcessRunner
-
-        runner = ProcessRunner(
-            config=config,
-            platforms=platforms,
-            conversation_store=conversation_store,
-            queue=job_queue,
-        )
-
-    app: web.Application = create_app(
-        config=config,
-        platforms=platforms,
-        runner=runner,
-    )
-
-    enabled: list[str] = list(platforms.keys())
-
-    bots: list[str] = []
-
-    if config.worker is not None:
-        bots.append(f"worker=@{config.worker.bot_username}")
-
-    if config.reviewer is not None:
-        bots.append(f"reviewer=@{config.reviewer.bot_username}")
-
-    runner_mode: str = "kubernetes" if config.kubernetes is not None else "in-process"
-
-    logger.info(
-        "Starting server on %s:%d | platforms=%s | %s | runner=%s | allowed_users=%s",
-        config.webhook_host,
-        config.webhook_port,
-        enabled,
-        " | ".join(bots),
-        runner_mode,
-        config.allowed_users,
-    )
-
-    cleaner: WorkspaceCleaner | None = None
-
-    if config.cleanup_interval_hours > 0:
-        cleaner = WorkspaceCleaner(
-            base_dir=config.workspace_base_dir,
-            platforms=platforms,
-            cleanup_wait=timedelta(hours=config.cleanup_interval_hours),
-        )
-
-    web_runner: web.AppRunner = web.AppRunner(app)
-
-    await web_runner.setup()
-
-    site: web.TCPSite = web.TCPSite(
-        runner=web_runner,
-        host=config.webhook_host,
-        port=config.webhook_port,
-    )
-
-    try:
-        if cleaner is not None:
-            cleaner.purge()
-            await cleaner.start()
-
-        await site.start()
-        logger.info("Server is running, waiting for webhooks...")
-
-        await asyncio.Event().wait()
-    except asyncio.CancelledError:
-        pass
-    finally:
-        logger.info("Shutting down...")
-
-        if cleaner is not None:
-            await cleaner.stop()
-
-        await web_runner.cleanup()
-
-
 def main() -> None:
     """
-    Entry point: dispatch to run-job, CLI review, CI, or start the webhook server.
+    Entry point: dispatch to serve, review, ci, or run-job.
     """
 
-    if len(sys.argv) > 1 and sys.argv[1] == "run-job":
-        from nominal_code.commands.job import run_job_main
+    command: str = sys.argv[1] if len(sys.argv) > 1 else ""
 
+    if command == "serve":
         setup_logging()
-        exit_code: int = asyncio.run(run_job_main())
-        sys.exit(exit_code)
 
-    if len(sys.argv) > 1 and sys.argv[1] == "review":
+        try:
+            from nominal_code.commands.webhook.server import run_webhook_server
+
+            asyncio.run(run_webhook_server())
+
+        except KeyboardInterrupt:
+            pass
+
+        return
+
+    if command == "review":
         from nominal_code.commands.cli import cli_main
 
         cli_main()
 
         return
 
-    if len(sys.argv) > 2 and sys.argv[1] == "ci":
+    if command == "ci":
+        if len(sys.argv) < 3:
+            print("Usage: nominal-code ci <platform>", file=sys.stderr)
+            sys.exit(1)
+
         from nominal_code.commands.ci import run_ci_review
 
         setup_logging()
 
         platform_name: str = sys.argv[2]
-        exit_code = asyncio.run(run_ci_review(platform_name))
+        exit_code: int = asyncio.run(run_ci_review(platform_name))
         sys.exit(exit_code)
 
-    setup_logging()
+    if command == "run-job":
+        from nominal_code.commands.webhook.job import run_job_main
 
-    try:
-        asyncio.run(_async_main())
-    except KeyboardInterrupt:
-        pass
+        setup_logging()
+        exit_code = asyncio.run(run_job_main())
+        sys.exit(exit_code)
+
+    print(USAGE, file=sys.stderr)
+    sys.exit(1)
 
 
 if __name__ == "__main__":

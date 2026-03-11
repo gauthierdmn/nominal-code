@@ -4,11 +4,13 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 
-from nominal_code.http import (
+from nominal_code.platforms.http import (
     TRANSIENT_MAX_RETRIES,
     TRANSIENT_STATUS_CODES,
     request_with_retry,
 )
+
+SLEEP_PATH = "nominal_code.platforms.http.asyncio.sleep"
 
 
 def _mock_response(status_code):
@@ -40,7 +42,7 @@ async def test_request_with_retry_retries_on_transient_then_succeeds():
     ok = _mock_response(200)
     client = _mock_client(bad, ok)
 
-    with patch("nominal_code.http.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+    with patch(SLEEP_PATH, new_callable=AsyncMock) as mock_sleep:
         result = await request_with_retry(client, "POST", "/test")
 
     assert result is ok
@@ -55,7 +57,7 @@ async def test_request_with_retry_retries_all_transient_codes(status_code):
     ok = _mock_response(200)
     client = _mock_client(transient, ok)
 
-    with patch("nominal_code.http.asyncio.sleep", new_callable=AsyncMock):
+    with patch(SLEEP_PATH, new_callable=AsyncMock):
         result = await request_with_retry(client, "GET", "/test")
 
     assert result is ok
@@ -67,7 +69,7 @@ async def test_request_with_retry_exhausts_retries():
     responses = [_mock_response(503) for _ in range(TRANSIENT_MAX_RETRIES)]
     client = _mock_client(*responses)
 
-    with patch("nominal_code.http.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+    with patch(SLEEP_PATH, new_callable=AsyncMock) as mock_sleep:
         result = await request_with_retry(client, "GET", "/test")
 
     assert result.status_code == 503
@@ -80,7 +82,7 @@ async def test_request_with_retry_backoff_increases_linearly():
     responses = [_mock_response(504) for _ in range(TRANSIENT_MAX_RETRIES)]
     client = _mock_client(*responses)
 
-    with patch("nominal_code.http.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+    with patch(SLEEP_PATH, new_callable=AsyncMock) as mock_sleep:
         await request_with_retry(client, "GET", "/test")
 
     delays = [call.args[0] for call in mock_sleep.await_args_list]
@@ -124,7 +126,7 @@ async def test_request_with_retry_no_sleep_on_last_attempt():
     responses = [_mock_response(502) for _ in range(TRANSIENT_MAX_RETRIES)]
     client = _mock_client(*responses)
 
-    with patch("nominal_code.http.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+    with patch(SLEEP_PATH, new_callable=AsyncMock) as mock_sleep:
         await request_with_retry(client, "GET", "/test")
 
     assert mock_sleep.await_count == TRANSIENT_MAX_RETRIES - 1

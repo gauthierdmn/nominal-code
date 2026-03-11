@@ -6,7 +6,7 @@ from typing import Any
 
 import httpx
 
-from nominal_code.http import request_with_retry
+from nominal_code.platforms.http import request_with_retry
 
 GITHUB_API_BASE = "https://api.github.com"
 TIMEOUT = 30.0

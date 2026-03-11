@@ -4,7 +4,7 @@ import asyncio
 import pytest
 
 from nominal_code.jobs.payload import JobPayload
-from nominal_code.jobs.queue import AsyncioJobQueue
+from nominal_code.jobs.queue.asyncio import AsyncioJobQueue
 from nominal_code.models import EventType
 from nominal_code.platforms.base import CommentEvent, PlatformName
 

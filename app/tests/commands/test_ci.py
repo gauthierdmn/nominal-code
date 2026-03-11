@@ -7,14 +7,13 @@ import pytest
 
 from nominal_code.commands.ci import (
     _build_ci_config,
-    _format_cost_summary,
-    _load_platform_ci,
     run_ci_review,
 )
 from nominal_code.config import ApiAgentConfig
 from nominal_code.handlers.review import ReviewResult
-from nominal_code.llm.cost import CostSummary
+from nominal_code.llm.cost import CostSummary, format_cost_summary
 from nominal_code.models import AgentReview, EventType, ProviderName, ReviewFinding
+from nominal_code.platforms import load_platform_ci
 from nominal_code.platforms.base import PlatformName, PullRequestEvent
 
 DUMMY_EVENT = PullRequestEvent(
@@ -32,8 +31,8 @@ CI_ENV = {
     "INPUT_CODING_GUIDELINES": "",
 }
 
-LOAD_CI = "nominal_code.commands.ci._load_platform_ci"
-REVIEW = "nominal_code.commands.ci.review"
+LOAD_CI = "nominal_code.commands.ci.load_platform_ci"
+REVIEW = "nominal_code.commands.ci.run_and_post_review"
 
 
 def _make_platform_ci_module(
@@ -145,7 +144,7 @@ class TestBuildCiConfig:
 
 class TestFormatCostSummary:
     def test_none_returns_empty(self):
-        result = _format_cost_summary(None)
+        result = format_cost_summary(None)
 
         assert result == ""
 
@@ -157,7 +156,7 @@ class TestFormatCostSummary:
             total_output_tokens=50,
         )
 
-        result = _format_cost_summary(cost)
+        result = format_cost_summary(cost)
 
         assert "gpt-4.1" in result
         assert "openai" in result
@@ -168,7 +167,7 @@ class TestFormatCostSummary:
             total_output_tokens=500,
         )
 
-        result = _format_cost_summary(cost)
+        result = format_cost_summary(cost)
 
         assert "1,000 in" in result
         assert "500 out" in result
@@ -180,7 +179,7 @@ class TestFormatCostSummary:
             total_cache_read_tokens=200,
         )
 
-        result = _format_cost_summary(cost)
+        result = format_cost_summary(cost)
 
         assert "cache read: 200" in result
 
@@ -191,7 +190,7 @@ class TestFormatCostSummary:
             total_cache_read_tokens=0,
         )
 
-        result = _format_cost_summary(cost)
+        result = format_cost_summary(cost)
 
         assert "cache read" not in result
 
@@ -202,7 +201,7 @@ class TestFormatCostSummary:
             total_cost_usd=0.0123,
         )
 
-        result = _format_cost_summary(cost)
+        result = format_cost_summary(cost)
 
         assert "$0.0123" in result
 
@@ -213,7 +212,7 @@ class TestFormatCostSummary:
             num_api_calls=3,
         )
 
-        result = _format_cost_summary(cost)
+        result = format_cost_summary(cost)
 
         assert "API calls: 3" in result
 
@@ -224,21 +223,21 @@ class TestFormatCostSummary:
             num_api_calls=0,
         )
 
-        result = _format_cost_summary(cost)
+        result = format_cost_summary(cost)
 
         assert "API calls" not in result
 
 
 class TestLoadPlatformCi:
     def test_load_platform_ci_github(self):
-        module = _load_platform_ci(PlatformName.GITHUB)
+        module = load_platform_ci(PlatformName.GITHUB)
 
         assert hasattr(module, "build_event")
         assert hasattr(module, "build_platform")
         assert hasattr(module, "resolve_workspace")
 
     def test_load_platform_ci_gitlab(self):
-        module = _load_platform_ci(PlatformName.GITLAB)
+        module = load_platform_ci(PlatformName.GITLAB)
 
         assert hasattr(module, "build_event")
         assert hasattr(module, "build_platform")
@@ -282,16 +281,11 @@ class TestRunCiReview:
             exit_code = await run_ci_review("github")
 
         assert exit_code == 0
-        mock_platform.submit_review.assert_called_once()
-        mock_platform.post_reply.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_run_ci_review_success_no_findings(self):
-        mock_platform = _make_mock_platform()
         result = _make_review_result()
-        module = _make_platform_ci_module(
-            platform=mock_platform,
-        )
+        module = _make_platform_ci_module()
 
         with (
             patch(LOAD_CI, return_value=module),
@@ -305,38 +299,6 @@ class TestRunCiReview:
             exit_code = await run_ci_review("github")
 
         assert exit_code == 0
-        mock_platform.submit_review.assert_not_called()
-        mock_platform.post_reply.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_run_ci_review_posts_raw_on_parse_failure(self):
-        mock_platform = _make_mock_platform()
-        result = ReviewResult(
-            agent_review=None,
-            valid_findings=[],
-            rejected_findings=[],
-            effective_summary="",
-            raw_output="broken json",
-        )
-        module = _make_platform_ci_module(
-            platform=mock_platform,
-        )
-
-        with (
-            patch(LOAD_CI, return_value=module),
-            patch(
-                REVIEW,
-                new_callable=AsyncMock,
-                return_value=result,
-            ),
-            patch.dict(os.environ, CI_ENV, clear=False),
-        ):
-            exit_code = await run_ci_review("github")
-
-        assert exit_code == 0
-        mock_platform.post_reply.assert_called_once()
-        call_args = mock_platform.post_reply.call_args
-        assert "broken json" in call_args.kwargs["reply"].body
 
     @pytest.mark.asyncio
     async def test_run_ci_review_returns_one_on_runtime_error(

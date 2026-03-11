@@ -5,7 +5,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nominal_code.agent.api.runner import handle_event, run
+from nominal_code.agent.api.runner import run_api_agent
+from nominal_code.agent.invoke import (
+    invoke_agent,
+    prepare_conversation,
+    save_conversation,
+)
 from nominal_code.agent.result import AgentResult
 from nominal_code.config import ApiAgentConfig, ProviderConfig
 from nominal_code.conversation.memory import MemoryConversationStore
@@ -47,7 +52,7 @@ class TestRunAgentApi:
             return_value=_make_text_response(text="All good!"),
         )
 
-        result = await run(
+        result = await run_api_agent(
             prompt="Review this code",
             cwd=tmp_path,
             model="test-model",
@@ -68,7 +73,7 @@ class TestRunAgentApi:
             ),
         )
 
-        result = await run(
+        result = await run_api_agent(
             prompt="test",
             cwd=tmp_path,
             model="test-model",
@@ -94,7 +99,7 @@ class TestRunAgentApi:
             ],
         )
 
-        result = await run(
+        result = await run_api_agent(
             prompt="Read hello.py",
             cwd=tmp_path,
             model="test-model",
@@ -127,7 +132,7 @@ class TestRunAgentApi:
             ),
         )
 
-        result = await run(
+        result = await run_api_agent(
             prompt="Review this",
             cwd=tmp_path,
             model="test-model",
@@ -151,7 +156,7 @@ class TestRunAgentApi:
             ),
         )
 
-        result = await run(
+        result = await run_api_agent(
             prompt="Find files",
             cwd=tmp_path,
             model="test-model",
@@ -171,7 +176,7 @@ class TestRunAgentApi:
             side_effect=ProviderError("API down"),
         )
 
-        result = await run(
+        result = await run_api_agent(
             prompt="test",
             cwd=tmp_path,
             model="test-model",
@@ -188,7 +193,7 @@ class TestRunAgentApi:
             side_effect=RuntimeError("boom"),
         )
 
-        result = await run(
+        result = await run_api_agent(
             prompt="test",
             cwd=tmp_path,
             model="test-model",
@@ -215,7 +220,7 @@ class TestRunAgentApi:
             Message(role="assistant", content=[TextBlock(text="first reply")]),
         ]
 
-        result = await run(
+        result = await run_api_agent(
             prompt="follow up",
             cwd=tmp_path,
             model="test-model",
@@ -236,7 +241,7 @@ class TestRunAgentApi:
             return_value=_make_text_response(text="done"),
         )
 
-        result = await run(
+        result = await run_api_agent(
             prompt="hello",
             cwd=tmp_path,
             model="test-model",
@@ -256,7 +261,7 @@ class TestRunAgentApi:
             side_effect=ProviderError("fail"),
         )
 
-        result = await run(
+        result = await run_api_agent(
             prompt="test",
             cwd=tmp_path,
             model="test-model",
@@ -276,7 +281,7 @@ class TestRunAgentApiCost:
             return_value=_make_text_response(text="done", usage=usage),
         )
 
-        result = await run(
+        result = await run_api_agent(
             prompt="test",
             cwd=tmp_path,
             model="gpt-4.1",
@@ -312,7 +317,7 @@ class TestRunAgentApiCost:
             ],
         )
 
-        result = await run(
+        result = await run_api_agent(
             prompt="Read hello.py",
             cwd=tmp_path,
             model="gpt-4.1",
@@ -335,7 +340,7 @@ class TestRunAgentApiCost:
             side_effect=ProviderError("fail"),
         )
 
-        result = await run(
+        result = await run_api_agent(
             prompt="test",
             cwd=tmp_path,
             model="gpt-4.1",
@@ -358,7 +363,7 @@ class TestRunAgentApiCost:
             ),
         )
 
-        result = await run(
+        result = await run_api_agent(
             prompt="test",
             cwd=tmp_path,
             model="gpt-4.1",
@@ -393,9 +398,9 @@ def _make_api_config():
     return config
 
 
-class TestHandleEvent:
+class TestConversationLifecycle:
     @pytest.mark.asyncio
-    async def test_loads_prior_messages_from_store(self):
+    async def test_prepare_loads_prior_messages_from_store(self):
         event = _make_event()
         config = _make_api_config()
         store = MemoryConversationStore()
@@ -426,30 +431,36 @@ class TestHandleEvent:
                 ),
             )
 
+        conversation_id, prior_messages = prepare_conversation(
+            event=event,
+            bot_type=BotType.WORKER,
+            agent_config=config.agent,
+            conversation_store=store,
+        )
+
         with (
             patch(
-                "nominal_code.agent.api.runner.run",
+                "nominal_code.agent.invoke.run_api_agent",
                 side_effect=mock_run,
             ),
             patch(
-                "nominal_code.agent.api.runner.create_provider",
+                "nominal_code.agent.invoke.create_provider",
                 return_value=AsyncMock(),
             ),
         ):
-            await handle_event(
-                event=event,
-                bot_type=BotType.WORKER,
-                system_prompt="sys",
+            await invoke_agent(
                 prompt="fix it",
                 cwd=Path("/tmp"),
-                config=config,
-                conversation_store=store,
+                system_prompt="sys",
+                agent_config=config.agent,
+                conversation_id=conversation_id,
+                prior_messages=prior_messages,
             )
 
         assert captured["prior_messages"] == [prior_msg]
 
     @pytest.mark.asyncio
-    async def test_stores_messages_after_success(self):
+    async def test_save_stores_messages_after_success(self):
         event = _make_event()
         config = _make_api_config()
         store = MemoryConversationStore()
@@ -467,25 +478,13 @@ class TestHandleEvent:
             conversation_id="resp-42",
         )
 
-        with (
-            patch(
-                "nominal_code.agent.api.runner.run",
-                new=AsyncMock(return_value=agent_result),
-            ),
-            patch(
-                "nominal_code.agent.api.runner.create_provider",
-                return_value=AsyncMock(),
-            ),
-        ):
-            await handle_event(
-                event=event,
-                bot_type=BotType.WORKER,
-                system_prompt="sys",
-                prompt="fix it",
-                cwd=Path("/tmp"),
-                config=config,
-                conversation_store=store,
-            )
+        save_conversation(
+            event=event,
+            bot_type=BotType.WORKER,
+            result=agent_result,
+            agent_config=config.agent,
+            conversation_store=store,
+        )
 
         stored_msgs = store.get_messages(
             platform=PlatformName.GITHUB,
@@ -507,7 +506,7 @@ class TestHandleEvent:
         assert stored_id == "resp-42"
 
     @pytest.mark.asyncio
-    async def test_skips_store_on_error(self):
+    async def test_save_skips_store_on_error(self):
         event = _make_event()
         config = _make_api_config()
         store = MemoryConversationStore()
@@ -519,25 +518,13 @@ class TestHandleEvent:
             duration_ms=100,
         )
 
-        with (
-            patch(
-                "nominal_code.agent.api.runner.run",
-                new=AsyncMock(return_value=agent_result),
-            ),
-            patch(
-                "nominal_code.agent.api.runner.create_provider",
-                return_value=AsyncMock(),
-            ),
-        ):
-            await handle_event(
-                event=event,
-                bot_type=BotType.WORKER,
-                system_prompt="sys",
-                prompt="fix it",
-                cwd=Path("/tmp"),
-                config=config,
-                conversation_store=store,
-            )
+        save_conversation(
+            event=event,
+            bot_type=BotType.WORKER,
+            result=agent_result,
+            agent_config=config.agent,
+            conversation_store=store,
+        )
 
         stored = store.get_messages(
             platform=PlatformName.GITHUB,
@@ -549,7 +536,7 @@ class TestHandleEvent:
         assert stored is None
 
     @pytest.mark.asyncio
-    async def test_no_store_skips_memory(self):
+    async def test_prepare_without_store_returns_none(self):
         event = _make_event()
         config = _make_api_config()
         captured = {}
@@ -565,29 +552,36 @@ class TestHandleEvent:
                 messages=(Message(role="user", content=[TextBlock(text="x")]),),
             )
 
+        conversation_id, prior_messages = prepare_conversation(
+            event=event,
+            bot_type=BotType.WORKER,
+            agent_config=config.agent,
+            conversation_store=None,
+        )
+
         with (
             patch(
-                "nominal_code.agent.api.runner.run",
+                "nominal_code.agent.invoke.run_api_agent",
                 side_effect=mock_run,
             ),
             patch(
-                "nominal_code.agent.api.runner.create_provider",
+                "nominal_code.agent.invoke.create_provider",
                 return_value=AsyncMock(),
             ),
         ):
-            await handle_event(
-                event=event,
-                bot_type=BotType.WORKER,
-                system_prompt="sys",
+            await invoke_agent(
                 prompt="fix it",
                 cwd=Path("/tmp"),
-                config=config,
+                system_prompt="sys",
+                agent_config=config.agent,
+                conversation_id=conversation_id,
+                prior_messages=prior_messages,
             )
 
         assert captured["prior_messages"] is None
 
     @pytest.mark.asyncio
-    async def test_stores_conversation_id(self):
+    async def test_save_stores_conversation_id(self):
         event = _make_event()
         config = _make_api_config()
         store = MemoryConversationStore()
@@ -600,25 +594,13 @@ class TestHandleEvent:
             conversation_id="api-sess",
         )
 
-        with (
-            patch(
-                "nominal_code.agent.api.runner.run",
-                new=AsyncMock(return_value=agent_result),
-            ),
-            patch(
-                "nominal_code.agent.api.runner.create_provider",
-                return_value=AsyncMock(),
-            ),
-        ):
-            await handle_event(
-                event=event,
-                bot_type=BotType.WORKER,
-                system_prompt="sys",
-                prompt="fix it",
-                cwd=Path("/tmp"),
-                config=config,
-                conversation_store=store,
-            )
+        save_conversation(
+            event=event,
+            bot_type=BotType.WORKER,
+            result=agent_result,
+            agent_config=config.agent,
+            conversation_store=store,
+        )
 
         stored_id = store.get_conversation_id(
             platform=PlatformName.GITHUB,
