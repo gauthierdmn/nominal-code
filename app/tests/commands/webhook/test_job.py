@@ -141,6 +141,10 @@ class TestPublishCompletion:
                 return_value=mock_platform,
             ),
             patch(
+                "nominal_code.commands.webhook.job.build_conversation_store",
+                return_value=MagicMock(),
+            ),
+            patch(
                 "nominal_code.commands.webhook.job.prepare_job_event",
                 new_callable=AsyncMock,
                 return_value=job.event,
@@ -182,6 +186,10 @@ class TestPublishCompletion:
             patch(
                 "nominal_code.commands.webhook.job._build_platform",
                 return_value=mock_platform,
+            ),
+            patch(
+                "nominal_code.commands.webhook.job.build_conversation_store",
+                return_value=MagicMock(),
             ),
             patch(
                 "nominal_code.commands.webhook.job.prepare_job_event",

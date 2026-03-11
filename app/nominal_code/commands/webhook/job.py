@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
 
 from environs import Env
 
 from nominal_code.config import Config, load_config_for_ci, resolve_provider_config
-from nominal_code.conversation.base import ConversationStore
+from nominal_code.conversation.base import ConversationStore, build_conversation_store
 from nominal_code.handlers.review import run_and_post_review
 from nominal_code.handlers.worker import review_and_fix
 from nominal_code.jobs.payload import JobPayload
@@ -57,7 +56,10 @@ async def run_job_main() -> int:
 
         return 1
 
-    conversation_store: ConversationStore | None = _build_conversation_store(config)
+    conversation_store: ConversationStore = build_conversation_store(
+        redis_url=config.redis_url,
+        redis_key_ttl_seconds=config.redis_key_ttl_seconds,
+    )
 
     platform_name: PlatformName = PlatformName(job.event.platform)
     platform: ReviewerPlatform = _build_platform(platform_name)
@@ -222,48 +224,6 @@ async def _run_worker_job(
     )
 
     return 0
-
-
-def _build_conversation_store(config: Config) -> ConversationStore | None:
-    """
-    Build a Redis-backed conversation store when ``redis_url`` is configured.
-
-    Returns ``None`` when the URL is empty or when the Redis client
-    cannot be created.
-
-    Args:
-        config (Config): Application configuration with Redis settings.
-
-    Returns:
-        ConversationStore | None: The conversation store, or ``None``.
-    """
-
-    if not config.redis_url:
-        return None
-
-    try:
-        import redis
-
-        from nominal_code.conversation.redis import RedisConversationStore
-
-        key_ttl: timedelta = timedelta(seconds=config.redis_key_ttl_seconds)
-
-        client: redis.Redis = redis.Redis.from_url(url=config.redis_url)
-        store: RedisConversationStore = RedisConversationStore(
-            client=client, key_ttl=key_ttl
-        )
-
-        logger.info("Using Redis conversation store at %s", config.redis_url)
-
-        return store
-
-    except Exception:
-        logger.warning(
-            "Failed to create Redis conversation store, continuing without it",
-            exc_info=True,
-        )
-
-        return None
 
 
 def _build_platform(platform_name: PlatformName) -> ReviewerPlatform:

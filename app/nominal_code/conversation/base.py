@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import logging
+from datetime import timedelta
 from typing import Protocol, runtime_checkable
 
+from nominal_code.conversation.memory import MemoryConversationStore
 from nominal_code.llm.messages import Message, TextBlock
 from nominal_code.models import BotType
 from nominal_code.platforms.base import PlatformName
+
+logger: logging.Logger = logging.getLogger(__name__)
 
 MAX_MESSAGE_CHARS: int = 500_000
 
@@ -165,3 +170,59 @@ def _message_chars(message: Message) -> int:
             total += 200
 
     return total
+
+
+def build_conversation_store(
+    redis_url: str | None = None,
+    redis_key_ttl_seconds: int | None = None,
+) -> ConversationStore:
+    """
+    Build a conversation store based on whether Redis is configured.
+
+    Returns a ``RedisConversationStore`` when ``redis_url`` is provided.
+    Returns a ``MemoryConversationStore`` when no URL is given. Raises
+    when Redis is requested but cannot be created.
+
+    Args:
+        redis_url (str | None): Redis connection URL
+            (e.g. ``redis://host:6379/0``). When ``None``, an in-memory
+            store is returned.
+        redis_key_ttl_seconds (int | None): TTL in seconds for Redis keys.
+            Uses the Redis store default (7 days) when ``None``.
+
+    Returns:
+        ConversationStore: A Redis-backed or in-memory conversation store.
+
+    Raises:
+        ImportError: If the ``redis`` package is not installed.
+        ValueError: If ``redis_url`` is malformed.
+        redis.RedisError: If the Redis client cannot be created.
+    """
+
+    if not redis_url:
+        logger.info("No redis_url configured, using in-memory conversation store")
+
+        return MemoryConversationStore()
+
+    import redis
+
+    from nominal_code.conversation.redis import (
+        DEFAULT_KEY_TTL,
+        RedisConversationStore,
+    )
+
+    key_ttl: timedelta = (
+        timedelta(seconds=redis_key_ttl_seconds)
+        if redis_key_ttl_seconds is not None
+        else DEFAULT_KEY_TTL
+    )
+
+    client: redis.Redis = redis.Redis.from_url(url=redis_url)
+    store: RedisConversationStore = RedisConversationStore(
+        client=client,
+        key_ttl=key_ttl,
+    )
+
+    logger.info("Using Redis conversation store at %s", redis_url)
+
+    return store
