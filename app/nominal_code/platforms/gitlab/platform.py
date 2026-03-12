@@ -22,9 +22,11 @@ from nominal_code.platforms.base import (
     CommentReply,
     ExistingComment,
     LifecycleEvent,
+    PlatformAuth,
     PlatformName,
     PullRequestEvent,
 )
+from nominal_code.platforms.gitlab.auth import GitLabPatAuth
 from nominal_code.platforms.http import request_with_retry
 from nominal_code.platforms.registry import register_platform
 
@@ -69,37 +71,33 @@ class GitLabPlatform:
     Verifies webhooks via secret token.
 
     Attributes:
-        token (str): GitLab personal access token.
+        _auth (PlatformAuth): Authentication strategy for token access.
         webhook_secret (str): Secret token for webhook verification.
         base_url (str): GitLab instance base URL.
-        reviewer_token (str): Read-only token for reviewer clone URLs.
     """
 
     def __init__(
         self,
-        token: str,
+        auth: PlatformAuth,
         webhook_secret: str = "",
         base_url: str = GITLAB_API_BASE,
-        reviewer_token: str = "",
     ) -> None:
         """
         Initialize the GitLab platform client.
 
         Args:
-            token (str): GitLab API token.
+            auth (PlatformAuth): Authentication strategy for token access.
             webhook_secret (str): Secret token for webhook verification.
             base_url (str): GitLab instance base URL.
-            reviewer_token (str): Read-only token for reviewer clone URLs.
         """
 
-        self.token: str = token
         self.webhook_secret: str = webhook_secret
         self.base_url: str = base_url.rstrip("/")
-        self.reviewer_token: str = reviewer_token
 
+        self._auth: PlatformAuth = auth
         self._client: httpx.AsyncClient = httpx.AsyncClient(
             base_url=f"{self.base_url}/api/v4",
-            headers={"PRIVATE-TOKEN": token},
+            headers={"PRIVATE-TOKEN": self._auth.get_api_token()},
             timeout=30.0,
         )
 
@@ -125,6 +123,15 @@ class GitLabPlatform:
         """
 
         return await request_with_retry(self._client, method, url, **kwargs)
+
+    def _refresh_client_headers(self) -> None:
+        """
+        Update the HTTP client's auth header with the current token.
+
+        Called after ``ensure_auth()`` to reflect any token changes.
+        """
+
+        self._client.headers["PRIVATE-TOKEN"] = self._auth.get_api_token()
 
     @property
     def name(self) -> str:
@@ -619,27 +626,21 @@ class GitLabPlatform:
                     pr_number,
                 )
 
-    async def ensure_auth(self) -> None:
+    async def authenticate(self, *, webhook_body: bytes | None = None) -> None:
         """
-        No-op for GitLab PAT authentication.
-        """
+        Ensure the platform has valid authentication.
 
-    def build_reviewer_clone_url(self, repo_full_name: str) -> str:
-        """
-        Build a clone URL using the read-only reviewer token.
-
-        Falls back to the main token if no reviewer token is configured.
+        GitLab does not extract account context from the payload.
+        Refreshes the HTTP client headers with the current token from
+        the auth strategy.
 
         Args:
-            repo_full_name (str): Full repository name.
-
-        Returns:
-            str: The authenticated HTTPS clone URL.
+            webhook_body (bytes | None): The raw webhook request body
+                (unused for GitLab PAT auth).
         """
 
-        effective_token: str = self.reviewer_token or self.token
-
-        return f"https://oauth2:{effective_token}@{self.host}/{repo_full_name}.git"
+        await self._auth.ensure_auth()
+        self._refresh_client_headers()
 
     def _parse_note(
         self,
@@ -744,18 +745,29 @@ class GitLabPlatform:
             pr_author=payload.get("user", {}).get("username", ""),
         )
 
-    def build_clone_url(self, repo_full_name: str) -> str:
+    def build_clone_url(
+        self,
+        repo_full_name: str,
+        *,
+        read_only: bool = False,
+    ) -> str:
         """
         Build an authenticated clone URL for a GitLab repository.
 
         Args:
             repo_full_name (str): Full repository name.
+            read_only (bool): If True, use the read-only clone token.
 
         Returns:
             str: The authenticated HTTPS clone URL.
         """
 
-        return f"https://oauth2:{self.token}@{self.host}/{repo_full_name}.git"
+        if read_only:
+            token: str = self._auth.get_clone_token()
+        else:
+            token = self._auth.get_api_token()
+
+        return f"https://oauth2:{token}@{self.host}/{repo_full_name}.git"
 
 
 def _create_gitlab_platform() -> GitLabPlatform | None:
@@ -778,11 +790,15 @@ def _create_gitlab_platform() -> GitLabPlatform | None:
     base_url: str = _env.str("GITLAB_API_BASE", GITLAB_API_BASE)
     reviewer_token: str = _env.str("GITLAB_REVIEWER_TOKEN", "")
 
-    return GitLabPlatform(
+    auth: GitLabPatAuth = GitLabPatAuth(
         token=token,
+        reviewer_token=reviewer_token,
+    )
+
+    return GitLabPlatform(
+        auth=auth,
         webhook_secret=webhook_secret,
         base_url=base_url,
-        reviewer_token=reviewer_token,
     )
 
 

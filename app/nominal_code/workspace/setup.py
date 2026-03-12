@@ -8,14 +8,13 @@ from nominal_code.models import BotType
 from nominal_code.platforms.base import (
     CommentEvent,
     CommentReply,
+    Platform,
     PullRequestEvent,
-    ReviewerPlatform,
 )
 from nominal_code.workspace.git import GitWorkspace
 
 if TYPE_CHECKING:
     from nominal_code.config import Config
-    from nominal_code.platforms.base import Platform
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -118,19 +117,10 @@ async def prepare_job_event(
         if not isinstance(event, CommentEvent):
             raise RuntimeError("Worker job requires a comment event")
 
-        clone_url: str = platform.build_clone_url(
-            repo_full_name=event.repo_full_name,
-        )
-
-    else:
-        if not isinstance(platform, ReviewerPlatform):
-            raise RuntimeError(
-                f"Platform {event.platform} does not support reviewer operations",
-            )
-
-        clone_url = platform.build_reviewer_clone_url(
-            repo_full_name=event.repo_full_name,
-        )
+    clone_url: str = platform.build_clone_url(
+        repo_full_name=event.repo_full_name,
+        read_only=(bot_type == BotType.REVIEWER),
+    )
 
     effective_event: PullRequestEvent = replace(event, clone_url=clone_url)
     resolved_event: PullRequestEvent | None = await resolve_branch(

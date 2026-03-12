@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import json
 import logging
+from contextvars import ContextVar
 from typing import Any
 
 import httpx
@@ -16,12 +17,13 @@ from nominal_code.platforms.base import (
     CommentReply,
     ExistingComment,
     LifecycleEvent,
+    PlatformAuth,
     PlatformName,
     PullRequestEvent,
 )
 from nominal_code.platforms.github.auth import (
+    NO_INSTALLATION,
     GitHubAppAuth,
-    GitHubAuth,
     GitHubPatAuth,
     load_private_key,
 )
@@ -40,6 +42,11 @@ PR_ACTION_TO_EVENT_TYPE: dict[str, EventType] = {
 }
 
 logger: logging.Logger = logging.getLogger(__name__)
+
+_installation_ctx: ContextVar[int] = ContextVar(
+    "github_installation_id",
+    default=NO_INSTALLATION,
+)
 
 
 def _format_suggestion_body(finding: ReviewFinding) -> str:
@@ -69,25 +76,29 @@ class GitHubPlatform:
     relevant actions). Verifies webhooks via HMAC-SHA256.
 
     Attributes:
-        auth (GitHubAuth): Authentication provider for API tokens.
+        auth (PlatformAuth): Authentication provider for API tokens.
         webhook_secret (str): HMAC secret for signature verification.
     """
 
     def __init__(
         self,
-        auth: GitHubAuth,
+        auth: PlatformAuth,
         webhook_secret: str = "",
+        fixed_installation_id: int = NO_INSTALLATION,
     ) -> None:
         """
         Initialize the GitHub platform client.
 
         Args:
-            auth (GitHubAuth): Authentication provider for API tokens.
+            auth (PlatformAuth): Authentication provider for API tokens.
             webhook_secret (str): HMAC secret for webhook verification.
+            fixed_installation_id (int): Installation ID for CLI/CI modes
+                where no webhook payload provides one.
         """
 
-        self.auth: GitHubAuth = auth
+        self.auth: PlatformAuth = auth
         self.webhook_secret: str = webhook_secret
+        self._fixed_installation_id: int = fixed_installation_id
 
         self._client: httpx.AsyncClient = httpx.AsyncClient(
             base_url=GITHUB_API_BASE,
@@ -105,6 +116,24 @@ class GitHubPlatform:
 
         return "github"
 
+    def _active_installation_id(self) -> int:
+        """
+        Resolve the installation ID for the current request context.
+
+        Returns the ContextVar value if set (webhook mode), otherwise
+        falls back to the platform's fixed installation ID (CLI/CI mode).
+
+        Returns:
+            int: The active installation ID, or ``NO_INSTALLATION``.
+        """
+
+        ctx_id: int = _installation_ctx.get()
+
+        if ctx_id:
+            return ctx_id
+
+        return self._fixed_installation_id
+
     def _auth_headers(self) -> dict[str, str]:
         """
         Build authorization headers for GitHub API requests.
@@ -113,8 +142,12 @@ class GitHubPlatform:
             dict[str, str]: Headers with Authorization and Accept fields.
         """
 
+        token: str = self.auth.get_api_token(
+            self._active_installation_id(),
+        )
+
         return {
-            "Authorization": f"token {self.auth.get_token()}",
+            "Authorization": f"token {token}",
             "Accept": "application/vnd.github.v3+json",
         }
 
@@ -147,12 +180,51 @@ class GitHubPlatform:
             **kwargs,
         )
 
-    async def ensure_auth(self) -> None:
+    async def authenticate(self, *, webhook_body: bytes | None = None) -> None:
         """
-        Ensure the auth provider has a valid token, refreshing if needed.
+        Ensure the platform has valid authentication.
+
+        In webhook mode, extracts ``installation.id`` from the payload,
+        sets the request-scoped ContextVar, and refreshes the token. In
+        CLI/CI mode, call with no arguments.
+
+        Args:
+            webhook_body (bytes | None): The raw webhook request body,
+                or None for non-webhook modes.
         """
 
-        await self.auth.refresh_if_needed()
+        if webhook_body is not None:
+            account_id: int = self.extract_installation_id(webhook_body)
+
+            if account_id:
+                _installation_ctx.set(account_id)
+
+        active_id: int = self._active_installation_id()
+
+        await self.auth.ensure_auth(active_id)
+
+    def extract_installation_id(self, body: bytes) -> int:
+        """
+        Extract the GitHub App installation ID from a webhook payload.
+
+        Not part of the ``Platform`` protocol — this is a GitHub-specific
+        method. Auth consumers should use ``authenticate()`` instead.
+
+        Args:
+            body (bytes): The raw webhook request body.
+
+        Returns:
+            int: The installation ID, or 0 if not present.
+        """
+
+        try:
+            payload: dict[str, Any] = json.loads(body)
+        except (json.JSONDecodeError, ValueError):
+            return 0
+
+        installation: dict[str, Any] = payload.get("installation", {})
+
+        return int(installation.get("id", 0))
 
     def verify_webhook(self, request: web.Request, body: bytes) -> bool:
         """
@@ -203,6 +275,9 @@ class GitHubPlatform:
         And lifecycle events:
         - ``pull_request`` (opened, synchronize, reopened, ready_for_review)
 
+        Auth is no longer mutated here. Call ``ensure_auth(account_id)``
+        before ``parse_event()`` in the webhook handler.
+
         Args:
             request (web.Request): The incoming HTTP request.
             body (bytes): The raw request body.
@@ -219,12 +294,6 @@ class GitHubPlatform:
             logger.warning("Malformed JSON in GitHub webhook payload")
 
             return None
-
-        installation: dict[str, Any] = payload.get("installation", {})
-        installation_id: int = installation.get("id", 0)
-
-        if installation_id:
-            self.auth.set_installation_id(installation_id)
 
         if event_header == "issue_comment":
             return self._parse_issue_comment(payload)
@@ -586,25 +655,6 @@ class GitHubPlatform:
                 reply=CommentReply(body=summary),
             )
 
-    def build_reviewer_clone_url(self, repo_full_name: str) -> str:
-        """
-        Build a clone URL using the read-only reviewer token.
-
-        Falls back to the main token if no reviewer token is configured.
-
-        Args:
-            repo_full_name (str): Full repository name.
-
-        Returns:
-            str: The authenticated HTTPS clone URL.
-        """
-
-        effective_token: str = self.auth.get_reviewer_token()
-
-        return (
-            f"https://x-access-token:{effective_token}@github.com/{repo_full_name}.git"
-        )
-
     def _parse_issue_comment(
         self,
         payload: dict[str, Any],
@@ -884,18 +934,31 @@ class GitHubPlatform:
 
         return results
 
-    def build_clone_url(self, repo_full_name: str) -> str:
+    def build_clone_url(
+        self,
+        repo_full_name: str,
+        *,
+        read_only: bool = False,
+    ) -> str:
         """
         Build an authenticated clone URL for a GitHub repository.
 
         Args:
             repo_full_name (str): Full repository name (e.g. ``owner/repo``).
+            read_only (bool): If True, use the read-only clone token.
 
         Returns:
             str: The authenticated HTTPS clone URL.
         """
 
-        return f"https://x-access-token:{self.auth.get_token()}@github.com/{repo_full_name}.git"
+        active_id: int = self._active_installation_id()
+
+        if read_only:
+            token: str = self.auth.get_clone_token(active_id)
+        else:
+            token = self.auth.get_api_token(active_id)
+
+        return f"https://x-access-token:{token}@github.com/{repo_full_name}.git"
 
 
 def _create_github_platform() -> GitHubPlatform | None:
@@ -916,14 +979,17 @@ def _create_github_platform() -> GitHubPlatform | None:
     private_key: str = load_private_key()
 
     if app_id and private_key:
-        installation_id: int = _env.int("GITHUB_INSTALLATION_ID", 0)
-        auth: GitHubAuth = GitHubAppAuth(
+        cli_installation_id: int = _env.int("GITHUB_INSTALLATION_ID", 0)
+        auth: PlatformAuth = GitHubAppAuth(
             app_id=app_id,
             private_key=private_key,
-            installation_id=installation_id,
         )
 
-        return GitHubPlatform(auth=auth, webhook_secret=webhook_secret)
+        return GitHubPlatform(
+            auth=auth,
+            webhook_secret=webhook_secret,
+            fixed_installation_id=cli_installation_id,
+        )
 
     token: str = _env.str("GITHUB_TOKEN", "")
 

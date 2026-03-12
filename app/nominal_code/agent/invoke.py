@@ -25,6 +25,7 @@ def prepare_conversation(
     agent_config: AgentConfig,
     conversation_store: ConversationStore | None,
     conversation_id_override: str | None = None,
+    namespace: str = "",
 ) -> tuple[str | None, list[Message] | None]:
     """
     Load conversation state from the store before invoking the agent.
@@ -39,6 +40,7 @@ def prepare_conversation(
         conversation_store (ConversationStore | None): Conversation store.
         conversation_id_override (str | None): Override conversation ID
             (e.g. for retries). Only used by the CLI backend.
+        namespace (str): Logical namespace for key isolation.
 
     Returns:
         tuple[str | None, list[Message] | None]: A pair of
@@ -57,6 +59,7 @@ def prepare_conversation(
                 repo=event.repo_full_name,
                 pr_number=event.pr_number,
                 bot_type=bot_type,
+                namespace=namespace,
             )
     elif isinstance(agent_config, ApiAgentConfig) and conversation_store is not None:
         prior_messages = conversation_store.get_messages(
@@ -64,6 +67,7 @@ def prepare_conversation(
             repo=event.repo_full_name,
             pr_number=event.pr_number,
             bot_type=bot_type,
+            namespace=namespace,
         )
 
     return conversation_id, prior_messages
@@ -141,6 +145,7 @@ def save_conversation(
     result: AgentResult,
     agent_config: AgentConfig,
     conversation_store: ConversationStore | None,
+    namespace: str = "",
 ) -> None:
     """
     Save conversation state to the store after invoking the agent.
@@ -154,6 +159,7 @@ def save_conversation(
         result (AgentResult): The agent execution result.
         agent_config (AgentConfig): The agent configuration.
         conversation_store (ConversationStore | None): Conversation store.
+        namespace (str): Logical namespace for key isolation.
     """
 
     if conversation_store is None:
@@ -166,6 +172,7 @@ def save_conversation(
             pr_number=event.pr_number,
             bot_type=bot_type,
             value=result.conversation_id,
+            namespace=namespace,
         )
 
     if (
@@ -179,4 +186,5 @@ def save_conversation(
             pr_number=event.pr_number,
             bot_type=bot_type,
             value=list(result.messages),
+            namespace=namespace,
         )

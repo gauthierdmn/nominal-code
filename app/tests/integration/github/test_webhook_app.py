@@ -206,8 +206,9 @@ async def test_app_auth_reviewer_mention_posts_review(
 
         await wait_for_queue_drain(job_queue)
 
-    assert auth.installation_id == installation_id
-    assert auth._cached_token, "App auth should have obtained an installation token"
+    assert installation_id in auth._token_cache, (
+        "App auth should have obtained a token for the installation"
+    )
 
     reviews = await fetch_pr_reviews(
         token=github_token,
@@ -281,7 +282,7 @@ async def test_app_auth_lifecycle_auto_trigger(
 
         await wait_for_queue_drain(job_queue)
 
-    assert auth.installation_id == installation_id
+    assert installation_id in auth._token_cache
 
     reviews = await fetch_pr_reviews(
         token=github_token,
@@ -303,12 +304,9 @@ async def test_app_auth_token_refresh_on_new_installation(
         private_key=private_key,
     )
 
-    assert not auth._cached_token
-    assert auth.installation_id == 0
+    assert not auth._token_cache
 
-    auth.set_installation_id(installation_id)
+    await auth.refresh_token_for_installation(installation_id)
 
-    await auth.refresh_if_needed()
-
-    assert auth._cached_token
-    assert auth._token_expires_at > 0
+    assert installation_id in auth._token_cache
+    assert auth._token_cache[installation_id].expires_at > 0

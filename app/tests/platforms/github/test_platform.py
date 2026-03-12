@@ -237,7 +237,7 @@ class TestParseWebhook:
 
         assert platform.parse_event(request, body) is None
 
-    def test_parse_event_extracts_installation_id(self, platform):
+    def test_parse_event_does_not_mutate_auth(self, platform):
         payload = {
             "action": "created",
             "installation": {"id": 98765},
@@ -256,11 +256,6 @@ class TestParseWebhook:
         request = _make_request({"X-GitHub-Event": "issue_comment"})
 
         platform.parse_event(request, body)
-
-        from nominal_code.platforms.github import GitHubAppAuth
-
-        if isinstance(platform.auth, GitHubAppAuth):
-            assert platform.auth.installation_id == 98765
 
 
 class TestParsePullRequest:
@@ -387,19 +382,22 @@ class TestBuildCloneUrl:
         assert url == "https://x-access-token:ghp_test123@github.com/owner/repo.git"
 
 
-class TestBuildReviewerCloneUrl:
-    def test_build_reviewer_clone_url_with_reviewer_token(
+class TestBuildCloneUrlReadOnly:
+    def test_build_clone_url_read_only_with_reviewer_token(
         self,
         platform_with_reviewer_token,
     ):
-        url = platform_with_reviewer_token.build_reviewer_clone_url("owner/repo")
+        url = platform_with_reviewer_token.build_clone_url(
+            "owner/repo",
+            read_only=True,
+        )
 
         assert url == (
             "https://x-access-token:ghp_readonly456@github.com/owner/repo.git"
         )
 
-    def test_build_reviewer_clone_url_falls_back_to_main_token(self, platform):
-        url = platform.build_reviewer_clone_url("owner/repo")
+    def test_build_clone_url_read_only_falls_back_to_main_token(self, platform):
+        url = platform.build_clone_url("owner/repo", read_only=True)
 
         assert url == ("https://x-access-token:ghp_test123@github.com/owner/repo.git")
 
@@ -1000,7 +998,7 @@ class TestFactory:
         assert result is not None
         assert isinstance(result, GitHubPlatform)
         assert isinstance(result.auth, GitHubPatAuth)
-        assert result.auth.get_token() == "ghp_test123"
+        assert result.auth.get_api_token() == "ghp_test123"
         assert result.webhook_secret == "secret"
 
     def test_factory_returns_none_when_no_token(self):
@@ -1020,7 +1018,7 @@ class TestFactory:
 
         assert result is not None
         assert isinstance(result.auth, GitHubPatAuth)
-        assert result.auth.get_reviewer_token() == "ghp_readonly"
+        assert result.auth.get_clone_token() == "ghp_readonly"
 
     def test_factory_returns_app_auth_when_app_id_and_key_set(self):
         from nominal_code.platforms.github import GitHubAppAuth
@@ -1038,7 +1036,7 @@ class TestFactory:
         assert result is not None
         assert isinstance(result.auth, GitHubAppAuth)
         assert result.auth.app_id == "12345"
-        assert result.auth.installation_id == 67890
+        assert result._fixed_installation_id == 67890
         assert result.webhook_secret == "secret"
 
     def test_factory_prefers_app_auth_over_pat(self):
@@ -1083,6 +1081,22 @@ class TestGitHubPlatformInit:
         assert platform._client is not None
 
 
+class TestActiveInstallationId:
+    def test_returns_fixed_installation_id_when_context_var_unset(self):
+        from nominal_code.platforms.github import GitHubAppAuth
+
+        auth = GitHubAppAuth(app_id="12345", private_key="fake-key")
+        platform = GitHubPlatform(auth=auth, fixed_installation_id=99999)
+
+        assert platform._active_installation_id() == 99999
+
+    def test_returns_zero_when_no_fixed_id_and_context_var_unset(self):
+        auth = GitHubPatAuth(token="ghp_test")
+        platform = GitHubPlatform(auth=auth)
+
+        assert platform._active_installation_id() == 0
+
+
 class TestAuthHeaders:
     def test_auth_headers_contains_authorization(self, platform):
         headers = platform._auth_headers()
@@ -1096,13 +1110,54 @@ class TestAuthHeaders:
         assert headers["Accept"] == "application/vnd.github.v3+json"
 
 
-class TestEnsureAuth:
-    @pytest.mark.asyncio
-    async def test_ensure_auth_calls_refresh_if_needed(self, platform):
-        with patch.object(platform.auth, "refresh_if_needed", new=AsyncMock()) as mock:
-            await platform.ensure_auth()
+class TestExtractInstallationId:
+    def test_returns_installation_id(self, platform):
+        payload = {
+            "installation": {"id": 98765},
+            "action": "created",
+        }
+        body = json.dumps(payload).encode()
 
-            mock.assert_awaited_once()
+        assert platform.extract_installation_id(body) == 98765
+
+    def test_returns_zero_when_missing(self, platform):
+        payload = {"action": "created"}
+        body = json.dumps(payload).encode()
+
+        assert platform.extract_installation_id(body) == 0
+
+    def test_returns_zero_on_malformed_json(self, platform):
+        assert platform.extract_installation_id(b"not json") == 0
+
+
+class TestAuthenticate:
+    @pytest.mark.asyncio
+    async def test_authenticate_with_webhook_body_extracts_and_delegates(
+        self, platform
+    ):
+        payload = {"installation": {"id": 98765}}
+        body = json.dumps(payload).encode()
+
+        with patch.object(platform.auth, "ensure_auth", new=AsyncMock()) as mock:
+            await platform.authenticate(webhook_body=body)
+
+            mock.assert_awaited_once_with(98765)
+
+    @pytest.mark.asyncio
+    async def test_authenticate_with_webhook_body_without_installation(self, platform):
+        body = json.dumps({"action": "created"}).encode()
+
+        with patch.object(platform.auth, "ensure_auth", new=AsyncMock()) as mock:
+            await platform.authenticate(webhook_body=body)
+
+            mock.assert_awaited_once_with(0)
+
+    @pytest.mark.asyncio
+    async def test_authenticate_without_webhook_body_delegates(self, platform):
+        with patch.object(platform.auth, "ensure_auth", new=AsyncMock()) as mock:
+            await platform.authenticate()
+
+            mock.assert_awaited_once_with(0)
 
 
 class TestFetchIssueComments:

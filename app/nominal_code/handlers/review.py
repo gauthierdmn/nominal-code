@@ -198,6 +198,7 @@ async def review(
     bot_username: str = "",
     workspace_path: str = "",
     conversation_store: ConversationStore | None = None,
+    namespace: str = "",
 ) -> ReviewResult:
     """
     Run the core review logic without posting results to the platform.
@@ -215,6 +216,7 @@ async def review(
             in CI mode where the repo is already checked out.
         conversation_store (ConversationStore | None): Conversation store for
             conversation continuity.
+        namespace (str): Logical namespace for conversation key isolation.
 
     Returns:
         ReviewResult: The review result with findings and summary.
@@ -272,6 +274,7 @@ async def review(
         bot_type=BotType.REVIEWER,
         agent_config=config.agent,
         conversation_store=conversation_store,
+        namespace=namespace,
     )
 
     result: AgentResult = await invoke_agent(
@@ -290,6 +293,7 @@ async def review(
         result=result,
         agent_config=config.agent,
         conversation_store=conversation_store,
+        namespace=namespace,
     )
 
     review_result: AgentReview | None = parse_review_output(output=result.output)
@@ -419,6 +423,7 @@ async def run_and_post_review(
     platform: ReviewerPlatform,
     workspace_path: str = "",
     conversation_store: ConversationStore | None = None,
+    namespace: str = "",
 ) -> ReviewResult:
     """
     Run a review and post the results to the platform.
@@ -435,6 +440,7 @@ async def run_and_post_review(
         workspace_path (str): Pre-existing workspace path (skips cloning).
         conversation_store (ConversationStore | None): Conversation store for
             conversation continuity.
+        namespace (str): Logical namespace for conversation key isolation.
 
     Returns:
         ReviewResult: The review result with findings and summary.
@@ -453,6 +459,7 @@ async def run_and_post_review(
         bot_username=bot_username,
         workspace_path=workspace_path,
         conversation_store=conversation_store,
+        namespace=namespace,
     )
 
     await post_review_result(

@@ -59,8 +59,8 @@ class TestRunJobMain:
         mock_review_result.cost = None
 
         mock_platform = MagicMock()
-        mock_platform.ensure_auth = AsyncMock()
-        mock_platform.build_reviewer_clone_url = MagicMock(
+        mock_platform.authenticate = AsyncMock()
+        mock_platform.build_clone_url = MagicMock(
             return_value="https://token@github.com/owner/repo.git",
         )
 
@@ -94,8 +94,8 @@ class TestRunJobMain:
         monkeypatch.setenv("GITHUB_TOKEN", "test-token")
 
         mock_platform = MagicMock()
-        mock_platform.ensure_auth = AsyncMock()
-        mock_platform.build_reviewer_clone_url = MagicMock(
+        mock_platform.authenticate = AsyncMock()
+        mock_platform.build_clone_url = MagicMock(
             return_value="https://token@github.com/owner/repo.git",
         )
 
@@ -130,8 +130,8 @@ class TestPublishCompletion:
         mock_review_result.cost = None
 
         mock_platform = MagicMock()
-        mock_platform.ensure_auth = AsyncMock()
-        mock_platform.build_reviewer_clone_url = MagicMock(
+        mock_platform.authenticate = AsyncMock()
+        mock_platform.build_clone_url = MagicMock(
             return_value="https://token@github.com/owner/repo.git",
         )
 
@@ -177,8 +177,8 @@ class TestPublishCompletion:
         monkeypatch.setenv("REDIS_URL", "redis://localhost:6379")
 
         mock_platform = MagicMock()
-        mock_platform.ensure_auth = AsyncMock()
-        mock_platform.build_reviewer_clone_url = MagicMock(
+        mock_platform.authenticate = AsyncMock()
+        mock_platform.build_clone_url = MagicMock(
             return_value="https://token@github.com/owner/repo.git",
         )
 
@@ -223,8 +223,8 @@ class TestPublishCompletion:
         mock_review_result.cost = None
 
         mock_platform = MagicMock()
-        mock_platform.ensure_auth = AsyncMock()
-        mock_platform.build_reviewer_clone_url = MagicMock(
+        mock_platform.authenticate = AsyncMock()
+        mock_platform.build_clone_url = MagicMock(
             return_value="https://token@github.com/owner/repo.git",
         )
 

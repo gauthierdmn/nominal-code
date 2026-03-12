@@ -89,7 +89,7 @@ async def acknowledge_event(
             event.body[:100],
         )
 
-        await platform.ensure_auth()
+        await platform.authenticate()
         await platform.post_reaction(event=event, reaction=EYES_REACTION)
 
     else:
@@ -102,12 +102,11 @@ async def acknowledge_event(
             event.pr_author,
         )
 
-        await platform.ensure_auth()
-
-    await platform.post_pr_reaction(
-        repo_full_name=event.repo_full_name,
-        pr_number=event.pr_number,
-        reaction=EYES_REACTION,
-    )
+        await platform.authenticate()
+        await platform.post_pr_reaction(
+            repo_full_name=event.repo_full_name,
+            pr_number=event.pr_number,
+            reaction=EYES_REACTION,
+        )
 
     return True

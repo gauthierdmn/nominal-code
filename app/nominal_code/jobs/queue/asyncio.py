@@ -55,10 +55,11 @@ class AsyncioJobQueue:
         """
 
         key: PRKey = (
-            job.event.platform,
+            job.event.platform.value,
             job.event.repo_full_name,
             job.event.pr_number,
             job.bot_type,
+            job.namespace,
         )
 
         if key not in self._queues:

@@ -5,6 +5,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from nominal_code.platforms.github import (
+    NO_INSTALLATION,
+    CachedToken,
     GitHubAppAuth,
     GitHubPatAuth,
     load_private_key,
@@ -12,88 +14,82 @@ from nominal_code.platforms.github import (
 
 
 class TestGitHubPatAuth:
-    def test_get_token_returns_stored_token(self):
+    def test_get_api_token_returns_stored_token(self):
         auth = GitHubPatAuth(token="ghp_abc123")
 
-        assert auth.get_token() == "ghp_abc123"
+        assert auth.get_api_token() == "ghp_abc123"
 
-    def test_get_reviewer_token_returns_reviewer_when_set(self):
+    def test_get_api_token_ignores_account_id(self):
+        auth = GitHubPatAuth(token="ghp_abc123")
+
+        assert auth.get_api_token(12345) == "ghp_abc123"
+
+    def test_get_clone_token_returns_reviewer_when_set(self):
         auth = GitHubPatAuth(token="ghp_main", reviewer_token="ghp_readonly")
 
-        assert auth.get_reviewer_token() == "ghp_readonly"
+        assert auth.get_clone_token() == "ghp_readonly"
 
-    def test_get_reviewer_token_falls_back_to_main(self):
+    def test_get_clone_token_falls_back_to_main(self):
         auth = GitHubPatAuth(token="ghp_main")
 
-        assert auth.get_reviewer_token() == "ghp_main"
+        assert auth.get_clone_token() == "ghp_main"
 
     @pytest.mark.asyncio
-    async def test_refresh_if_needed_is_noop(self):
+    async def test_ensure_auth_is_noop(self):
         auth = GitHubPatAuth(token="ghp_abc123")
 
-        await auth.refresh_if_needed()
+        await auth.ensure_auth(12345)
 
-        assert auth.get_token() == "ghp_abc123"
-
-    def test_set_installation_id_is_noop(self):
-        auth = GitHubPatAuth(token="ghp_abc123")
-        auth.set_installation_id(12345)
-
-        assert auth.get_token() == "ghp_abc123"
+        assert auth.get_api_token() == "ghp_abc123"
 
 
 class TestGitHubAppAuth:
-    def test_get_token_raises_before_refresh(self):
+    def test_get_api_token_raises_before_refresh(self):
         auth = GitHubAppAuth(app_id="12345", private_key="fake-key")
 
         with pytest.raises(RuntimeError, match="not yet available"):
-            auth.get_token()
-
-    def test_get_reviewer_token_delegates_to_get_token(self):
-        auth = GitHubAppAuth(app_id="12345", private_key="fake-key")
-        auth._cached_token = "ghs_install_token"
-
-        assert auth.get_reviewer_token() == "ghs_install_token"
-
-    def test_set_installation_id_invalidates_cache(self):
-        auth = GitHubAppAuth(
-            app_id="12345",
-            private_key="fake-key",
-            installation_id=100,
-        )
-        auth._cached_token = "ghs_old_token"
-        auth._token_expires_at = time.monotonic() + 3600
-
-        auth.set_installation_id(200)
-
-        assert auth.installation_id == 200
-        assert auth._cached_token == ""
-
-    def test_set_installation_id_same_value_preserves_cache(self):
-        auth = GitHubAppAuth(
-            app_id="12345",
-            private_key="fake-key",
-            installation_id=100,
-        )
-        auth._cached_token = "ghs_token"
-
-        auth.set_installation_id(100)
-
-        assert auth._cached_token == "ghs_token"
+            auth.get_api_token(100)
 
     @pytest.mark.asyncio
-    async def test_refresh_if_needed_raises_without_installation_id(self):
+    async def test_ensure_auth_raises_when_account_id_zero(self):
         auth = GitHubAppAuth(app_id="12345", private_key="fake-key")
 
-        with pytest.raises(RuntimeError, match="installation ID is not set"):
-            await auth.refresh_if_needed()
+        with pytest.raises(RuntimeError, match="non-zero account_id"):
+            await auth.ensure_auth(NO_INSTALLATION)
 
     @pytest.mark.asyncio
-    async def test_refresh_if_needed_fetches_token(self):
+    async def test_ensure_auth_refreshes_for_nonzero_account(self):
+        auth = GitHubAppAuth(app_id="12345", private_key="fake-key")
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {"token": "ghs_new_token"}
+
+        jwt_patch = patch.object(
+            auth,
+            "_generate_jwt",
+            return_value="fake-jwt",
+        )
+        client_patch = patch(
+            "nominal_code.platforms.github.auth.httpx.AsyncClient",
+        )
+
+        with jwt_patch, client_patch as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_client_cls.return_value = mock_client
+
+            await auth.ensure_auth(100)
+
+        assert auth.get_api_token(100) == "ghs_new_token"
+
+    @pytest.mark.asyncio
+    async def test_refresh_token_fetches_token(self):
         auth = GitHubAppAuth(
             app_id="12345",
             private_key="fake-key",
-            installation_id=100,
         )
 
         mock_response = MagicMock()
@@ -116,38 +112,115 @@ class TestGitHubAppAuth:
             mock_client.post = AsyncMock(return_value=mock_response)
             mock_client_cls.return_value = mock_client
 
-            await auth.refresh_if_needed()
+            await auth._refresh_token(100)
 
-        assert auth.get_token() == "ghs_new_token"
+        assert auth.get_api_token(100) == "ghs_new_token"
 
     @pytest.mark.asyncio
-    async def test_refresh_if_needed_skips_when_token_valid(self):
-        auth = GitHubAppAuth(
-            app_id="12345",
-            private_key="fake-key",
-            installation_id=100,
+    async def test_two_installations_get_independent_tokens(self):
+        auth = GitHubAppAuth(app_id="12345", private_key="fake-key")
+
+        mock_response_a = MagicMock()
+        mock_response_a.raise_for_status = MagicMock()
+        mock_response_a.json.return_value = {"token": "ghs_token_a"}
+
+        mock_response_b = MagicMock()
+        mock_response_b.raise_for_status = MagicMock()
+        mock_response_b.json.return_value = {"token": "ghs_token_b"}
+
+        jwt_patch = patch.object(
+            auth,
+            "_generate_jwt",
+            return_value="fake-jwt",
         )
-        auth._cached_token = "ghs_valid"
-        auth._token_expires_at = time.monotonic() + 3600
+        client_patch = patch(
+            "nominal_code.platforms.github.auth.httpx.AsyncClient",
+        )
+
+        with jwt_patch, client_patch as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.post = AsyncMock(side_effect=[mock_response_a, mock_response_b])
+            mock_client_cls.return_value = mock_client
+
+            await auth._refresh_token(100)
+            await auth._refresh_token(200)
+
+        assert auth.get_api_token(100) == "ghs_token_a"
+        assert auth.get_api_token(200) == "ghs_token_b"
+
+    @pytest.mark.asyncio
+    async def test_cache_hit_skips_api_call(self):
+        auth = GitHubAppAuth(app_id="12345", private_key="fake-key")
+        auth._token_cache[100] = CachedToken(
+            token="ghs_cached",
+            expires_at=time.monotonic() + 3600,
+        )
 
         with patch.object(auth, "_generate_jwt") as mock_jwt:
-            await auth.refresh_if_needed()
+            await auth._refresh_token(100)
 
             mock_jwt.assert_not_called()
 
-        assert auth.get_token() == "ghs_valid"
+        assert auth.get_api_token(100) == "ghs_cached"
 
-    def test_is_token_expiring_true_when_within_margin(self):
+    @pytest.mark.asyncio
+    async def test_cache_expiry_triggers_refresh(self):
         auth = GitHubAppAuth(app_id="12345", private_key="fake-key")
-        auth._token_expires_at = time.monotonic() + 100
+        auth._token_cache[100] = CachedToken(
+            token="ghs_old",
+            expires_at=time.monotonic() + 100,
+        )
 
-        assert auth._is_token_expiring() is True
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {"token": "ghs_refreshed"}
 
-    def test_is_token_expiring_false_when_fresh(self):
+        jwt_patch = patch.object(
+            auth,
+            "_generate_jwt",
+            return_value="fake-jwt",
+        )
+        client_patch = patch(
+            "nominal_code.platforms.github.auth.httpx.AsyncClient",
+        )
+
+        with jwt_patch, client_patch as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_client_cls.return_value = mock_client
+
+            await auth._refresh_token(100)
+
+        assert auth.get_api_token(100) == "ghs_refreshed"
+
+    def test_prune_expired_entries_removes_expired(self):
         auth = GitHubAppAuth(app_id="12345", private_key="fake-key")
-        auth._token_expires_at = time.monotonic() + 3600
+        auth._token_cache[100] = CachedToken(
+            token="ghs_expired",
+            expires_at=time.monotonic() - 10,
+        )
+        auth._token_cache[200] = CachedToken(
+            token="ghs_valid",
+            expires_at=time.monotonic() + 3600,
+        )
 
-        assert auth._is_token_expiring() is False
+        auth._prune_expired_entries()
+
+        assert 100 not in auth._token_cache
+        assert 200 in auth._token_cache
+
+    def test_get_clone_token_delegates_to_get_api_token(self):
+        auth = GitHubAppAuth(app_id="12345", private_key="fake-key")
+        auth._token_cache[100] = CachedToken(
+            token="ghs_token",
+            expires_at=time.monotonic() + 3600,
+        )
+
+        assert auth.get_clone_token(100) == "ghs_token"
 
 
 class TestLoadPrivateKey:
@@ -221,22 +294,7 @@ class TestGitHubAppAuthInit:
 
         assert auth.private_key == "my-pem"
 
-    def test_app_auth_init_installation_id_defaults_to_zero(self):
+    def test_app_auth_init_token_cache_is_empty(self):
         auth = GitHubAppAuth(app_id="12345", private_key="pem")
 
-        assert auth.installation_id == 0
-
-    def test_app_auth_init_stores_installation_id(self):
-        auth = GitHubAppAuth(app_id="12345", private_key="pem", installation_id=42)
-
-        assert auth.installation_id == 42
-
-    def test_app_auth_init_cached_token_is_empty(self):
-        auth = GitHubAppAuth(app_id="12345", private_key="pem")
-
-        assert auth._cached_token == ""
-
-    def test_app_auth_init_token_expires_at_is_zero(self):
-        auth = GitHubAppAuth(app_id="12345", private_key="pem")
-
-        assert auth._token_expires_at == 0.0
+        assert auth._token_cache == {}

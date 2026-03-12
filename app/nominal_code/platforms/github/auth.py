@@ -2,69 +2,38 @@ from __future__ import annotations
 
 import logging
 import time
-from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from pathlib import Path
 
 import httpx
 import jwt
 from environs import Env
 
+from nominal_code.platforms.base import PlatformAuth
+
 _env: Env = Env()
 logger: logging.Logger = logging.getLogger(__name__)
 
 JWT_EXPIRY_SECONDS: int = 600
 TOKEN_REFRESH_MARGIN_SECONDS: int = 300
+NO_INSTALLATION: int = 0
 
 
-class GitHubAuth(ABC):
+@dataclass(frozen=True)
+class CachedToken:
     """
-    Abstract base for GitHub authentication strategies.
+    An installation access token with its monotonic expiry timestamp.
 
-    Subclasses provide either static PAT tokens or dynamic App installation
-    tokens. The platform delegates all token access through this interface.
+    Attributes:
+        token (str): The GitHub installation access token.
+        expires_at (float): Monotonic clock timestamp when the token expires.
     """
 
-    @abstractmethod
-    def get_token(self) -> str:
-        """
-        Return the current API token.
-
-        Returns:
-            str: A valid GitHub API token.
-        """
-
-    @abstractmethod
-    def get_reviewer_token(self) -> str:
-        """
-        Return a read-only token for reviewer clone URLs.
-
-        Falls back to the main token when no separate reviewer token exists.
-
-        Returns:
-            str: A valid GitHub API token.
-        """
-
-    @abstractmethod
-    async def refresh_if_needed(self) -> None:
-        """
-        Refresh the token if it is expired or about to expire.
-
-        No-op for static token strategies.
-        """
-
-    @abstractmethod
-    def set_installation_id(self, installation_id: int) -> None:
-        """
-        Set the target GitHub App installation ID.
-
-        No-op for PAT-based authentication.
-
-        Args:
-            installation_id (int): The GitHub App installation ID.
-        """
+    token: str
+    expires_at: float
 
 
-class GitHubPatAuth(GitHubAuth):
+class GitHubPatAuth(PlatformAuth):
     """
     Personal Access Token authentication for GitHub.
 
@@ -87,9 +56,12 @@ class GitHubPatAuth(GitHubAuth):
         self.token: str = token
         self.reviewer_token: str = reviewer_token
 
-    def get_token(self) -> str:
+    def get_api_token(self, account_id: int = 0) -> str:
         """
-        Return the static PAT token.
+        Return the static PAT token, ignoring the account ID.
+
+        Args:
+            account_id (int): Ignored for PAT auth.
 
         Returns:
             str: The configured personal access token.
@@ -97,9 +69,12 @@ class GitHubPatAuth(GitHubAuth):
 
         return self.token
 
-    def get_reviewer_token(self) -> str:
+    def get_clone_token(self, account_id: int = 0) -> str:
         """
         Return the reviewer token, falling back to the main PAT.
+
+        Args:
+            account_id (int): Ignored for PAT auth.
 
         Returns:
             str: The reviewer token or main token.
@@ -107,39 +82,36 @@ class GitHubPatAuth(GitHubAuth):
 
         return self.reviewer_token or self.token
 
-    async def refresh_if_needed(self) -> None:
-        """
-        No-op for PAT authentication.
-        """
-
-    def set_installation_id(self, installation_id: int) -> None:
+    async def ensure_auth(self, account_id: int = 0) -> None:
         """
         No-op for PAT authentication.
 
         Args:
-            installation_id (int): Ignored.
+            account_id (int): Ignored for PAT auth.
         """
 
 
-class GitHubAppAuth(GitHubAuth):
+class GitHubAppAuth(PlatformAuth):
     """
     GitHub App authentication via JWT and installation access tokens.
 
     Generates RS256 JWTs to authenticate as the App, then exchanges them
-    for short-lived installation access tokens. Tokens are cached and
-    refreshed transparently when they approach expiry.
+    for short-lived installation access tokens. Tokens are cached per
+    installation and refreshed transparently when they approach expiry.
+
+    This class is a pure per-installation token cache. The platform layer
+    owns mode selection (webhook vs CLI/CI) and resolves which installation
+    ID to use.
 
     Attributes:
         app_id (str): The GitHub App's numeric ID.
         private_key (str): The PEM-encoded RSA private key.
-        installation_id (int): The target installation ID.
     """
 
     def __init__(
         self,
         app_id: str,
         private_key: str,
-        installation_id: int = 0,
     ) -> None:
         """
         Initialize GitHub App authentication.
@@ -147,61 +119,93 @@ class GitHubAppAuth(GitHubAuth):
         Args:
             app_id (str): The GitHub App's numeric ID.
             private_key (str): PEM-encoded RSA private key for JWT signing.
-            installation_id (int): The target installation ID (can be set later
-                via webhook payload).
         """
 
         self.app_id: str = app_id
         self.private_key: str = private_key
-        self.installation_id: int = installation_id
-        self._cached_token: str = ""
-        self._token_expires_at: float = 0.0
+        self._token_cache: dict[int, CachedToken] = {}
 
-    def get_token(self) -> str:
+    def get_api_token(self, account_id: int = 0) -> str:
         """
-        Return the cached installation access token.
+        Return the cached token for a specific installation.
+
+        Args:
+            account_id (int): The GitHub App installation ID.
 
         Returns:
-            str: The current installation access token.
+            str: The cached installation access token.
 
         Raises:
-            RuntimeError: If no token has been obtained yet.
+            RuntimeError: If no token is cached for the installation.
         """
 
-        if not self._cached_token:
+        cached: CachedToken | None = self._token_cache.get(account_id)
+
+        if cached is None:
             raise RuntimeError(
-                "GitHub App token not yet available. Call refresh_if_needed() first."
+                "GitHub App token not yet available. Call ensure_auth() first."
             )
 
-        return self._cached_token
+        return cached.token
 
-    def get_reviewer_token(self) -> str:
+    def get_clone_token(self, account_id: int = 0) -> str:
         """
-        Return the installation access token for reviewer operations.
+        Return the clone token for a specific installation.
 
-        GitHub App permissions handle scoping, so this delegates to get_token().
+        For App auth, the installation token handles scoping via
+        permissions, so this returns the same token as ``get_api_token()``.
+
+        Args:
+            account_id (int): The GitHub App installation ID.
 
         Returns:
-            str: The current installation access token.
+            str: The cached installation access token.
         """
 
-        return self.get_token()
+        return self.get_api_token(account_id)
 
-    async def refresh_if_needed(self) -> None:
+    async def ensure_auth(self, account_id: int = 0) -> None:
         """
-        Refresh the installation access token if missing or expiring soon.
+        Ensure a valid token for the given account.
 
-        Generates a JWT, exchanges it for an installation token via the
-        GitHub API, and caches the result with its expiry timestamp.
+        Args:
+            account_id (int): The GitHub App installation ID.
 
         Raises:
-            RuntimeError: If the installation ID is not set.
+            RuntimeError: If ``account_id`` is ``NO_INSTALLATION``.
         """
 
-        if self._cached_token and not self._is_token_expiring():
+        if account_id == NO_INSTALLATION:
+            raise RuntimeError(
+                "GitHubAppAuth.ensure_auth() requires a non-zero account_id. "
+                "The platform must resolve an installation ID before calling this."
+            )
+
+        await self._refresh_token(account_id)
+
+    async def _refresh_token(self, installation_id: int) -> None:
+        """
+        Ensure a valid token is cached for a specific installation.
+
+        Checks the per-installation cache and refreshes only if the token
+        is missing or about to expire. Also prunes expired entries from
+        the cache.
+
+        Args:
+            installation_id (int): The GitHub App installation ID.
+
+        Raises:
+            RuntimeError: If the installation ID is zero (not set).
+        """
+
+        self._prune_expired_entries()
+
+        cached: CachedToken | None = self._token_cache.get(installation_id)
+
+        if cached is not None and not self._is_entry_expiring(cached):
             return
 
-        if not self.installation_id:
+        if not installation_id:
             raise RuntimeError(
                 "GitHub App installation ID is not set. "
                 "Set GITHUB_INSTALLATION_ID or wait for a webhook payload."
@@ -212,7 +216,7 @@ class GitHubAppAuth(GitHubAuth):
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response: httpx.Response = await client.post(
-                    f"https://api.github.com/app/installations/{self.installation_id}/access_tokens",
+                    f"https://api.github.com/app/installations/{installation_id}/access_tokens",
                     headers={
                         "Authorization": f"Bearer {jwt_token}",
                         "Accept": "application/vnd.github.v3+json",
@@ -221,41 +225,26 @@ class GitHubAppAuth(GitHubAuth):
                 response.raise_for_status()
 
             data: dict[str, str] = response.json()
-            self._cached_token = data["token"]
+            token: str = data["token"]
         except httpx.HTTPError as exc:
             raise RuntimeError(
                 f"Failed to fetch GitHub App installation token "
-                f"for installation {self.installation_id}"
+                f"for installation {installation_id}"
             ) from exc
         except (KeyError, ValueError) as exc:
             raise RuntimeError(
                 "GitHub App token response is malformed or missing 'token' field"
             ) from exc
 
-        self._token_expires_at = time.monotonic() + 3600
+        expires_at: float = time.monotonic() + 3600
+
+        self._token_cache[installation_id] = CachedToken(
+            token=token,
+            expires_at=expires_at,
+        )
 
         logger.info(
             "Refreshed GitHub App token for installation %d",
-            self.installation_id,
-        )
-
-    def set_installation_id(self, installation_id: int) -> None:
-        """
-        Set the target installation ID, invalidating the cache if changed.
-
-        Args:
-            installation_id (int): The GitHub App installation ID.
-        """
-
-        if installation_id == self.installation_id:
-            return
-
-        self.installation_id = installation_id
-        self._cached_token = ""
-        self._token_expires_at = 0.0
-
-        logger.info(
-            "Updated GitHub App installation ID to %d",
             installation_id,
         )
 
@@ -276,15 +265,31 @@ class GitHubAppAuth(GitHubAuth):
 
         return jwt.encode(payload, self.private_key, algorithm="RS256")
 
-    def _is_token_expiring(self) -> bool:
+    def _is_entry_expiring(self, entry: CachedToken) -> bool:
         """
-        Check whether the cached token is expiring within the refresh margin.
+        Check whether a cached token is expiring within the refresh margin.
+
+        Args:
+            entry (CachedToken): The cached token entry to check.
 
         Returns:
             bool: True if the token needs refreshing.
         """
 
-        return time.monotonic() >= self._token_expires_at - TOKEN_REFRESH_MARGIN_SECONDS
+        return time.monotonic() >= entry.expires_at - TOKEN_REFRESH_MARGIN_SECONDS
+
+    def _prune_expired_entries(self) -> None:
+        """
+        Remove fully expired entries from the token cache.
+        """
+
+        now: float = time.monotonic()
+        expired_keys: list[int] = [
+            key for key, entry in self._token_cache.items() if now >= entry.expires_at
+        ]
+
+        for key in expired_keys:
+            del self._token_cache[key]
 
 
 def load_private_key() -> str:

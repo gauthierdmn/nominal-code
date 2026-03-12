@@ -12,7 +12,12 @@ _REGISTRY: dict[str, PlatformFactory] = {}
 logger: logging.Logger = logging.getLogger(__name__)
 
 
-def register_platform(name: str, factory: PlatformFactory) -> None:
+def register_platform(
+    name: str,
+    factory: PlatformFactory,
+    *,
+    allow_replace: bool = False,
+) -> None:
     """
     Register a platform factory under the given name.
 
@@ -22,12 +27,15 @@ def register_platform(name: str, factory: PlatformFactory) -> None:
         name (str): Unique platform identifier (e.g. ``"github"``).
         factory (PlatformFactory): Callable that returns a Platform instance
             or None if the platform is not configured.
+        allow_replace (bool): If True, silently replace an existing factory
+            with the same name instead of raising.
 
     Raises:
-        ValueError: If a platform with the same name is already registered.
+        ValueError: If a platform with the same name is already registered
+            and ``allow_replace`` is False.
     """
 
-    if name in _REGISTRY:
+    if name in _REGISTRY and not allow_replace:
         raise ValueError(f"Platform '{name}' is already registered")
 
     _REGISTRY[name] = factory

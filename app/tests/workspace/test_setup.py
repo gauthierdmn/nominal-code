@@ -7,8 +7,8 @@ from nominal_code.models import BotType, EventType
 from nominal_code.platforms.base import (
     CommentEvent,
     LifecycleEvent,
+    Platform,
     PlatformName,
-    ReviewerPlatform,
 )
 from nominal_code.workspace.git import GitWorkspace
 from nominal_code.workspace.setup import (
@@ -150,15 +150,16 @@ class TestCreateWorkspace:
         assert str(workspace.repo_path).startswith(str(tmp_path))
 
 
-def _make_reviewer_platform():
-    platform = MagicMock(spec=ReviewerPlatform)
+def _make_job_platform():
+    platform = MagicMock(spec=Platform)
     platform.fetch_pr_branch = AsyncMock(return_value="feature")
     platform.post_reply = AsyncMock()
-    platform.build_reviewer_clone_url = MagicMock(
-        return_value="https://ro-token@github.com/owner/repo.git",
-    )
     platform.build_clone_url = MagicMock(
-        return_value="https://token@github.com/owner/repo.git",
+        side_effect=lambda repo_full_name, read_only=False: (
+            "https://ro-token@github.com/owner/repo.git"
+            if read_only
+            else "https://token@github.com/owner/repo.git"
+        ),
     )
 
     return platform
@@ -166,9 +167,9 @@ def _make_reviewer_platform():
 
 class TestPrepareJobEvent:
     @pytest.mark.asyncio
-    async def test_reviewer_sets_reviewer_clone_url(self):
+    async def test_reviewer_sets_read_only_clone_url(self):
         event = _make_event(branch="feature")
-        platform = _make_reviewer_platform()
+        platform = _make_job_platform()
 
         result = await prepare_job_event(
             event=event,
@@ -177,14 +178,15 @@ class TestPrepareJobEvent:
         )
 
         assert result.clone_url == "https://ro-token@github.com/owner/repo.git"
-        platform.build_reviewer_clone_url.assert_called_once_with(
+        platform.build_clone_url.assert_called_once_with(
             repo_full_name="owner/repo",
+            read_only=True,
         )
 
     @pytest.mark.asyncio
     async def test_worker_sets_rw_clone_url(self):
         event = _make_event(branch="feature")
-        platform = _make_reviewer_platform()
+        platform = _make_job_platform()
 
         result = await prepare_job_event(
             event=event,
@@ -195,6 +197,7 @@ class TestPrepareJobEvent:
         assert result.clone_url == "https://token@github.com/owner/repo.git"
         platform.build_clone_url.assert_called_once_with(
             repo_full_name="owner/repo",
+            read_only=False,
         )
 
     @pytest.mark.asyncio
@@ -208,7 +211,7 @@ class TestPrepareJobEvent:
             event_type=EventType.PR_OPENED,
             pr_author="alice",
         )
-        platform = _make_reviewer_platform()
+        platform = _make_job_platform()
 
         with pytest.raises(RuntimeError, match="Worker job requires a comment event"):
             await prepare_job_event(
@@ -218,21 +221,9 @@ class TestPrepareJobEvent:
             )
 
     @pytest.mark.asyncio
-    async def test_reviewer_raises_for_non_reviewer_platform(self):
-        event = _make_event(branch="feature")
-        platform = MagicMock()
-
-        with pytest.raises(RuntimeError, match="does not support reviewer"):
-            await prepare_job_event(
-                event=event,
-                bot_type=BotType.REVIEWER,
-                platform=platform,
-            )
-
-    @pytest.mark.asyncio
     async def test_raises_when_branch_unresolvable(self):
         event = _make_event(branch="")
-        platform = _make_reviewer_platform()
+        platform = _make_job_platform()
         platform.fetch_pr_branch = AsyncMock(return_value="")
 
         with pytest.raises(RuntimeError, match="Cannot resolve branch"):

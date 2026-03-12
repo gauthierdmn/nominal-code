@@ -76,7 +76,7 @@ def _make_platform():
     platform.fetch_pr_diff = AsyncMock(return_value=[])
     platform.fetch_pr_comments = AsyncMock(return_value=[])
     platform.submit_review = AsyncMock()
-    platform.build_reviewer_clone_url = MagicMock(
+    platform.build_clone_url = MagicMock(
         return_value="https://ro-token@github.com/owner/repo.git",
     )
 

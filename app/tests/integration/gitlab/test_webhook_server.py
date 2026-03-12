@@ -18,6 +18,7 @@ from nominal_code.jobs.queue.asyncio import AsyncioJobQueue
 from nominal_code.jobs.runner.process import ProcessRunner
 from nominal_code.models import EventType
 from nominal_code.platforms.gitlab import GitLabPlatform
+from nominal_code.platforms.gitlab.auth import GitLabPatAuth
 from tests.integration.conftest import (
     BranchInfo,
     install_enqueue_hook,
@@ -79,7 +80,7 @@ async def test_webhook_server_posts_review(
     )
 
     platform = GitLabPlatform(
-        token=gitlab_token,
+        auth=GitLabPatAuth(token=gitlab_token),
         webhook_secret=WEBHOOK_SECRET,
     )
     conversation_store = MemoryConversationStore()

@@ -1,6 +1,7 @@
 from nominal_code.platforms.github.auth import (
+    NO_INSTALLATION,
+    CachedToken,
     GitHubAppAuth,
-    GitHubAuth,
     GitHubPatAuth,
     load_private_key,
 )
@@ -9,8 +10,9 @@ from nominal_code.platforms.github.platform import (
 )
 
 __all__: list[str] = [
+    "NO_INSTALLATION",
+    "CachedToken",
     "GitHubAppAuth",
-    "GitHubAuth",
     "GitHubPatAuth",
     "GitHubPlatform",
     "load_private_key",

@@ -61,10 +61,10 @@ def _make_platform():
     platform.fetch_pr_diff = AsyncMock(return_value=[])
     platform.fetch_pr_comments = AsyncMock(return_value=[])
     platform.submit_review = AsyncMock()
-    platform.build_reviewer_clone_url = MagicMock(
+    platform.build_clone_url = MagicMock(
         return_value="https://ro-token@github.com/owner/repo.git",
     )
-    platform.ensure_auth = AsyncMock()
+    platform.authenticate = AsyncMock()
     platform.post_pr_reaction = AsyncMock()
 
     return platform
@@ -87,7 +87,7 @@ class TestRunPreFlight:
         assert result is False
         platform.post_reaction.assert_not_called()
         platform.post_pr_reaction.assert_not_called()
-        platform.ensure_auth.assert_not_called()
+        platform.authenticate.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_authorized_user_posts_reactions_and_returns_true(self):
@@ -104,7 +104,7 @@ class TestRunPreFlight:
 
         assert result is True
         platform.post_reaction.assert_called_once()
-        platform.post_pr_reaction.assert_called_once()
+        platform.post_pr_reaction.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_lifecycle_event_skips_comment_reaction_but_reacts_on_pr(self):
@@ -131,4 +131,4 @@ class TestRunPreFlight:
         assert result is True
         platform.post_reaction.assert_not_called()
         platform.post_pr_reaction.assert_called_once()
-        platform.ensure_auth.assert_called_once()
+        platform.authenticate.assert_called_once()

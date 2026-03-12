@@ -8,7 +8,7 @@ from environs import Env
 
 from nominal_code.models import EventType
 from nominal_code.platforms.base import PlatformName, PullRequestEvent, ReviewerPlatform
-from nominal_code.platforms.gitlab import GitLabPlatform
+from nominal_code.platforms.gitlab import GitLabPatAuth, GitLabPlatform
 
 _env: Env = Env()
 logger: logging.Logger = logging.getLogger(__name__)
@@ -81,13 +81,15 @@ def build_platform() -> ReviewerPlatform:
 
     gitlab_base_url: str = _env.str("CI_SERVER_URL", "")
 
+    auth: GitLabPatAuth = GitLabPatAuth(token=gitlab_token)
+
     if gitlab_base_url:
         return GitLabPlatform(
-            token=gitlab_token,
+            auth=auth,
             base_url=gitlab_base_url,
         )
 
-    return GitLabPlatform(token=gitlab_token)
+    return GitLabPlatform(auth=auth)
 
 
 def resolve_workspace() -> str:

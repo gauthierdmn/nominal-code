@@ -188,7 +188,7 @@ def create_app(
     return app
 
 
-def _should_process_event(event: PullRequestEvent, config: Config) -> bool:
+def should_process_event(event: PullRequestEvent, config: Config) -> bool:
     """
     Check whether an event passes the PR title tag filters.
 
@@ -287,6 +287,8 @@ async def _handle_webhook(
 
             return web.Response(status=401, text="Invalid signature")
 
+        await platform.authenticate(webhook_body=body)
+
         event: CommentEvent | LifecycleEvent | None = platform.parse_event(
             request=request,
             body=body,
@@ -303,7 +305,7 @@ async def _handle_webhook(
 
             return web.json_response({"status": "filtered"})
 
-        if not _should_process_event(event=event, config=config):
+        if not should_process_event(event=event, config=config):
             return web.json_response({"status": "filtered"})
 
         if event.event_type in config.reviewer_triggers:

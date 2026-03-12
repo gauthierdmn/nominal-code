@@ -201,6 +201,9 @@ class KubernetesRunner:
                     {"name": "REDIS_KEY_TTL_SECONDS", "value": redis_ttl},
                 )
 
+        for env_name, env_value in job.extra_env.items():
+            env_vars.append({"name": env_name, "value": env_value})
+
         env_from: list[dict[str, Any]] = [
             {"secretRef": {"name": secret_name}}
             for secret_name in self._config.env_from_secrets

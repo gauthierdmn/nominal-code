@@ -88,7 +88,7 @@ class ProcessRunner:
 
         platform: Platform = self._platforms[job.event.platform]
 
-        await platform.ensure_auth()
+        await platform.authenticate()
 
         bot_type: BotType = BotType(job.bot_type)
 
@@ -125,6 +125,7 @@ class ProcessRunner:
                     config=self._config,
                     platform=platform,
                     conversation_store=self._conversation_store,
+                    namespace=job.namespace,
                 )
             elif isinstance(platform, ReviewerPlatform):
                 mention_prompt: str = ""
@@ -141,4 +142,5 @@ class ProcessRunner:
                     config=self._config,
                     platform=platform,
                     conversation_store=self._conversation_store,
+                    namespace=job.namespace,
                 )

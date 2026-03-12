@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
@@ -35,7 +36,7 @@ class PullRequestEvent:
         pr_branch (str): The head branch name of the PR/MR.
         event_type (EventType): The event type that produced this event.
         clone_url (str): Authenticated clone URL for the repository.
-            Defaults to empty; populated after ``ensure_auth()`` by the
+            Defaults to empty; populated after ``authenticate()`` by the
             webhook handler or CLI.
         pr_title (str): Pull request or merge request title. Defaults to
             empty; populated by webhook parsers.
@@ -123,6 +124,57 @@ class ExistingComment:
     line: int = 0
     is_resolved: bool = False
     created_at: str = ""
+
+
+class PlatformAuth(ABC):
+    """
+    Abstract base for platform authentication strategies.
+
+    Both GitHub and GitLab auth providers subclass this ABC,
+    providing a unified interface for token access across platforms.
+    """
+
+    @abstractmethod
+    async def ensure_auth(self, account_id: int = 0) -> None:
+        """
+        Ensure valid authentication for the given account.
+
+        No-op for static token strategies. Dynamic implementations
+        refresh or load tokens as needed.
+
+        Args:
+            account_id (int): Platform-specific account identifier.
+        """
+
+    @abstractmethod
+    def get_api_token(self, account_id: int = 0) -> str:
+        """
+        Return the current API token for the given account.
+
+        PAT implementations ignore the account ID and return a static token.
+        App implementations look up the per-account cache.
+
+        Args:
+            account_id (int): Platform-specific account identifier.
+
+        Returns:
+            str: A valid API token.
+        """
+
+    @abstractmethod
+    def get_clone_token(self, account_id: int = 0) -> str:
+        """
+        Return a token suitable for cloning repositories.
+
+        Returns a read-only reviewer token when configured, falling back
+        to the main API token otherwise.
+
+        Args:
+            account_id (int): Platform-specific account identifier.
+
+        Returns:
+            str: A valid clone token.
+        """
 
 
 class Platform(Protocol):
@@ -254,24 +306,37 @@ class Platform(Protocol):
 
         ...
 
-    async def ensure_auth(self) -> None:
+    async def authenticate(self, *, webhook_body: bytes | None = None) -> None:
         """
-        Ensure the platform has a valid authentication token.
+        Ensure the platform has valid authentication.
 
-        Refreshes expired tokens for App-based auth. No-op for static tokens.
+        In webhook mode, pass the raw body so the platform can extract
+        account context (e.g. GitHub installation ID). In CLI/CI/job
+        mode, call with no arguments.
+
+        Args:
+            webhook_body (bytes | None): The raw webhook request body,
+                or None for non-webhook modes.
         """
 
         ...
 
-    def build_clone_url(self, repo_full_name: str) -> str:
+    def build_clone_url(
+        self,
+        repo_full_name: str,
+        *,
+        read_only: bool = False,
+    ) -> str:
         """
         Build an authenticated clone URL for a repository.
 
-        Must be called after ``ensure_auth()`` so that a valid token is
+        Must be called after ``authenticate()`` so that a valid token is
         available for App-based auth modes.
 
         Args:
             repo_full_name (str): Full repository name (e.g. ``owner/repo``).
+            read_only (bool): If True, use a read-only reviewer token when
+                available.
 
         Returns:
             str: The authenticated HTTPS clone URL.
@@ -339,21 +404,6 @@ class ReviewerPlatform(Platform, Protocol):
             findings (list[ReviewFinding]): Inline review comments.
             summary (str): High-level review summary.
             event (PullRequestEvent): The original event that triggered the review.
-        """
-
-        ...
-
-    def build_reviewer_clone_url(self, repo_full_name: str) -> str:
-        """
-        Build a clone URL using the read-only reviewer token.
-
-        Falls back to the main token if no reviewer token is configured.
-
-        Args:
-            repo_full_name (str): Full repository name.
-
-        Returns:
-            str: The authenticated HTTPS clone URL.
         """
 
         ...
