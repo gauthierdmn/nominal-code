@@ -144,7 +144,9 @@ jobs:
           file: ci/Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64
-          build-args: EXTRAS=${{ matrix.extras }}
+          build-args: |
+            EXTRAS=${{ matrix.extras }}
+            SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0+${{ github.sha }}
           tags: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ github.sha }}
 
   integration-test-pipeline:
