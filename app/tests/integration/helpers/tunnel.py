@@ -89,7 +89,7 @@ async def start_tunnel(local_port: int) -> TunnelInfo:
     )
 
 
-TUNNEL_READY_TIMEOUT = 30.0
+TUNNEL_READY_TIMEOUT = 60.0
 TUNNEL_READY_INTERVAL = 1.0
 
 logger: logging.Logger = logging.getLogger(__name__)

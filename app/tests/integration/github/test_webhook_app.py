@@ -306,7 +306,7 @@ async def test_app_auth_token_refresh_on_new_installation(
 
     assert not auth._token_cache
 
-    await auth.refresh_token_for_installation(installation_id)
+    await auth.ensure_auth(installation_id)
 
     assert installation_id in auth._token_cache
     assert auth._token_cache[installation_id].expires_at > 0
