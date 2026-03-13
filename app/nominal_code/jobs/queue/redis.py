@@ -189,15 +189,23 @@ def _build_queue_key(job: JobPayload) -> str:
     """
     Build the Redis list key for a job's PR.
 
+    Uses ``job.namespace`` to scope the key when set.
+
     Args:
         job (JobPayload): The job payload.
 
     Returns:
         str: The Redis key in the format
-            ``nc:queue:{platform}:{repo}:{pr_number}:{bot_type}``.
+            ``nc:queue:{platform}:{repo}:{pr_number}:{bot_type}`` or
+            ``nc:{namespace}:queue:{platform}:{repo}:{pr_number}:{bot_type}``.
     """
 
+    base: str = QUEUE_KEY_PREFIX
+
+    if job.namespace:
+        base = f"nc:{job.namespace}:queue"
+
     return (
-        f"{QUEUE_KEY_PREFIX}:{job.event.platform}:"
+        f"{base}:{job.event.platform}:"
         f"{job.event.repo_full_name}:{job.event.pr_number}:{job.bot_type}"
     )

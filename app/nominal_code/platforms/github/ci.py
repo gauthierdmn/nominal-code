@@ -93,14 +93,14 @@ def build_platform() -> ReviewerPlatform:
     private_key: str = load_private_key()
 
     if app_id and private_key:
-        installation_id: int = _env.int("GITHUB_INSTALLATION_ID", 0)
+        cli_installation_id: int = _env.int("GITHUB_INSTALLATION_ID", 0)
 
         return GitHubPlatform(
             auth=GitHubAppAuth(
                 app_id=app_id,
                 private_key=private_key,
-                installation_id=installation_id,
             ),
+            fixed_installation_id=cli_installation_id,
         )
 
     github_token: str = _env.str("GITHUB_TOKEN", "")

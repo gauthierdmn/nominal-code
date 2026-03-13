@@ -102,6 +102,52 @@ class TestJobPayloadSerialize:
         assert event.mention_prompt == "fix this"
 
 
+class TestExtraEnv:
+    def test_serialize_with_extra_env(self):
+        event = CommentEvent(
+            platform=PlatformName.GITLAB,
+            repo_full_name="group/repo",
+            pr_number=1,
+            pr_branch="main",
+            event_type=EventType.NOTE,
+        )
+        payload = JobPayload(
+            event=event,
+            bot_type="reviewer",
+            extra_env={"GITLAB_TOKEN": "glpat-test"},
+        )
+        serialized = payload.serialize()
+        deserialized = JobPayload.deserialize(serialized)
+
+        assert deserialized.extra_env == {"GITLAB_TOKEN": "glpat-test"}
+
+    def test_deserialize_without_extra_env(self):
+        event = CommentEvent(
+            platform=PlatformName.GITLAB,
+            repo_full_name="group/repo",
+            pr_number=1,
+            pr_branch="main",
+            event_type=EventType.NOTE,
+        )
+        payload = JobPayload(event=event, bot_type="reviewer")
+        serialized = payload.serialize()
+        deserialized = JobPayload.deserialize(serialized)
+
+        assert deserialized.extra_env == {}
+
+    def test_default_extra_env_empty(self):
+        event = CommentEvent(
+            platform=PlatformName.GITLAB,
+            repo_full_name="group/repo",
+            pr_number=1,
+            pr_branch="main",
+            event_type=EventType.NOTE,
+        )
+        payload = JobPayload(event=event, bot_type="reviewer")
+
+        assert payload.extra_env == {}
+
+
 class TestJobPayloadDeserialize:
     def test_invalid_json_raises(self):
         with pytest.raises(json.JSONDecodeError):

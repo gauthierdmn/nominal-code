@@ -5,6 +5,7 @@ import asyncio
 import logging
 import re
 import sys
+from typing import TYPE_CHECKING
 
 from environs import Env
 
@@ -17,6 +18,10 @@ from nominal_code.platforms.base import (
     PullRequestEvent,
     ReviewerPlatform,
 )
+
+if TYPE_CHECKING:
+    from nominal_code.platforms.base import PlatformAuth
+
 
 PR_REF_PATTERN: re.Pattern[str] = re.compile(
     r"^(?P<repo>[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+)#(?P<number>\d+)$",
@@ -155,7 +160,6 @@ def _build_platform(platform_name: PlatformName) -> ReviewerPlatform:
     if platform_name == PlatformName.GITHUB:
         from nominal_code.platforms.github import (
             GitHubAppAuth,
-            GitHubAuth,
             GitHubPatAuth,
             GitHubPlatform,
             load_private_key,
@@ -174,13 +178,15 @@ def _build_platform(platform_name: PlatformName) -> ReviewerPlatform:
                 )
                 sys.exit(1)
 
-            auth: GitHubAuth = GitHubAppAuth(
+            auth: PlatformAuth = GitHubAppAuth(
                 app_id=app_id,
                 private_key=private_key,
-                installation_id=installation_id,
             )
 
-            return GitHubPlatform(auth=auth)
+            return GitHubPlatform(
+                auth=auth,
+                fixed_installation_id=installation_id,
+            )
 
         token: str = _env.str("GITHUB_TOKEN", "")
 
@@ -199,12 +205,15 @@ def _build_platform(platform_name: PlatformName) -> ReviewerPlatform:
             logger.error("GITLAB_TOKEN is required for GitLab reviews")
             sys.exit(1)
 
-        from nominal_code.platforms.gitlab import GitLabPlatform
+        from nominal_code.platforms.gitlab import GitLabPatAuth, GitLabPlatform
         from nominal_code.platforms.gitlab.platform import GITLAB_API_BASE
 
         base_url: str = _env.str("GITLAB_API_BASE", GITLAB_API_BASE)
 
-        return GitLabPlatform(token=token, base_url=base_url)
+        return GitLabPlatform(
+            auth=GitLabPatAuth(token=token),
+            base_url=base_url,
+        )
 
     logger.error("Unsupported platform: %s", platform_name)
     sys.exit(1)
@@ -276,7 +285,7 @@ async def _run_review(args: argparse.Namespace) -> int:
     platform_name: PlatformName = PlatformName(args.platform)
     platform: ReviewerPlatform = _build_platform(platform_name)
 
-    await platform.ensure_auth()
+    await platform.authenticate()
 
     branch: str = await platform.fetch_pr_branch(
         repo_full_name=repo_full_name,
@@ -297,7 +306,7 @@ async def _run_review(args: argparse.Namespace) -> int:
         repo_full_name=repo_full_name,
         pr_number=pr_number,
         pr_branch=branch,
-        clone_url=platform.build_reviewer_clone_url(repo_full_name),
+        clone_url=platform.build_clone_url(repo_full_name, read_only=True),
         event_type=EventType.PR_OPENED,
     )
 

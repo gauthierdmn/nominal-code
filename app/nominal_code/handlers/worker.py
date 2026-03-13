@@ -30,6 +30,7 @@ async def review_and_fix(
     config: Config,
     platform: Platform,
     conversation_store: ConversationStore | None = None,
+    namespace: str = "",
 ) -> None:
     """
     Review and fix code using the worker bot: clone, run agent, post reply.
@@ -41,6 +42,7 @@ async def review_and_fix(
         platform (Platform): The platform client.
         conversation_store (ConversationStore | None): Conversation store for
             conversation continuity.
+        namespace (str): Logical namespace for conversation key isolation.
     """
 
     async with handle_agent_errors(
@@ -77,6 +79,7 @@ async def review_and_fix(
             bot_type=BotType.WORKER,
             agent_config=config.agent,
             conversation_store=conversation_store,
+            namespace=namespace,
         )
 
         result = await invoke_agent(
@@ -94,6 +97,7 @@ async def review_and_fix(
             result=result,
             agent_config=config.agent,
             conversation_store=conversation_store,
+            namespace=namespace,
         )
 
         await platform.post_reply(

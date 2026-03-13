@@ -37,12 +37,9 @@ def _make_config():
 
 def _make_platform():
     platform = MagicMock(spec=ReviewerPlatform)
-    platform.ensure_auth = AsyncMock()
+    platform.authenticate = AsyncMock()
     platform.build_clone_url = MagicMock(
         return_value="https://token@github.com/owner/repo.git",
-    )
-    platform.build_reviewer_clone_url = MagicMock(
-        return_value="https://ro-token@github.com/owner/repo.git",
     )
 
     return platform
@@ -230,4 +227,4 @@ class TestProcessRunner:
             await runner.enqueue(_make_worker_job())
             await asyncio.sleep(0.05)
 
-        platform.ensure_auth.assert_called_once()
+        platform.authenticate.assert_called_once()

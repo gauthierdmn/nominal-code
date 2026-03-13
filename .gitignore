@@ -31,4 +31,4 @@ workspaces/
 .claude/.cache/
 
 # Local K8s secrets (user-specific, never commit)
-deploy/overlays/local/secret.yaml
+deploy/k8s/secret.yaml

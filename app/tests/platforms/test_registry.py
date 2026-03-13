@@ -36,6 +36,14 @@ class TestRegisterPlatform:
         with pytest.raises(ValueError, match="already registered"):
             register_platform("dup", factory)
 
+    def test_register_platform_allow_replace(self):
+        factory_a = MagicMock(return_value=None)
+        factory_b = MagicMock(return_value=None)
+        register_platform("replaceable", factory_a)
+        register_platform("replaceable", factory_b, allow_replace=True)
+
+        assert _REGISTRY["replaceable"] is factory_b
+
 
 class TestBuildPlatforms:
     def test_build_platforms_returns_configured(self):

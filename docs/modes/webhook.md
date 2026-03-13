@@ -86,22 +86,28 @@ The recommended way to configure the webhook server is with a [YAML config file]
     GITHUB_WEBHOOK_SECRET=your-secret
     ```
 
-Secrets (tokens, webhook secrets, API keys) always stay as environment variables — they are never placed in the YAML file. See [Configuration](../reference/configuration.md) for the full YAML schema and [Environment Variables](../reference/env-vars.md) for all supported variables.
+Secrets (tokens, webhook secrets, API keys) are kept separate from the config YAML — as environment variables in standalone mode, or in Kubernetes Secret manifests for K8s deployments. See [Configuration](../reference/configuration.md) for the full YAML schema and [Environment Variables](../reference/env-vars.md) for all supported variables.
 
 You also need a publicly reachable server (or a tunnel like ngrok for development). See [GitHub](../platforms/github.md) or [GitLab](../platforms/gitlab.md) for webhook setup instructions.
 
 ## Running the Server
 
+The fastest way to start the server is with the Makefile:
+
 ```bash
-cd app
-uv run nominal-code serve
+# Set your secrets as env vars, then:
+make -C deploy serve
 ```
+
+This uses the config at `deploy/local/config.yaml` and validates that required env vars are set. See [Standalone Deployment](../deployment/standalone.md) for the full setup guide.
+
+For Kubernetes deployment, see [Kubernetes Deployment](../deployment/kubernetes.md).
 
 You should see:
 
 ```
-INFO     nominal_code.main Starting server on 0.0.0.0:8080 | platforms=['github'] | reviewer=@my-reviewer | allowed_users=...
-INFO     nominal_code.main Server is running, waiting for webhooks...
+INFO  Starting server on 0.0.0.0:8080 | platforms=['github'] | reviewer=@my-reviewer | allowed_users=...
+INFO  Server is running, waiting for webhooks...
 ```
 
 ## Triggering Reviews
@@ -194,4 +200,4 @@ Webhook mode is the only mode with conversation continuity — multi-turn conver
 
 For the complete configuration reference, see [Configuration](../reference/configuration.md) and [Environment Variables](../reference/env-vars.md).
 
-For production deployment, see [Deployment](../deployment/index.md).
+For deployment options, see [Deployment](../deployment/index.md).

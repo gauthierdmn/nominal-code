@@ -21,8 +21,8 @@ spec:
       serviceAccountName: nominal-code-server
       containers:
         - name: server
-          image: nominal-code
-          imagePullPolicy: Never
+          image: ghcr.io/gauthierdmn/nominal-code:latest
+          imagePullPolicy: Always
           command: ["uv", "run", "--no-sync", "nominal-code", "serve"]
           ports:
             - containerPort: 8080

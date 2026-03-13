@@ -72,21 +72,29 @@ def parse_review_output(output: str) -> AgentReview | None:
         data: object = json_repair_loads(extracted)
 
         if not isinstance(data, dict):
+            logger.debug("Review output is not a JSON object: %s", type(data).__name__)
+
             return None
 
         summary: object = data.get("summary")
 
         if not isinstance(summary, str) or not summary:
+            logger.debug("Review output missing or invalid 'summary' field")
+
             return None
 
         raw_comments: object = data.get("comments", [])
 
         if not isinstance(raw_comments, list):
+            logger.debug("Review output 'comments' is not a list")
+
             return None
 
         findings: list[ReviewFinding] = [parse_finding(item) for item in raw_comments]
 
-    except ValueError:
+    except ValueError as exc:
+        logger.debug("Review output parse error: %s", exc)
+
         return None
 
     return AgentReview(summary=summary, findings=findings)

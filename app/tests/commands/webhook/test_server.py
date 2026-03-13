@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import pytest_asyncio
 
-from nominal_code.commands.webhook.server import _should_process_event, create_app
+from nominal_code.commands.webhook.server import create_app, should_process_event
 from nominal_code.config import CliAgentConfig, ReviewerConfig, WorkerConfig
 from nominal_code.models import EventType
 from nominal_code.platforms.base import (
@@ -53,7 +53,7 @@ def _make_github_platform():
     platform.post_reaction = AsyncMock()
     platform.post_reply = AsyncMock()
     platform.fetch_pr_branch = AsyncMock(return_value="")
-    platform.ensure_auth = AsyncMock()
+    platform.authenticate = AsyncMock()
     platform.build_clone_url = MagicMock(
         return_value="https://x-access-token:test@github.com/owner/repo.git"
     )
@@ -658,25 +658,25 @@ class TestTitleTagFilter:
         config = _make_config()
         event = self._lifecycle("any title")
 
-        assert _should_process_event(event=event, config=config) is True
+        assert should_process_event(event=event, config=config) is True
 
     def test_exclude_tag_in_title_filters(self):
         config = _make_config(pr_title_exclude_tags=["skip"])
         event = self._lifecycle("fix: some change [skip]")
 
-        assert _should_process_event(event=event, config=config) is False
+        assert should_process_event(event=event, config=config) is False
 
     def test_include_tag_in_title_accepts(self):
         config = _make_config(pr_title_include_tags=["nominalbot"])
         event = self._lifecycle("test: webhook [nominalbot]")
 
-        assert _should_process_event(event=event, config=config) is True
+        assert should_process_event(event=event, config=config) is True
 
     def test_include_tags_set_but_no_match_filters(self):
         config = _make_config(pr_title_include_tags=["nominalbot"])
         event = self._lifecycle("test: unrelated change")
 
-        assert _should_process_event(event=event, config=config) is False
+        assert should_process_event(event=event, config=config) is False
 
     def test_exclude_takes_priority_over_include(self):
         config = _make_config(
@@ -685,43 +685,43 @@ class TestTitleTagFilter:
         )
         event = self._lifecycle("test: [nominalbot] [skip]")
 
-        assert _should_process_event(event=event, config=config) is False
+        assert should_process_event(event=event, config=config) is False
 
     def test_case_insensitive_matching(self):
         config = _make_config(pr_title_include_tags=["nominalbot"])
         event = self._lifecycle("test: [NominalBot] feature")
 
-        assert _should_process_event(event=event, config=config) is True
+        assert should_process_event(event=event, config=config) is True
 
     def test_comment_event_with_pr_title_filtered(self):
         config = _make_config(pr_title_include_tags=["nominalbot"])
         event = self._comment("test: unrelated change")
 
-        assert _should_process_event(event=event, config=config) is False
+        assert should_process_event(event=event, config=config) is False
 
     def test_comment_event_with_pr_title_accepted(self):
         config = _make_config(pr_title_include_tags=["nominalbot"])
         event = self._comment("test: [nominalbot] feature")
 
-        assert _should_process_event(event=event, config=config) is True
+        assert should_process_event(event=event, config=config) is True
 
     def test_multiple_include_tags_any_match(self):
         config = _make_config(pr_title_include_tags=["alpha", "beta"])
         event = self._lifecycle("test: [beta] feature")
 
-        assert _should_process_event(event=event, config=config) is True
+        assert should_process_event(event=event, config=config) is True
 
     def test_multiple_exclude_tags_any_match(self):
         config = _make_config(pr_title_exclude_tags=["skip", "ignore"])
         event = self._lifecycle("test: [ignore] feature")
 
-        assert _should_process_event(event=event, config=config) is False
+        assert should_process_event(event=event, config=config) is False
 
     def test_exclude_only_no_match_accepts(self):
         config = _make_config(pr_title_exclude_tags=["skip"])
         event = self._lifecycle("test: normal feature")
 
-        assert _should_process_event(event=event, config=config) is True
+        assert should_process_event(event=event, config=config) is True
 
 
 class TestAllowedReposFilter:

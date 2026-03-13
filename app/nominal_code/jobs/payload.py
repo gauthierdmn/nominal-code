@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from nominal_code.models import EventType
@@ -26,10 +26,16 @@ class JobPayload:
     Attributes:
         event (CommentEvent | LifecycleEvent): The platform event.
         bot_type (str): Bot personality (``"reviewer"`` or ``"worker"``).
+        namespace (str): Logical namespace for job isolation and
+            attribution. Empty string when unused.
+        extra_env (dict[str, str]): Additional environment variables to
+            inject into the job container. Empty dict when unused.
     """
 
     event: CommentEvent | LifecycleEvent
     bot_type: str
+    namespace: str = ""
+    extra_env: dict[str, str] = field(default_factory=dict)
 
     def serialize(self) -> str:
         """
@@ -49,6 +55,8 @@ class JobPayload:
             {
                 "event": event_dict,
                 "bot_type": self.bot_type,
+                "namespace": self.namespace,
+                "extra_env": self.extra_env,
             }
         )
 
@@ -114,4 +122,6 @@ class JobPayload:
         return cls(
             event=event,
             bot_type=str(json_data["bot_type"]),
+            namespace=str(json_data.get("namespace", "")),
+            extra_env=json_data.get("extra_env", {}),
         )

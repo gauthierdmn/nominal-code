@@ -14,9 +14,9 @@ redis:
   url: "redis://redis.nominal-code.svc.cluster.local:6379/0"
 
 kubernetes:
-  image: "nominal-code"
+  image: "ghcr.io/gauthierdmn/nominal-code:latest"
   namespace: "nominal-code"
-  image_pull_policy: "Never"
+  image_pull_policy: "Always"
   active_deadline_seconds: 600
   env_from_secrets:
     - "nominal-code-secrets"

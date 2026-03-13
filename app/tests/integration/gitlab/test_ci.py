@@ -25,7 +25,9 @@ pytestmark = [pytest.mark.integration]
 
 
 def _build_platform(token: str) -> GitLabPlatform:
-    return GitLabPlatform(token=token)
+    from nominal_code.platforms.gitlab.auth import GitLabPatAuth
+
+    return GitLabPlatform(auth=GitLabPatAuth(token=token))
 
 
 def _build_event(pr_info: PrInfo) -> PullRequestEvent:

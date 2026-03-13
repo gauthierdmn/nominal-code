@@ -13,6 +13,7 @@ from nominal_code.platforms.base import (
     PlatformName,
 )
 from nominal_code.platforms.gitlab import GitLabPlatform
+from nominal_code.platforms.gitlab.auth import GitLabPatAuth
 from nominal_code.platforms.gitlab.platform import (
     _create_gitlab_platform,
     _format_suggestion_body,
@@ -21,8 +22,10 @@ from nominal_code.platforms.gitlab.platform import (
 
 @pytest.fixture
 def platform():
+    auth = GitLabPatAuth(token="glpat-test456")
+
     return GitLabPlatform(
-        token="glpat-test456",
+        auth=auth,
         webhook_secret="gl-secret",
         base_url="https://gitlab.com",
     )
@@ -30,16 +33,19 @@ def platform():
 
 @pytest.fixture
 def platform_no_secret():
-    return GitLabPlatform(token="glpat-test456")
+    auth = GitLabPatAuth(token="glpat-test456")
+
+    return GitLabPlatform(auth=auth)
 
 
 @pytest.fixture
 def platform_with_reviewer_token():
+    auth = GitLabPatAuth(token="glpat-test456", reviewer_token="glpat-readonly789")
+
     return GitLabPlatform(
-        token="glpat-test456",
+        auth=auth,
         webhook_secret="gl-secret",
         base_url="https://gitlab.com",
-        reviewer_token="glpat-readonly789",
     )
 
 
@@ -315,17 +321,20 @@ class TestFetchPrBranch:
         assert result == ""
 
 
-class TestBuildReviewerCloneUrl:
-    def test_build_reviewer_clone_url_with_reviewer_token(
+class TestBuildCloneUrlReadOnly:
+    def test_build_clone_url_read_only_with_reviewer_token(
         self,
         platform_with_reviewer_token,
     ):
-        url = platform_with_reviewer_token.build_reviewer_clone_url("group/repo")
+        url = platform_with_reviewer_token.build_clone_url(
+            "group/repo",
+            read_only=True,
+        )
 
         assert url == ("https://oauth2:glpat-readonly789@gitlab.com/group/repo.git")
 
-    def test_build_reviewer_clone_url_falls_back_to_main_token(self, platform):
-        url = platform.build_reviewer_clone_url("group/repo")
+    def test_build_clone_url_read_only_falls_back_to_main_token(self, platform):
+        url = platform.build_clone_url("group/repo", read_only=True)
 
         assert url == ("https://oauth2:glpat-test456@gitlab.com/group/repo.git")
 
@@ -997,7 +1006,7 @@ class TestFactory:
 
         assert result is not None
         assert isinstance(result, GitLabPlatform)
-        assert result.token == "glpat-test456"
+        assert result._auth.get_api_token() == "glpat-test456"
         assert result.webhook_secret == "secret"
         assert result.base_url == "https://git.example.com"
 
@@ -1026,66 +1035,84 @@ class TestFactory:
             result = _create_gitlab_platform()
 
         assert result is not None
-        assert result.reviewer_token == "glpat-readonly"
+        assert result._auth.get_clone_token() == "glpat-readonly"
 
 
 class TestGitLabPlatformInit:
-    def test_init_stores_token(self):
-        platform = GitLabPlatform(token="glpat-abc")
+    def test_init_stores_auth(self):
+        auth = GitLabPatAuth(token="glpat-abc")
+        platform = GitLabPlatform(auth=auth)
 
-        assert platform.token == "glpat-abc"
+        assert platform._auth.get_api_token() == "glpat-abc"
 
     def test_init_stores_webhook_secret(self):
-        platform = GitLabPlatform(token="glpat-abc", webhook_secret="gl-secret")
+        auth = GitLabPatAuth(token="glpat-abc")
+        platform = GitLabPlatform(auth=auth, webhook_secret="gl-secret")
 
         assert platform.webhook_secret == "gl-secret"
 
     def test_init_webhook_secret_defaults_to_empty(self):
-        platform = GitLabPlatform(token="glpat-abc")
+        auth = GitLabPatAuth(token="glpat-abc")
+        platform = GitLabPlatform(auth=auth)
 
         assert platform.webhook_secret == ""
 
     def test_init_stores_base_url_stripped_of_trailing_slash(self):
-        platform = GitLabPlatform(token="tok", base_url="https://gitlab.example.com/")
+        auth = GitLabPatAuth(token="tok")
+        platform = GitLabPlatform(auth=auth, base_url="https://gitlab.example.com/")
 
         assert platform.base_url == "https://gitlab.example.com"
 
     def test_init_base_url_defaults_to_gitlab_com(self):
-        platform = GitLabPlatform(token="tok")
+        auth = GitLabPatAuth(token="tok")
+        platform = GitLabPlatform(auth=auth)
 
         assert "gitlab.com" in platform.base_url
 
-    def test_init_reviewer_token_defaults_to_empty(self):
-        platform = GitLabPlatform(token="tok")
+    def test_init_reviewer_token_defaults_to_main_token(self):
+        auth = GitLabPatAuth(token="tok")
+        platform = GitLabPlatform(auth=auth)
 
-        assert platform.reviewer_token == ""
+        assert platform._auth.get_clone_token() == "tok"
 
     def test_init_stores_reviewer_token(self):
-        platform = GitLabPlatform(token="tok", reviewer_token="readonly-tok")
+        auth = GitLabPatAuth(token="tok", reviewer_token="readonly-tok")
+        platform = GitLabPlatform(auth=auth)
 
-        assert platform.reviewer_token == "readonly-tok"
+        assert platform._auth.get_clone_token() == "readonly-tok"
 
 
 class TestGitLabHostProperty:
     def test_host_strips_https_scheme(self):
-        platform = GitLabPlatform(token="tok", base_url="https://gitlab.example.com")
+        auth = GitLabPatAuth(token="tok")
+        platform = GitLabPlatform(auth=auth, base_url="https://gitlab.example.com")
 
         assert platform.host == "gitlab.example.com"
 
     def test_host_strips_http_scheme(self):
-        platform = GitLabPlatform(
-            token="tok", base_url="http://self-hosted.example.com"
-        )
+        auth = GitLabPatAuth(token="tok")
+        platform = GitLabPlatform(auth=auth, base_url="http://self-hosted.example.com")
 
         assert platform.host == "self-hosted.example.com"
 
     def test_host_for_gitlab_com(self):
-        platform = GitLabPlatform(token="tok")
+        auth = GitLabPatAuth(token="tok")
+        platform = GitLabPlatform(auth=auth)
 
         assert platform.host == "gitlab.com"
 
 
-class TestGitLabEnsureAuth:
+class TestAuthenticate:
     @pytest.mark.asyncio
-    async def test_ensure_auth_is_noop(self, platform):
-        await platform.ensure_auth()
+    async def test_authenticate_with_webhook_body(self, platform):
+        body = b'{"object_kind": "note"}'
+
+        await platform.authenticate(webhook_body=body)
+
+        assert platform._auth.get_api_token() == "glpat-test456"
+
+    @pytest.mark.asyncio
+    async def test_authenticate_without_webhook_body(self, platform):
+        await platform.authenticate()
+
+        assert platform._auth.get_api_token() == "glpat-test456"

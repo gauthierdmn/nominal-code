@@ -106,7 +106,7 @@ async def _run_reviewer_job(
         int: Exit code (0 on success, 1 on failure).
     """
 
-    await platform.ensure_auth()
+    await platform.authenticate()
 
     logger.info(
         "Running job review for %s#%d on %s",
@@ -139,6 +139,7 @@ async def _run_reviewer_job(
             config=config,
             platform=platform,
             conversation_store=conversation_store,
+            namespace=job.namespace,
         )
     except Exception:
         logger.exception(
@@ -182,7 +183,7 @@ async def _run_worker_job(
         int: Exit code (0 on success, 1 on failure).
     """
 
-    await platform.ensure_auth()
+    await platform.authenticate()
 
     logger.info(
         "Running worker job for %s#%d on %s",
@@ -207,6 +208,7 @@ async def _run_worker_job(
             config=config,
             platform=platform,
             conversation_store=conversation_store,
+            namespace=job.namespace,
         )
     except Exception:
         logger.exception(

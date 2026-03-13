@@ -20,6 +20,7 @@ from nominal_code.jobs.queue.asyncio import AsyncioJobQueue
 from nominal_code.jobs.runner.process import ProcessRunner
 from nominal_code.models import EventType
 from nominal_code.platforms.gitlab import GitLabPlatform
+from nominal_code.platforms.gitlab.auth import GitLabPatAuth
 from tests.integration.conftest import PrInfo, wait_for_queue_drain
 from tests.integration.gitlab.api import (
     fetch_mr_notes,
@@ -108,7 +109,7 @@ def _create_test_app(
     config: Config,
 ) -> tuple[web.Application, MemoryConversationStore, AsyncioJobQueue]:
     platform = GitLabPlatform(
-        token=token,
+        auth=GitLabPatAuth(token=token),
         webhook_secret=WEBHOOK_SECRET,
     )
     conversation_store = MemoryConversationStore()
