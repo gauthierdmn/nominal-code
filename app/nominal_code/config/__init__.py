@@ -13,17 +13,32 @@ from nominal_code.config.loader import (
     load_config_for_ci,
     load_config_for_cli,
 )
-from nominal_code.config.settings import Config, ReviewerConfig, WorkerConfig
+from nominal_code.config.policies import FilteringPolicy, RoutingPolicy
+from nominal_code.config.settings import (
+    Config,
+    PromptsConfig,
+    RedisConfig,
+    ReviewerConfig,
+    WebhookConfig,
+    WorkerConfig,
+    WorkspaceConfig,
+)
 
 __all__ = [
     "AgentConfig",
     "ApiAgentConfig",
     "CliAgentConfig",
     "Config",
+    "FilteringPolicy",
     "KubernetesConfig",
+    "PromptsConfig",
     "ProviderConfig",
+    "RedisConfig",
     "ReviewerConfig",
+    "RoutingPolicy",
+    "WebhookConfig",
     "WorkerConfig",
+    "WorkspaceConfig",
     "load_config",
     "load_config_for_ci",
     "load_config_for_cli",

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import tempfile
 from pathlib import Path
 
 from nominal_code.config.agent import (
@@ -12,10 +11,15 @@ from nominal_code.config.agent import (
 )
 from nominal_code.config.kubernetes import KubernetesConfig
 from nominal_code.config.models import AppSettings
+from nominal_code.config.policies import FilteringPolicy, RoutingPolicy
 from nominal_code.config.settings import (
     Config,
+    PromptsConfig,
+    RedisConfig,
     ReviewerConfig,
+    WebhookConfig,
     WorkerConfig,
+    WorkspaceConfig,
     load_file_content,
     load_language_guidelines,
     parse_reviewer_triggers,
@@ -24,8 +28,6 @@ from nominal_code.config.settings import (
 from nominal_code.models import EventType, ProviderName
 
 logger: logging.Logger = logging.getLogger(__name__)
-
-DEFAULT_WORKSPACE_BASE_DIR: Path = Path(tempfile.gettempdir()) / "nominal-code"
 
 
 def load_config(config_path: str = "") -> Config:
@@ -84,7 +86,7 @@ def load_config(config_path: str = "") -> Config:
     workspace_base_dir: Path = (
         Path(settings.workspace.base_dir)
         if settings.workspace.base_dir
-        else DEFAULT_WORKSPACE_BASE_DIR
+        else WorkspaceConfig().base_dir
     )
 
     coding_guidelines: str = load_file_content(
@@ -129,24 +131,49 @@ def load_config(config_path: str = "") -> Config:
 
     kubernetes_config: KubernetesConfig | None = _resolve_kubernetes(settings)
 
-    return Config(
-        worker=worker,
-        reviewer=reviewer,
-        webhook_host=settings.webhook.host,
-        webhook_port=settings.webhook.port,
+    worker_bot_username: str = worker.bot_username if worker is not None else ""
+    reviewer_bot_username: str = reviewer.bot_username if reviewer is not None else ""
+
+    filtering: FilteringPolicy = FilteringPolicy(
         allowed_users=allowed_users,
-        workspace_base_dir=workspace_base_dir,
-        agent=agent_config,
-        coding_guidelines=coding_guidelines,
-        language_guidelines=language_guidelines,
-        cleanup_interval_hours=settings.workspace.cleanup_interval_hours,
-        reviewer_triggers=reviewer_triggers,
         allowed_repos=allowed_repos,
         pr_title_include_tags=pr_title_include_tags,
         pr_title_exclude_tags=pr_title_exclude_tags,
+    )
+
+    routing: RoutingPolicy = RoutingPolicy(
+        reviewer_triggers=reviewer_triggers,
+        worker_bot_username=worker_bot_username,
+        reviewer_bot_username=reviewer_bot_username,
+    )
+
+    redis_config: RedisConfig | None = None
+
+    if settings.redis.url:
+        redis_config = RedisConfig(
+            url=settings.redis.url,
+            key_ttl_seconds=settings.redis.key_ttl_seconds,
+        )
+
+    webhook: WebhookConfig = WebhookConfig(
+        host=settings.webhook.host,
+        port=settings.webhook.port,
+        filtering=filtering,
+        routing=routing,
         kubernetes=kubernetes_config,
-        redis_url=settings.redis.url,
-        redis_key_ttl_seconds=settings.redis.key_ttl_seconds,
+        redis=redis_config,
+    )
+
+    return Config(
+        worker=worker,
+        reviewer=reviewer,
+        agent=agent_config,
+        workspace=WorkspaceConfig(base_dir=workspace_base_dir),
+        prompts=PromptsConfig(
+            coding_guidelines=coding_guidelines,
+            language_guidelines=language_guidelines,
+        ),
+        webhook=webhook,
     )
 
 
@@ -179,7 +206,7 @@ def load_config_for_cli(
     workspace_base_dir: Path = (
         Path(settings.workspace.base_dir)
         if settings.workspace.base_dir
-        else DEFAULT_WORKSPACE_BASE_DIR
+        else WorkspaceConfig().base_dir
     )
 
     coding_guidelines: str = load_file_content(
@@ -210,16 +237,12 @@ def load_config_for_cli(
             bot_username="",
             system_prompt=reviewer_system_prompt,
         ),
-        webhook_host="",
-        webhook_port=0,
-        allowed_users=frozenset(),
-        workspace_base_dir=workspace_base_dir,
         agent=agent_config,
-        coding_guidelines=coding_guidelines,
-        language_guidelines=language_guidelines,
-        cleanup_interval_hours=0,
-        redis_url="",
-        redis_key_ttl_seconds=86400,
+        workspace=WorkspaceConfig(base_dir=workspace_base_dir),
+        prompts=PromptsConfig(
+            coding_guidelines=coding_guidelines,
+            language_guidelines=language_guidelines,
+        ),
     )
 
 
@@ -259,7 +282,7 @@ def load_config_for_ci(
     workspace_base_dir: Path = (
         Path(settings.workspace.base_dir)
         if settings.workspace.base_dir
-        else DEFAULT_WORKSPACE_BASE_DIR
+        else WorkspaceConfig().base_dir
     )
 
     coding_guidelines: str = load_file_content(
@@ -284,19 +307,15 @@ def load_config_for_ci(
             bot_username="",
             system_prompt=reviewer_system_prompt,
         ),
-        webhook_host="",
-        webhook_port=0,
-        allowed_users=frozenset(),
-        workspace_base_dir=workspace_base_dir,
         agent=ApiAgentConfig(
             provider=provider,
             max_turns=effective_max_turns,
         ),
-        coding_guidelines=coding_guidelines,
-        language_guidelines=language_guidelines,
-        cleanup_interval_hours=0,
-        redis_url=settings.redis.url,
-        redis_key_ttl_seconds=settings.redis.key_ttl_seconds,
+        workspace=WorkspaceConfig(base_dir=workspace_base_dir),
+        prompts=PromptsConfig(
+            coding_guidelines=coding_guidelines,
+            language_guidelines=language_guidelines,
+        ),
     )
 
 

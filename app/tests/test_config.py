@@ -77,7 +77,6 @@ def _full_env(tmp_path):
         "REVIEWER_SYSTEM_PROMPT": str(reviewer_prompt_file),
         "CODING_GUIDELINES": str(guidelines_file),
         "LANGUAGE_GUIDELINES_DIR": str(lang_dir),
-        "CLEANUP_INTERVAL_HOURS": "12",
     }
 
     with patch.dict(os.environ, env, clear=True):
@@ -119,13 +118,13 @@ class TestFromEnv:
     def test_from_env_shared_defaults(self, _both_bots_env):
         config = Config.from_env()
 
-        assert config.webhook_host == "0.0.0.0"
-        assert config.webhook_port == 8080
-        assert config.allowed_users == frozenset({"alice", "bob"})
+        assert config.webhook is not None
+        assert config.webhook.host == "0.0.0.0"
+        assert config.webhook.port == 8080
+        assert config.webhook.filtering.allowed_users == frozenset({"alice", "bob"})
         assert config.agent.max_turns == 0
         assert config.agent.model == ""
         assert config.agent.cli_path == ""
-        assert config.cleanup_interval_hours == 6
 
     def test_from_env_full_config(self, _full_env):
         config = Config.from_env()
@@ -136,16 +135,18 @@ class TestFromEnv:
         assert config.reviewer is not None
         assert config.reviewer.bot_username == "claude-reviewer"
         assert config.reviewer.system_prompt == "Review carefully."
-        assert config.webhook_host == "127.0.0.1"
-        assert config.webhook_port == 9090
-        assert config.allowed_users == frozenset({"alice", "bob", "charlie"})
-        assert config.workspace_base_dir == Path("/tmp/workspaces")
+        assert config.webhook is not None
+        assert config.webhook.host == "127.0.0.1"
+        assert config.webhook.port == 9090
+        assert config.webhook.filtering.allowed_users == frozenset(
+            {"alice", "bob", "charlie"},
+        )
+        assert config.workspace.base_dir == Path("/tmp/workspaces")
         assert config.agent.max_turns == 10
         assert config.agent.model == "claude-sonnet-4-20250514"
         assert config.agent.cli_path == "/usr/local/bin/claude"
-        assert config.coding_guidelines == "Use snake_case."
-        assert config.language_guidelines == {}
-        assert config.cleanup_interval_hours == 12
+        assert config.prompts.coding_guidelines == "Use snake_case."
+        assert config.prompts.language_guidelines == {}
 
     def test_from_env_worker_system_prompt_from_file(self, tmp_path, _worker_only_env):
         prompt_file = tmp_path / "prompt.md"
@@ -219,7 +220,7 @@ class TestFromEnv:
         ):
             config = Config.from_env()
 
-        assert config.coding_guidelines == "Use snake_case."
+        assert config.prompts.coding_guidelines == "Use snake_case."
 
     def test_from_env_coding_guidelines_missing_file_returns_empty(
         self,
@@ -231,7 +232,7 @@ class TestFromEnv:
         ):
             config = Config.from_env()
 
-        assert config.coding_guidelines == ""
+        assert config.prompts.coding_guidelines == ""
 
     def test_from_env_coding_guidelines_defaults_empty(
         self,
@@ -242,7 +243,7 @@ class TestFromEnv:
         monkeypatch.chdir(tmp_path)
         config = Config.from_env()
 
-        assert config.coding_guidelines == ""
+        assert config.prompts.coding_guidelines == ""
 
     def test_from_env_missing_allowed_users_raises(self):
         env = {
@@ -267,14 +268,16 @@ class TestFromEnv:
         with patch.dict(os.environ, {"REVIEWER_TRIGGERS": "pr_opened,pr_push"}):
             config = Config.from_env()
 
-        assert config.reviewer_triggers == frozenset(
+        assert config.webhook is not None
+        assert config.webhook.routing.reviewer_triggers == frozenset(
             {EventType.PR_OPENED, EventType.PR_PUSH},
         )
 
     def test_from_env_reviewer_triggers_empty(self, _both_bots_env):
         config = Config.from_env()
 
-        assert config.reviewer_triggers == frozenset()
+        assert config.webhook is not None
+        assert config.webhook.routing.reviewer_triggers == frozenset()
 
     def test_from_env_allowed_repos_parsed(self, _both_bots_env):
         with patch.dict(
@@ -283,12 +286,16 @@ class TestFromEnv:
         ):
             config = Config.from_env()
 
-        assert config.allowed_repos == frozenset({"owner/repo-a", "owner/repo-b"})
+        assert config.webhook is not None
+        assert config.webhook.filtering.allowed_repos == frozenset(
+            {"owner/repo-a", "owner/repo-b"},
+        )
 
     def test_from_env_allowed_repos_default_empty(self, _both_bots_env):
         config = Config.from_env()
 
-        assert config.allowed_repos == frozenset()
+        assert config.webhook is not None
+        assert config.webhook.filtering.allowed_repos == frozenset()
 
     def test_from_env_default_agent_is_cli(self, _both_bots_env):
         config = Config.from_env()
@@ -465,28 +472,19 @@ class TestConfigForCli:
         with patch.dict(os.environ, {"WORKSPACE_BASE_DIR": str(tmp_path)}, clear=True):
             config = Config.for_cli()
 
-        assert config.webhook_host == ""
-        assert config.webhook_port == 0
-        assert config.allowed_users == frozenset()
-
-    def test_config_for_cli_cleanup_interval_is_zero(self, tmp_path):
-        with patch.dict(os.environ, {"WORKSPACE_BASE_DIR": str(tmp_path)}, clear=True):
-            config = Config.for_cli()
-
-        assert config.cleanup_interval_hours == 0
+        assert config.webhook is None
 
     def test_config_for_cli_title_tags_default_empty(self, tmp_path):
         with patch.dict(os.environ, {"WORKSPACE_BASE_DIR": str(tmp_path)}, clear=True):
             config = Config.for_cli()
 
-        assert config.pr_title_include_tags == frozenset()
-        assert config.pr_title_exclude_tags == frozenset()
+        assert config.webhook is None
 
     def test_config_for_cli_allowed_repos_default_empty(self, tmp_path):
         with patch.dict(os.environ, {"WORKSPACE_BASE_DIR": str(tmp_path)}, clear=True):
             config = Config.for_cli()
 
-        assert config.allowed_repos == frozenset()
+        assert config.webhook is None
 
     def test_config_for_cli_default_agent_is_cli(self, tmp_path):
         with patch.dict(os.environ, {"WORKSPACE_BASE_DIR": str(tmp_path)}, clear=True):
@@ -574,11 +572,15 @@ class TestFromEnvTitleTags:
         ):
             config = Config.from_env()
 
-        assert config.pr_title_include_tags == frozenset({"nominalbot", "ci"})
-        assert config.pr_title_exclude_tags == frozenset({"skip"})
+        assert config.webhook is not None
+        assert config.webhook.filtering.pr_title_include_tags == frozenset(
+            {"nominalbot", "ci"},
+        )
+        assert config.webhook.filtering.pr_title_exclude_tags == frozenset({"skip"})
 
     def test_from_env_title_tags_default_empty(self, _both_bots_env):
         config = Config.from_env()
 
-        assert config.pr_title_include_tags == frozenset()
-        assert config.pr_title_exclude_tags == frozenset()
+        assert config.webhook is not None
+        assert config.webhook.filtering.pr_title_include_tags == frozenset()
+        assert config.webhook.filtering.pr_title_exclude_tags == frozenset()

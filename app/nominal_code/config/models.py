@@ -92,11 +92,9 @@ class WorkspaceSettings(BaseModel):
 
     Attributes:
         base_dir (str): Directory for cloning repositories.
-        cleanup_interval_hours (int): Hours between workspace cleanup runs.
     """
 
     base_dir: str = ""
-    cleanup_interval_hours: int = 6
 
 
 class PromptsSettings(BaseModel):
@@ -299,7 +297,6 @@ def _collect_env_overrides() -> dict[str, Any]:
         ("PR_TITLE_INCLUDE_TAGS", ["access", "pr_title_include_tags"]),
         ("PR_TITLE_EXCLUDE_TAGS", ["access", "pr_title_exclude_tags"]),
         ("WORKSPACE_BASE_DIR", ["workspace", "base_dir"]),
-        ("CLEANUP_INTERVAL_HOURS", ["workspace", "cleanup_interval_hours"]),
         ("CODING_GUIDELINES", ["prompts", "coding_guidelines_path"]),
         ("LANGUAGE_GUIDELINES_DIR", ["prompts", "language_guidelines_dir"]),
         ("REDIS_URL", ["redis", "url"]),
@@ -336,7 +333,6 @@ def _collect_env_overrides() -> dict[str, Any]:
     INT_KEYS: set[str] = {
         "WEBHOOK_PORT",
         "AGENT_MAX_TURNS",
-        "CLEANUP_INTERVAL_HOURS",
         "REDIS_KEY_TTL_SECONDS",
         "K8S_BACKOFF_LIMIT",
         "K8S_ACTIVE_DEADLINE_SECONDS",

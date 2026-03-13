@@ -147,11 +147,11 @@ class TestRunWebhookServer:
     @pytest.mark.asyncio
     async def test_run_webhook_server_exits_when_no_platforms(self):
         mock_config = MagicMock()
-        mock_config.cleanup_interval_hours = 0
         mock_config.worker = None
         mock_config.reviewer = None
-        mock_config.webhook_host = "0.0.0.0"
-        mock_config.webhook_port = 8080
+        mock_config.webhook = MagicMock()
+        mock_config.webhook.host = "0.0.0.0"
+        mock_config.webhook.port = 8080
 
         with patch(
             "nominal_code.commands.webhook.server.load_config",

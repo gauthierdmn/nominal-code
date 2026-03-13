@@ -56,9 +56,10 @@ async def run_job_main() -> int:
 
         return 1
 
+    redis = config.webhook.redis if config.webhook is not None else None
     conversation_store: ConversationStore = build_conversation_store(
-        redis_url=config.redis_url,
-        redis_key_ttl_seconds=config.redis_key_ttl_seconds,
+        redis_url=redis.url if redis is not None else "",
+        redis_key_ttl_seconds=redis.key_ttl_seconds if redis is not None else 86400,
     )
 
     platform_name: PlatformName = PlatformName(job.event.platform)

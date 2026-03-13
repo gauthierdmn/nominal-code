@@ -50,7 +50,6 @@ access:
 
 workspace:
   base_dir: "/tmp/nominal-code"
-  cleanup_interval_hours: 6
 
 prompts:
   coding_guidelines_path: "prompts/coding_guidelines.md"
@@ -159,7 +158,7 @@ All sections and fields are optional — omitted fields use the defaults shown a
 | **Conversation continuity** | No (one-shot) | No (one-shot) | Yes (multi-turn per PR) |
 | **Cost tracking** | Yes (logged + CI output) | Yes (logged) | Yes (logged) |
 | **Workspace** | CI runner checkout | Cloned to temp dir | Cloned to `WORKSPACE_BASE_DIR` |
-| **Workspace cleanup** | N/A (CI runner) | Manual | Automatic periodic cleanup |
+| **Workspace cleanup** | N/A (CI runner) | Manual | Manual (K8s uses ephemeral pods) |
 | **Bot username** | Not needed | Not needed | Required for `@mention` |
 
 ## Prompt File Configuration
@@ -203,6 +202,9 @@ A `.nominal/guidelines.md` file replaces the global coding guidelines for that r
 A `.nominal/languages/{language}.md` file (e.g. `.nominal/languages/python.md`) replaces the built-in language guideline for that language.
 
 ## Repository Filtering
+
+!!! tip "Policy reference"
+    The fields in `access` and `reviewer.triggers` map to two internal Pydantic models: `FilteringPolicy` and `RoutingPolicy`. For programmatic usage and multi-tenant override patterns, see **[Policies](policies.md)**.
 
 Restrict which repositories the bot processes using `access.allowed_repos` in YAML or `ALLOWED_REPOS` as an env var:
 
@@ -303,13 +305,8 @@ Both bots can `git clone` private repositories into a shared `.deps/` directory 
 - The `.deps/` directory is shared across PRs for the same repository, so a dependency only needs to be cloned once.
 - The reviewer bot is restricted to read-only tools plus `git clone` — it cannot modify files in cloned dependencies.
 
-## Workspace Cleanup
+## Workspace Management
 
-The bot clones repositories into the workspace base directory (YAML: `workspace.base_dir`, env: `WORKSPACE_BASE_DIR`, default: system temp dir). Over time, workspaces for closed or merged PRs accumulate. A built-in cleaner handles this automatically:
+The bot clones repositories into the workspace base directory (YAML: `workspace.base_dir`, env: `WORKSPACE_BASE_DIR`, default: system temp dir). Each PR gets its own shallow clone.
 
-- Runs once immediately on startup to remove stale workspaces left from a previous run.
-- Then runs periodically in the background at the interval set by `workspace.cleanup_interval_hours` (default: 6).
-
-A workspace is deleted only when no configured platform reports the PR as open. If an API check fails, the workspace is kept as a safety measure. Empty parent directories are cleaned up as well.
-
-Set `cleanup_interval_hours` to `0` to disable cleanup entirely.
+In production Kubernetes deployments, reviews run in ephemeral Job pods — no disk management is needed. For local or persistent-disk deployments, periodically remove stale `pr-{N}` directories manually.

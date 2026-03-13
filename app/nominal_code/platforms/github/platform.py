@@ -435,38 +435,6 @@ class GitHubPlatform:
                 pr_number,
             )
 
-    async def is_pr_open(self, repo_full_name: str, pr_number: int) -> bool:
-        """
-        Check whether a GitHub pull request is still open.
-
-        Returns True on HTTP errors as a safe default to avoid deleting
-        workspaces when the API is unreachable.
-
-        Args:
-            repo_full_name (str): Full repository name (e.g. ``owner/repo``).
-            pr_number (int): Pull request number.
-
-        Returns:
-            bool: True if the PR is open or on error, False if closed/merged.
-        """
-
-        url: str = f"/repos/{repo_full_name}/pulls/{pr_number}"
-
-        try:
-            response: httpx.Response = await self._request("GET", url)
-            response.raise_for_status()
-            data: dict[str, Any] = response.json()
-
-            return str(data.get("state", "")) == "open"
-        except httpx.HTTPError:
-            logger.warning(
-                "Failed to check PR state for %s#%d, assuming open",
-                repo_full_name,
-                pr_number,
-            )
-
-            return True
-
     async def fetch_pr_branch(self, repo_full_name: str, pr_number: int) -> str:
         """
         Fetch the head branch name for a PR when not available from the webhook.

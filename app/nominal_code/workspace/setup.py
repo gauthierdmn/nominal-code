@@ -79,7 +79,7 @@ def create_workspace(
     """
 
     return GitWorkspace(
-        base_dir=config.workspace_base_dir,
+        base_dir=config.workspace.base_dir,
         repo_full_name=event.repo_full_name,
         pr_number=event.pr_number,
         clone_url=event.clone_url,

@@ -77,8 +77,8 @@ def resolve_system_prompt(
 
     guidelines: str = resolve_guidelines(
         repo_path=workspace.repo_path,
-        default_guidelines=config.coding_guidelines,
-        language_guidelines=config.language_guidelines,
+        default_guidelines=config.prompts.coding_guidelines,
+        language_guidelines=config.prompts.language_guidelines,
         file_paths=file_paths,
     )
 

@@ -6,7 +6,8 @@ import pytest
 import pytest_asyncio
 
 from nominal_code.commands.webhook.server import create_app, should_process_event
-from nominal_code.config import CliAgentConfig, ReviewerConfig, WorkerConfig
+from nominal_code.config.policies import FilteringPolicy, RoutingPolicy
+from nominal_code.config.settings import WebhookConfig
 from nominal_code.models import EventType
 from nominal_code.platforms.base import (
     CommentEvent,
@@ -26,22 +27,35 @@ def _make_config(
 ):
     config = MagicMock()
     config.worker = (
-        WorkerConfig(bot_username="claude-worker", system_prompt="Be concise.")
+        MagicMock(bot_username="claude-worker", system_prompt="Be concise.")
         if worker
         else None
     )
     config.reviewer = (
-        ReviewerConfig(bot_username="claude-reviewer", system_prompt="Review code.")
+        MagicMock(bot_username="claude-reviewer", system_prompt="Review code.")
         if reviewer
         else None
     )
-    config.allowed_users = frozenset(["alice"])
-    config.workspace_base_dir = "/tmp/workspaces"
-    config.agent = CliAgentConfig()
-    config.reviewer_triggers = frozenset(reviewer_triggers or [])
-    config.allowed_repos = frozenset(allowed_repos or [])
-    config.pr_title_include_tags = frozenset(pr_title_include_tags or [])
-    config.pr_title_exclude_tags = frozenset(pr_title_exclude_tags or [])
+    config.workspace = MagicMock()
+    config.workspace.base_dir = "/tmp/workspaces"
+
+    filtering = FilteringPolicy(
+        allowed_users=frozenset(["alice"]),
+        allowed_repos=frozenset(allowed_repos or []),
+        pr_title_include_tags=frozenset(pr_title_include_tags or []),
+        pr_title_exclude_tags=frozenset(pr_title_exclude_tags or []),
+    )
+
+    routing = RoutingPolicy(
+        reviewer_triggers=frozenset(reviewer_triggers or []),
+        worker_bot_username="claude-worker" if worker else "",
+        reviewer_bot_username="claude-reviewer" if reviewer else "",
+    )
+
+    config.webhook = WebhookConfig(
+        filtering=filtering,
+        routing=routing,
+    )
 
     return config
 
@@ -595,7 +609,14 @@ class TestAutoTriggerJob:
             pr_branch="main",
             event_type=EventType.PR_OPENED,
         )
-        app["config"].reviewer_triggers = frozenset([EventType.PR_OPENED])
+        app["config"].webhook = WebhookConfig(
+            filtering=app["config"].webhook.filtering,
+            routing=RoutingPolicy(
+                reviewer_triggers=frozenset([EventType.PR_OPENED]),
+                worker_bot_username="claude-worker",
+                reviewer_bot_username="claude-reviewer",
+            ),
+        )
         app["platforms"]["github"].verify_webhook.return_value = True
         app["platforms"]["github"].parse_event.return_value = event
 
@@ -618,8 +639,14 @@ class TestAutoTriggerJob:
             pr_branch="main",
             event_type=EventType.PR_OPENED,
         )
-        app["config"].reviewer_triggers = frozenset([EventType.PR_OPENED])
-        app["config"].reviewer = None
+        app["config"].webhook = WebhookConfig(
+            filtering=app["config"].webhook.filtering,
+            routing=RoutingPolicy(
+                reviewer_triggers=frozenset([EventType.PR_OPENED]),
+                worker_bot_username="claude-worker",
+                reviewer_bot_username="",
+            ),
+        )
         app["platforms"]["github"].verify_webhook.return_value = True
         app["platforms"]["github"].parse_event.return_value = event
 
@@ -655,73 +682,87 @@ class TestTitleTagFilter:
         )
 
     def test_both_empty_accepts(self):
-        config = _make_config()
+        filtering = FilteringPolicy()
         event = self._lifecycle("any title")
 
-        assert should_process_event(event=event, config=config) is True
+        assert should_process_event(event=event, filtering=filtering) is True
 
     def test_exclude_tag_in_title_filters(self):
-        config = _make_config(pr_title_exclude_tags=["skip"])
+        filtering = FilteringPolicy(pr_title_exclude_tags=frozenset(["skip"]))
         event = self._lifecycle("fix: some change [skip]")
 
-        assert should_process_event(event=event, config=config) is False
+        assert should_process_event(event=event, filtering=filtering) is False
 
     def test_include_tag_in_title_accepts(self):
-        config = _make_config(pr_title_include_tags=["nominalbot"])
+        filtering = FilteringPolicy(
+            pr_title_include_tags=frozenset(["nominalbot"]),
+        )
         event = self._lifecycle("test: webhook [nominalbot]")
 
-        assert should_process_event(event=event, config=config) is True
+        assert should_process_event(event=event, filtering=filtering) is True
 
     def test_include_tags_set_but_no_match_filters(self):
-        config = _make_config(pr_title_include_tags=["nominalbot"])
+        filtering = FilteringPolicy(
+            pr_title_include_tags=frozenset(["nominalbot"]),
+        )
         event = self._lifecycle("test: unrelated change")
 
-        assert should_process_event(event=event, config=config) is False
+        assert should_process_event(event=event, filtering=filtering) is False
 
     def test_exclude_takes_priority_over_include(self):
-        config = _make_config(
-            pr_title_include_tags=["nominalbot"],
-            pr_title_exclude_tags=["skip"],
+        filtering = FilteringPolicy(
+            pr_title_include_tags=frozenset(["nominalbot"]),
+            pr_title_exclude_tags=frozenset(["skip"]),
         )
         event = self._lifecycle("test: [nominalbot] [skip]")
 
-        assert should_process_event(event=event, config=config) is False
+        assert should_process_event(event=event, filtering=filtering) is False
 
     def test_case_insensitive_matching(self):
-        config = _make_config(pr_title_include_tags=["nominalbot"])
+        filtering = FilteringPolicy(
+            pr_title_include_tags=frozenset(["nominalbot"]),
+        )
         event = self._lifecycle("test: [NominalBot] feature")
 
-        assert should_process_event(event=event, config=config) is True
+        assert should_process_event(event=event, filtering=filtering) is True
 
     def test_comment_event_with_pr_title_filtered(self):
-        config = _make_config(pr_title_include_tags=["nominalbot"])
+        filtering = FilteringPolicy(
+            pr_title_include_tags=frozenset(["nominalbot"]),
+        )
         event = self._comment("test: unrelated change")
 
-        assert should_process_event(event=event, config=config) is False
+        assert should_process_event(event=event, filtering=filtering) is False
 
     def test_comment_event_with_pr_title_accepted(self):
-        config = _make_config(pr_title_include_tags=["nominalbot"])
+        filtering = FilteringPolicy(
+            pr_title_include_tags=frozenset(["nominalbot"]),
+        )
         event = self._comment("test: [nominalbot] feature")
 
-        assert should_process_event(event=event, config=config) is True
+        assert should_process_event(event=event, filtering=filtering) is True
 
     def test_multiple_include_tags_any_match(self):
-        config = _make_config(pr_title_include_tags=["alpha", "beta"])
+        filtering = FilteringPolicy(
+            pr_title_include_tags=frozenset(["alpha", "beta"]),
+        )
         event = self._lifecycle("test: [beta] feature")
 
-        assert should_process_event(event=event, config=config) is True
+        assert should_process_event(event=event, filtering=filtering) is True
 
     def test_multiple_exclude_tags_any_match(self):
-        config = _make_config(pr_title_exclude_tags=["skip", "ignore"])
+        filtering = FilteringPolicy(
+            pr_title_exclude_tags=frozenset(["skip", "ignore"]),
+        )
         event = self._lifecycle("test: [ignore] feature")
 
-        assert should_process_event(event=event, config=config) is False
+        assert should_process_event(event=event, filtering=filtering) is False
 
     def test_exclude_only_no_match_accepts(self):
-        config = _make_config(pr_title_exclude_tags=["skip"])
+        filtering = FilteringPolicy(pr_title_exclude_tags=frozenset(["skip"]))
         event = self._lifecycle("test: normal feature")
 
-        assert should_process_event(event=event, config=config) is True
+        assert should_process_event(event=event, filtering=filtering) is True
 
 
 class TestAllowedReposFilter:

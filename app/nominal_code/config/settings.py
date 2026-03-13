@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict
 
 from nominal_code.config.agent import AgentConfig, ProviderConfig
 from nominal_code.config.kubernetes import KubernetesConfig
+from nominal_code.config.policies import FilteringPolicy, RoutingPolicy
 from nominal_code.models import EventType, ProviderName
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -16,10 +17,6 @@ DEFAULT_REVIEWER_PROMPT_PATH: Path = Path("prompts/reviewer_prompt.md")
 DEFAULT_WORKER_PROMPT_PATH: Path = Path("prompts/system_prompt.md")
 DEFAULT_CODING_GUIDELINES_PATH: Path = Path("prompts/coding_guidelines.md")
 DEFAULT_LANGUAGE_GUIDELINES_DIR: Path = Path("prompts/languages")
-DEFAULT_WEBHOOK_HOST: str = "0.0.0.0"
-DEFAULT_WEBHOOK_PORT: int = 8080
-DEFAULT_CLEANUP_INTERVAL_HOURS: int = 6
-DEFAULT_WORKSPACE_BASE_DIR: Path = Path(tempfile.gettempdir()) / "nominal-code"
 
 
 class WorkerConfig(BaseModel):
@@ -52,6 +49,79 @@ class ReviewerConfig(BaseModel):
     system_prompt: str
 
 
+class PromptsConfig(BaseModel):
+    """
+    Prompt and guideline configuration.
+
+    Attributes:
+        coding_guidelines (str): Coding guidelines text appended to the
+            system prompt.
+        language_guidelines (dict[str, str]): Language-specific guidelines
+            keyed by language name.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    coding_guidelines: str = ""
+    language_guidelines: dict[str, str] = {}
+
+
+class WorkspaceConfig(BaseModel):
+    """
+    Workspace directory configuration.
+
+    Attributes:
+        base_dir (Path): Directory for cloning repositories.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    base_dir: Path = Path(tempfile.gettempdir()) / "nominal-code"
+
+
+class RedisConfig(BaseModel):
+    """
+    Redis connection configuration.
+
+    Attributes:
+        url (str): Redis connection URL.
+        key_ttl_seconds (int): TTL for Redis keys in seconds.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    url: str = ""
+    key_ttl_seconds: int = 86400
+
+
+class WebhookConfig(BaseModel):
+    """
+    Webhook server configuration.
+
+    Bundles everything the webhook server needs: bind address, filtering,
+    routing, optional Kubernetes runner, and optional Redis.
+
+    Attributes:
+        host (str): Host to bind the webhook server.
+        port (int): Port to bind the webhook server.
+        filtering (FilteringPolicy): Event filtering rules (repos, users,
+            title tags).
+        routing (RoutingPolicy): Event routing rules (reviewer triggers,
+            bot usernames).
+        kubernetes (KubernetesConfig | None): K8s job runner config.
+        redis (RedisConfig | None): Redis connection config.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    host: str = "0.0.0.0"
+    port: int = 8080
+    filtering: FilteringPolicy = FilteringPolicy()
+    routing: RoutingPolicy = RoutingPolicy()
+    kubernetes: KubernetesConfig | None = None
+    redis: RedisConfig | None = None
+
+
 class Config(BaseModel):
     """
     Application configuration loaded from YAML and/or environment variables.
@@ -59,45 +129,21 @@ class Config(BaseModel):
     Attributes:
         worker (WorkerConfig | None): Worker bot config, or None if disabled.
         reviewer (ReviewerConfig | None): Reviewer bot config, or None if disabled.
-        webhook_host (str): Host to bind the webhook server.
-        webhook_port (int): Port to bind the webhook server.
-        allowed_users (frozenset[str]): Usernames permitted to trigger the bots.
-        workspace_base_dir (Path): Directory for cloning repositories.
         agent (AgentConfig): Agent runner configuration.
-        coding_guidelines (str): Coding guidelines text appended to the
-            system prompt.
-        language_guidelines (dict[str, str]): Language-specific guidelines
-            keyed by language name.
-        cleanup_interval_hours (int): Hours between workspace cleanup runs.
-        reviewer_triggers (frozenset[EventType]): PR lifecycle event types
-            that auto-trigger the reviewer bot.
-        allowed_repos (frozenset[str]): Repository full names to process.
-        pr_title_include_tags (frozenset[str]): Allowlist of tags.
-        pr_title_exclude_tags (frozenset[str]): Blocklist of tags.
-        kubernetes (KubernetesConfig | None): K8s job runner config.
-        redis_url (str): Redis connection URL.
-        redis_key_ttl_seconds (int): TTL for Redis keys in seconds.
+        workspace (WorkspaceConfig): Workspace directory configuration.
+        prompts (PromptsConfig): Prompt and guideline configuration.
+        webhook (WebhookConfig | None): Webhook server configuration, or
+            None in CLI/CI modes.
     """
 
     model_config = ConfigDict(frozen=True)
 
-    worker: WorkerConfig | None
-    reviewer: ReviewerConfig | None
-    webhook_host: str
-    webhook_port: int
-    allowed_users: frozenset[str]
-    workspace_base_dir: Path
+    worker: WorkerConfig | None = None
+    reviewer: ReviewerConfig | None = None
     agent: AgentConfig
-    coding_guidelines: str
-    language_guidelines: dict[str, str]
-    cleanup_interval_hours: int
-    reviewer_triggers: frozenset[EventType] = frozenset()
-    allowed_repos: frozenset[str] = frozenset()
-    pr_title_include_tags: frozenset[str] = frozenset()
-    pr_title_exclude_tags: frozenset[str] = frozenset()
-    kubernetes: KubernetesConfig | None = None
-    redis_url: str = ""
-    redis_key_ttl_seconds: int = 86400
+    workspace: WorkspaceConfig = WorkspaceConfig()
+    prompts: PromptsConfig = PromptsConfig()
+    webhook: WebhookConfig | None = None
 
     @classmethod
     def from_env(cls) -> Config:

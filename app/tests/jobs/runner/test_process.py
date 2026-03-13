@@ -29,7 +29,8 @@ def _make_config():
         system_prompt="Review code.",
     )
     config.allowed_users = frozenset(["alice"])
-    config.workspace_base_dir = "/tmp/workspaces"
+    config.workspace = MagicMock()
+    config.workspace.base_dir = "/tmp/workspaces"
     config.agent = CliAgentConfig()
 
     return config

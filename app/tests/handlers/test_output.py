@@ -21,10 +21,12 @@ from nominal_code.models import DiffSide
 def _make_config():
     config = MagicMock()
     config.allowed_users = frozenset(["alice"])
-    config.workspace_base_dir = "/tmp/workspaces"
+    config.workspace = MagicMock()
+    config.workspace.base_dir = "/tmp/workspaces"
     config.agent = CliAgentConfig()
-    config.coding_guidelines = "Use snake_case."
-    config.language_guidelines = {"python": "Python style rules."}
+    config.prompts = MagicMock()
+    config.prompts.coding_guidelines = "Use snake_case."
+    config.prompts.language_guidelines = {"python": "Python style rules."}
     config.worker = None
     config.reviewer = ReviewerConfig(
         bot_username="claude-reviewer",

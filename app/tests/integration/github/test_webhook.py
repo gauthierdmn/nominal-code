@@ -15,8 +15,11 @@ from nominal_code.config import (
     CliAgentConfig,
     Config,
     ReviewerConfig,
+    WebhookConfig,
     WorkerConfig,
+    WorkspaceConfig,
 )
+from nominal_code.config.policies import FilteringPolicy, RoutingPolicy
 from nominal_code.conversation.memory import MemoryConversationStore
 from nominal_code.jobs.queue.asyncio import AsyncioJobQueue
 from nominal_code.jobs.runner.process import ProcessRunner
@@ -63,15 +66,18 @@ def _build_webhook_config(
             bot_username=REVIEWER_BOT,
             system_prompt="You are a test reviewer.",
         ),
-        webhook_host="127.0.0.1",
-        webhook_port=0,
-        allowed_users=frozenset({ALLOWED_USER}),
-        workspace_base_dir=Path(tempfile.mkdtemp()),
         agent=CliAgentConfig(),
-        coding_guidelines="",
-        language_guidelines={},
-        cleanup_interval_hours=0,
-        reviewer_triggers=reviewer_triggers or frozenset(),
+        workspace=WorkspaceConfig(base_dir=Path(tempfile.mkdtemp())),
+        webhook=WebhookConfig(
+            host="127.0.0.1",
+            port=0,
+            filtering=FilteringPolicy(allowed_users=frozenset({ALLOWED_USER})),
+            routing=RoutingPolicy(
+                reviewer_triggers=reviewer_triggers or frozenset(),
+                worker_bot_username=WORKER_BOT,
+                reviewer_bot_username=REVIEWER_BOT,
+            ),
+        ),
     )
 
 

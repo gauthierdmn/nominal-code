@@ -8,7 +8,7 @@ from nominal_code.models import BotType
 from nominal_code.platforms.base import CommentEvent, LifecycleEvent
 
 if TYPE_CHECKING:
-    from nominal_code.config import Config
+    from nominal_code.config.policies import FilteringPolicy
     from nominal_code.platforms.base import Platform
 
 EYES_REACTION: str = "eyes"
@@ -50,7 +50,7 @@ def extract_mention(text: str, bot_username: str) -> str | None:
 async def acknowledge_event(
     event: CommentEvent | LifecycleEvent,
     bot_type: BotType,
-    config: Config,
+    filtering: FilteringPolicy,
     platform: Platform,
 ) -> bool:
     """
@@ -64,7 +64,7 @@ async def acknowledge_event(
     Args:
         event (CommentEvent | LifecycleEvent): The parsed event.
         bot_type (BotType): Which bot personality to use.
-        config (Config): Application configuration.
+        filtering (FilteringPolicy): Filtering policy with allowed users.
         platform (Platform): The platform client for API calls.
 
     Returns:
@@ -72,7 +72,7 @@ async def acknowledge_event(
     """
 
     if isinstance(event, CommentEvent):
-        if event.author_username not in config.allowed_users:
+        if event.author_username not in filtering.allowed_users:
             logger.warning(
                 "Ignoring comment from unauthorized user: %s",
                 event.author_username,

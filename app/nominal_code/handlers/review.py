@@ -249,8 +249,8 @@ async def review(
     if ctx.workspace is None:
         effective_guidelines: str = resolve_guidelines(
             repo_path=ctx.repo_path,
-            default_guidelines=config.coding_guidelines,
-            language_guidelines=config.language_guidelines,
+            default_guidelines=config.prompts.coding_guidelines,
+            language_guidelines=config.prompts.language_guidelines,
             file_paths=file_paths,
         )
         combined_system_prompt: str = (

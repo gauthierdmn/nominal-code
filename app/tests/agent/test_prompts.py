@@ -147,8 +147,8 @@ class TestResolveSystemPrompt:
         workspace = MagicMock()
         workspace.repo_path = tmp_path
         config = MagicMock()
-        config.coding_guidelines = "Use snake_case."
-        config.language_guidelines = {}
+        config.prompts.coding_guidelines = "Use snake_case."
+        config.prompts.language_guidelines = {}
 
         result = resolve_system_prompt(workspace, config, "You are a bot.", [])
 
@@ -161,8 +161,8 @@ class TestResolveSystemPrompt:
         workspace = MagicMock()
         workspace.repo_path = tmp_path
         config = MagicMock()
-        config.coding_guidelines = ""
-        config.language_guidelines = {"python": "Python rules."}
+        config.prompts.coding_guidelines = ""
+        config.prompts.language_guidelines = {"python": "Python rules."}
 
         result = resolve_system_prompt(
             workspace,
@@ -179,8 +179,8 @@ class TestResolveSystemPrompt:
         workspace = MagicMock()
         workspace.repo_path = tmp_path
         config = MagicMock()
-        config.coding_guidelines = ""
-        config.language_guidelines = {}
+        config.prompts.coding_guidelines = ""
+        config.prompts.language_guidelines = {}
 
         result = resolve_system_prompt(workspace, config, "Only base.", [])
 
@@ -194,8 +194,8 @@ class TestResolveSystemPrompt:
         workspace = MagicMock()
         workspace.repo_path = tmp_path
         config = MagicMock()
-        config.coding_guidelines = "Guidelines text."
-        config.language_guidelines = {}
+        config.prompts.coding_guidelines = "Guidelines text."
+        config.prompts.language_guidelines = {}
 
         result = resolve_system_prompt(workspace, config, "Bot prompt.", [])
 

@@ -15,10 +15,12 @@ from nominal_code.platforms.base import CommentEvent, PlatformName
 def _make_config(allowed_users=None):
     config = MagicMock()
     config.allowed_users = frozenset(allowed_users or ["alice"])
-    config.workspace_base_dir = "/tmp/workspaces"
+    config.workspace = MagicMock()
+    config.workspace.base_dir = "/tmp/workspaces"
     config.agent = CliAgentConfig()
-    config.coding_guidelines = "Use snake_case."
-    config.language_guidelines = {"python": "Python style rules."}
+    config.prompts = MagicMock()
+    config.prompts.coding_guidelines = "Use snake_case."
+    config.prompts.language_guidelines = {"python": "Python style rules."}
     config.worker = WorkerConfig(
         bot_username="claude-worker",
         system_prompt="Be concise.",

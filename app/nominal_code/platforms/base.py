@@ -275,20 +275,6 @@ class Platform(Protocol):
 
         ...
 
-    async def is_pr_open(self, repo_full_name: str, pr_number: int) -> bool:
-        """
-        Check whether a pull request or merge request is still open.
-
-        Args:
-            repo_full_name (str): Full repository name (e.g. ``owner/repo``).
-            pr_number (int): Pull request or merge request number.
-
-        Returns:
-            bool: True if the PR/MR is open, False otherwise.
-        """
-
-        ...
-
     async def fetch_pr_branch(self, repo_full_name: str, pr_number: int) -> str:
         """
         Resolve the head branch name when the webhook payload lacks it.
