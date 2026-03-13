@@ -1,0 +1,1775 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="AI-powered code review bot for GitHub PRs and GitLab MRs">
+      
+      
+      
+        <link rel="canonical" href="https://gauthierdmn.github.io/nominal-code/review-pricing-plan/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.5">
+    
+    
+      
+        <title>Plan: Compute the Price of a Code Review Job - Nominal Code</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#plan-compute-the-price-of-a-code-review-job" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Nominal Code" class="md-header__button md-logo" aria-label="Nominal Code" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Nominal Code
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Plan: Compute the Price of a Code Review Job
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/gauthierdmn/nominal-code" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    gauthierdmn/nominal-code
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Nominal Code" class="md-nav__button md-logo" aria-label="Nominal Code" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Nominal Code
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/gauthierdmn/nominal-code" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    gauthierdmn/nominal-code
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Modes
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Modes
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../modes/ci/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../modes/cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../modes/webhook/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Webhook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Platforms
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Platforms
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../platforms/github/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GitHub
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../platforms/gitlab/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GitLab
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Bots
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Bots
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../bots/reviewer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reviewer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../bots/worker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Worker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/env-vars/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environment Variables
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Deployment
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../deployment/standalone/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Standalone
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../deployment/kubernetes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Kubernetes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#context" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Context
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#design" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Design
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Design">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#data-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data flow
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-1-add-tokenusage-dataclass-and-extend-llmresponse" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 1 — Add TokenUsage dataclass and extend LLMResponse
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-2-create-cost-module-with-pricing-table" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 2 — Create cost module with pricing table
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 2 — Create cost module with pricing table">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-a-self-managed-pricing-table-not-litellm-tokencost" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why a self-managed pricing table (not LiteLLM / tokencost)?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-3-extend-agentresult-and-reviewresult" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 3 — Extend AgentResult and ReviewResult
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-4-extract-token-usage-from-each-provider" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 4 — Extract token usage from each provider
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 4 — Extract token usage from each provider">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#anthropic-appnominal_codellmanthropicpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Anthropic (app/nominal_code/llm/anthropic.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#openai-appnominal_codellmopenaipy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OpenAI (app/nominal_code/llm/openai.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#google-appnominal_codellmgooglepy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Google (app/nominal_code/llm/google.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#deepseek-groq-together-fireworks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DeepSeek, Groq, Together, Fireworks
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-5-accumulate-usage-in-the-api-runner" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 5 — Accumulate usage in the API runner
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-6-extract-cost-from-cli-runner" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 6 — Extract cost from CLI runner
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-7-surface-cost-in-logs-and-output" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 7 — Surface cost in logs and output
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 7 — Surface cost in logs and output">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#structured-logging-appnominal_codehandlersreviewpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Structured logging (app/nominal_code/handlers/review.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ci-output-appnominal_codecommandscipy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CI output (app/nominal_code/commands/ci.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reviewresult-propagation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ReviewResult propagation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#json-repair-cost-deferred" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        JSON repair cost (deferred)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-8-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 8 — Tests
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#file-change-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        File change summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#verification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Verification
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="plan-compute-the-price-of-a-code-review-job">Plan: Compute the Price of a Code Review Job<a class="headerlink" href="#plan-compute-the-price-of-a-code-review-job" title="Permanent link">&para;</a></h1>
+<h2 id="context">Context<a class="headerlink" href="#context" title="Permanent link">&para;</a></h2>
+<p>Nominal Code uses LLM APIs (Anthropic, OpenAI, Google, etc.) to power automated code reviews. Today, every API call's token usage data is <strong>silently discarded</strong> — providers return input/output token counts, but the <code>_to_llm_response()</code> functions in each provider throw them away. There is no way to know how much a review costs.</p>
+<p>Being able to measure cost per review is the prerequisite for all cost optimization work (model routing, caching strategies, batching) described in <code>COST_OPTIMIZATION_PLAN.md</code>. Without it, there's no baseline and no way to measure impact.</p>
+<p>The goal is to capture token usage from every LLM API call, accumulate it across the multi-turn agentic loop, compute a dollar cost using a pricing table, and surface the result in logs and the <code>AgentResult</code> / <code>ReviewResult</code> data models.</p>
+<hr />
+<h2 id="design">Design<a class="headerlink" href="#design" title="Permanent link">&para;</a></h2>
+<h3 id="data-flow">Data flow<a class="headerlink" href="#data-flow" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>Provider SDK response (has token counts)
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>        │
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>        ▼
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>_to_llm_response() ── extracts ──▶ TokenUsage ──▶ LLMResponse.usage
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>        │
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>        ▼
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>run_agent_api() loop ── accumulates per turn ──▶ total TokenUsage
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>        │
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>        ▼
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>build_cost_summary() ── applies pricing table ──▶ CostSummary
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>        │
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>        ▼
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>AgentResult.cost ──▶ ReviewResult.cost ──▶ logs / CI output
+</code></pre></div>
+<p>For the CLI runner, the SDK already provides <code>ResultMessage.total_cost_usd</code> and <code>ResultMessage.usage</code>, so we extract those directly instead of accumulating per-turn.</p>
+<hr />
+<h2 id="step-1-add-tokenusage-dataclass-and-extend-llmresponse">Step 1 — Add <code>TokenUsage</code> dataclass and extend <code>LLMResponse</code><a class="headerlink" href="#step-1-add-tokenusage-dataclass-and-extend-llmresponse" title="Permanent link">&para;</a></h2>
+<p><strong>File:</strong> <code>app/nominal_code/llm/messages.py</code></p>
+<p>Add a frozen dataclass for per-call token counts:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="k">class</span><span class="w"> </span><span class="nc">TokenUsage</span><span class="p">:</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>    <span class="n">input_tokens</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    <span class="n">output_tokens</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="n">cache_creation_input_tokens</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>   <span class="c1"># Anthropic-specific, 0 for others</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    <span class="n">cache_read_input_tokens</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>       <span class="c1"># Anthropic-specific, 0 for others</span>
+</code></pre></div>
+<p>Add a <code>usage</code> field to <code>LLMResponse</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="k">class</span><span class="w"> </span><span class="nc">LLMResponse</span><span class="p">:</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="n">content</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">TextBlock</span> <span class="o">|</span> <span class="n">ToolUseBlock</span><span class="p">]</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="n">stop_reason</span><span class="p">:</span> <span class="n">StopReason</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>    <span class="n">response_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>    <span class="n">usage</span><span class="p">:</span> <span class="n">TokenUsage</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>        <span class="c1"># NEW — backwards-compatible default</span>
+</code></pre></div>
+<hr />
+<h2 id="step-2-create-cost-module-with-pricing-table">Step 2 — Create cost module with pricing table<a class="headerlink" href="#step-2-create-cost-module-with-pricing-table" title="Permanent link">&para;</a></h2>
+<p><strong>File (new):</strong> <code>app/nominal_code/llm/cost.py</code></p>
+<p>Contains:</p>
+<ul>
+<li><strong><code>ModelPricing</code></strong> — <code>NamedTuple</code> with <code>input_per_token</code>, <code>output_per_token</code>, <code>cache_write_per_token</code>, <code>cache_read_per_token</code> (all in $/token, not $/MTok)</li>
+<li><strong><code>PRICING</code></strong> — <code>dict[str, ModelPricing]</code> keyed by model identifier string, covering every default model in <code>registry.PROVIDERS</code>:</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Input $/MTok</th>
+<th>Output $/MTok</th>
+<th>Cache Write</th>
+<th>Cache Read</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>claude-sonnet-4-20250514</code></td>
+<td>3.00</td>
+<td>15.00</td>
+<td>3.75</td>
+<td>0.30</td>
+</tr>
+<tr>
+<td><code>claude-opus-4-20250514</code></td>
+<td>15.00</td>
+<td>75.00</td>
+<td>18.75</td>
+<td>1.50</td>
+</tr>
+<tr>
+<td><code>claude-haiku-4-20250514</code></td>
+<td>1.00</td>
+<td>5.00</td>
+<td>1.25</td>
+<td>0.10</td>
+</tr>
+<tr>
+<td><code>gpt-4.1</code></td>
+<td>2.00</td>
+<td>8.00</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>gemini-2.5-flash</code></td>
+<td>0.30</td>
+<td>2.50</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>deepseek-chat</code></td>
+<td>0.28</td>
+<td>0.42</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>llama-3.3-70b-versatile</code></td>
+<td>0.59</td>
+<td>0.79</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>meta-llama/Llama-3.3-70B-Instruct-Turbo</code></td>
+<td>0.88</td>
+<td>0.88</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>accounts/fireworks/models/llama-v3p3-70b-instruct</code></td>
+<td>0.90</td>
+<td>0.90</td>
+<td>—</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong><code>CostSummary</code></strong> — Frozen dataclass with <code>total_input_tokens</code>, <code>total_output_tokens</code>, <code>total_cache_creation_tokens</code>, <code>total_cache_read_tokens</code>, <code>total_cost_usd: float | None</code>, <code>provider: str</code>, <code>model: str</code>, <code>num_api_calls: int</code></li>
+<li><strong><code>accumulate_usage(existing, new) -&gt; TokenUsage</code></strong> — Sums two <code>TokenUsage</code> instances</li>
+<li><strong><code>compute_cost(usage, model) -&gt; float | None</code></strong> — Looks up <code>_get_pricing()[model]</code> and multiplies; returns <code>None</code> for unknown models</li>
+<li><strong><code>build_cost_summary(usage, model, provider, num_api_calls) -&gt; CostSummary</code></strong> — Combines the above</li>
+</ul>
+<h3 id="why-a-self-managed-pricing-table-not-litellm-tokencost">Why a self-managed pricing table (not LiteLLM / tokencost)?<a class="headerlink" href="#why-a-self-managed-pricing-table-not-litellm-tokencost" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Verdict</th>
+<th>Reason</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>LiteLLM</strong> <code>completion_cost()</code></td>
+<td>Skip</td>
+<td>Heavy dependency (~15 MB, many transitive deps), designed as a full proxy/router layer. We only need a price lookup.</td>
+</tr>
+<tr>
+<td><strong>tokencost</strong></td>
+<td>Skip</td>
+<td>Infrequently updated, may lag new models. Adds a dependency for what is ~50 lines of data.</td>
+</tr>
+<tr>
+<td><strong>LangFuse / Helicone</strong></td>
+<td>Defer</td>
+<td>Full observability platforms — overkill for cost tracking alone. Worth revisiting when building <code>/metrics</code>.</td>
+</tr>
+<tr>
+<td><strong>Vendor LiteLLM's <code>model_prices_and_context_window.json</code></strong></td>
+<td>Optional future fallback</td>
+<td>MIT-licensed, ~250KB JSON file with 100+ models. Could be vendored as a fallback for models not in our <code>PRICING</code> dict. No runtime dependency.</td>
+</tr>
+<tr>
+<td><strong>Self-managed dict</strong></td>
+<td><strong>Use this</strong></td>
+<td>Zero dependencies, trivial to maintain (one dict), covers exactly the 7+ models we support, co-located with the code that uses it.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="step-3-extend-agentresult-and-reviewresult">Step 3 — Extend <code>AgentResult</code> and <code>ReviewResult</code><a class="headerlink" href="#step-3-extend-agentresult-and-reviewresult" title="Permanent link">&para;</a></h2>
+<p><strong>File:</strong> <code>app/nominal_code/agent/result.py</code></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="k">class</span><span class="w"> </span><span class="nc">AgentResult</span><span class="p">:</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="c1"># ... existing fields ...</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="n">cost</span><span class="p">:</span> <span class="n">CostSummary</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>    <span class="c1"># NEW</span>
+</code></pre></div>
+<p><strong>File:</strong> <code>app/nominal_code/handlers/review.py</code></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="k">class</span><span class="w"> </span><span class="nc">ReviewResult</span><span class="p">:</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="c1"># ... existing fields ...</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="n">cost</span><span class="p">:</span> <span class="n">CostSummary</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>    <span class="c1"># NEW</span>
+</code></pre></div>
+<p>Both are backwards-compatible (default <code>None</code>).</p>
+<hr />
+<h2 id="step-4-extract-token-usage-from-each-provider">Step 4 — Extract token usage from each provider<a class="headerlink" href="#step-4-extract-token-usage-from-each-provider" title="Permanent link">&para;</a></h2>
+<h3 id="anthropic-appnominal_codellmanthropicpy">Anthropic (<code>app/nominal_code/llm/anthropic.py</code>)<a class="headerlink" href="#anthropic-appnominal_codellmanthropicpy" title="Permanent link">&para;</a></h3>
+<p>Modify <code>_to_llm_response()</code> to read <code>response.usage</code>:
+- <code>response.usage.input_tokens</code> → uncached input tokens
+- <code>response.usage.output_tokens</code>
+- <code>response.usage.cache_creation_input_tokens</code> (use <code>getattr</code> with default 0 for backwards compat)
+- <code>response.usage.cache_read_input_tokens</code></p>
+<p><strong>Anthropic cache billing note:</strong> <code>input_tokens</code> is the <em>uncached</em> portion. Cache creation and read tokens are reported separately. The cost formula is:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>cost = input_tokens × standard_rate
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>     + cache_creation_tokens × 1.25 × standard_rate
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>     + cache_read_tokens × 0.1 × standard_rate
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>     + output_tokens × output_rate
+</code></pre></div></p>
+<h3 id="openai-appnominal_codellmopenaipy">OpenAI (<code>app/nominal_code/llm/openai.py</code>)<a class="headerlink" href="#openai-appnominal_codellmopenaipy" title="Permanent link">&para;</a></h3>
+<p>Two paths to update:
+1. <strong><code>_to_llm_response()</code></strong> (Chat Completions) — read <code>response.usage.prompt_tokens</code>, <code>response.usage.completion_tokens</code>
+2. <strong><code>_responses_to_llm_response()</code></strong> (Responses API) — read <code>response.usage.input_tokens</code>, <code>response.usage.output_tokens</code>
+3. <strong><code>_send_responses_api()</code></strong> — carry <code>usage</code> through when reconstructing <code>LLMResponse</code> with <code>response_id</code></p>
+<h3 id="google-appnominal_codellmgooglepy">Google (<code>app/nominal_code/llm/google.py</code>)<a class="headerlink" href="#google-appnominal_codellmgooglepy" title="Permanent link">&para;</a></h3>
+<p>Modify <code>_to_llm_response()</code> to read <code>response.usage_metadata.prompt_token_count</code>, <code>response.usage_metadata.candidates_token_count</code>.</p>
+<h3 id="deepseek-groq-together-fireworks">DeepSeek, Groq, Together, Fireworks<a class="headerlink" href="#deepseek-groq-together-fireworks" title="Permanent link">&para;</a></h3>
+<p>All use <code>OpenAIProvider</code> → Chat Completions path. Covered by the OpenAI change automatically.</p>
+<hr />
+<h2 id="step-5-accumulate-usage-in-the-api-runner">Step 5 — Accumulate usage in the API runner<a class="headerlink" href="#step-5-accumulate-usage-in-the-api-runner" title="Permanent link">&para;</a></h2>
+<p><strong>File:</strong> <code>app/nominal_code/agent/api/runner.py</code></p>
+<p>In <code>run_agent_api()</code>:</p>
+<ol>
+<li>Add <code>provider_name: str = ""</code> parameter (threaded from <code>run_agent()</code>)</li>
+<li>Initialize <code>accumulated_usage: TokenUsage | None = None</code> and <code>api_call_count: int = 0</code></li>
+<li>After each <code>provider.send()</code>:</li>
+<li>Increment <code>api_call_count</code></li>
+<li>If <code>response.usage is not None</code>, call <code>accumulate_usage(accumulated_usage, response.usage)</code></li>
+<li>At every <code>return AgentResult(...)</code> site (there are 4: normal end, submit_review, max_turns, error), include <code>cost=build_cost_summary(accumulated_usage, model, provider_name, api_call_count)</code></li>
+</ol>
+<p><strong>File:</strong> <code>app/nominal_code/agent/router.py</code></p>
+<p>Pass <code>provider_name=agent_config.provider.name</code> to <code>run_agent_api()</code>.</p>
+<hr />
+<h2 id="step-6-extract-cost-from-cli-runner">Step 6 — Extract cost from CLI runner<a class="headerlink" href="#step-6-extract-cost-from-cli-runner" title="Permanent link">&para;</a></h2>
+<p><strong>File:</strong> <code>app/nominal_code/agent/cli/runner.py</code></p>
+<p>The <code>claude_agent_sdk.ResultMessage</code> already has:
+- <code>total_cost_usd: float | None</code>
+- <code>usage: dict[str, Any] | None</code>
+- <code>duration_api_ms: int</code></p>
+<p>When processing <code>ResultMessage</code>, build a <code>CostSummary</code> from these fields:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">cli_cost</span> <span class="o">=</span> <span class="n">CostSummary</span><span class="p">(</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>    <span class="n">total_input_tokens</span><span class="o">=</span><span class="n">usage_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;input_tokens&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>    <span class="n">total_output_tokens</span><span class="o">=</span><span class="n">usage_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;output_tokens&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>    <span class="n">total_cache_creation_tokens</span><span class="o">=</span><span class="n">usage_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;cache_creation_input_tokens&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>    <span class="n">total_cache_read_tokens</span><span class="o">=</span><span class="n">usage_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;cache_read_input_tokens&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>    <span class="n">total_cost_usd</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">total_cost_usd</span><span class="p">,</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>    <span class="n">provider</span><span class="o">=</span><span class="s2">&quot;claude-cli&quot;</span><span class="p">,</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>    <span class="n">model</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span>  <span class="c1"># SDK doesn&#39;t expose this</span>
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="p">)</span>
+</code></pre></div>
+<p>The <code>usage</code> dict shape should be logged at DEBUG level on first use to confirm its exact keys.</p>
+<hr />
+<h2 id="step-7-surface-cost-in-logs-and-output">Step 7 — Surface cost in logs and output<a class="headerlink" href="#step-7-surface-cost-in-logs-and-output" title="Permanent link">&para;</a></h2>
+<h3 id="structured-logging-appnominal_codehandlersreviewpy">Structured logging (<code>app/nominal_code/handlers/review.py</code>)<a class="headerlink" href="#structured-logging-appnominal_codehandlersreviewpy" title="Permanent link">&para;</a></h3>
+<p>Extend the existing log line:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>Before: Reviewer finished for owner/repo#42 (findings=3, turns=5, duration=12345ms)
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>After:  Reviewer finished for owner/repo#42 (findings=3, turns=5, duration=12345ms, cost=$0.0412, tokens_in=8234, tokens_out=1856)
+</code></pre></div>
+<h3 id="ci-output-appnominal_codecommandscipy">CI output (<code>app/nominal_code/commands/ci.py</code>)<a class="headerlink" href="#ci-output-appnominal_codecommandscipy" title="Permanent link">&para;</a></h3>
+<p>Print a cost summary block visible in GitHub Actions / GitLab CI logs:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>Review completed for owner/repo#42
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>  Findings: 3 valid, 1 rejected
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>  Model: claude-sonnet-4-20250514 (anthropic)
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>  Tokens: 8,234 in / 1,856 out (cache read: 2,100)
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>  Cost: $0.0412
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>  Duration: 12,345ms (5 turns, 6 API calls)
+</code></pre></div>
+<h3 id="reviewresult-propagation">ReviewResult propagation<a class="headerlink" href="#reviewresult-propagation" title="Permanent link">&para;</a></h3>
+<p>Pass <code>result.cost</code> into <code>ReviewResult(cost=result.cost)</code> so callers have access.</p>
+<h3 id="json-repair-cost-deferred">JSON repair cost (deferred)<a class="headerlink" href="#json-repair-cost-deferred" title="Permanent link">&para;</a></h3>
+<p><code>_repair_review_output()</code> makes additional LLM calls. For now, log those costs separately rather than aggregating into the main review cost. Repair calls are rare.</p>
+<hr />
+<h2 id="step-8-tests">Step 8 — Tests<a class="headerlink" href="#step-8-tests" title="Permanent link">&para;</a></h2>
+<p><strong>New file:</strong> <code>app/tests/llm/test_cost.py</code></p>
+<table>
+<thead>
+<tr>
+<th>Test case</th>
+<th>What it validates</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>test_accumulate_usage_from_none</code></td>
+<td><code>accumulate_usage(None, usage)</code> returns the usage unchanged</td>
+</tr>
+<tr>
+<td><code>test_accumulate_usage_sums_fields</code></td>
+<td>Two usages are correctly summed field-by-field</td>
+</tr>
+<tr>
+<td><code>test_compute_cost_known_model</code></td>
+<td>Returns correct dollar amount for each model in <code>PRICING</code></td>
+</tr>
+<tr>
+<td><code>test_compute_cost_unknown_model</code></td>
+<td>Returns <code>None</code> for a model not in <code>PRICING</code></td>
+</tr>
+<tr>
+<td><code>test_compute_cost_with_cache</code></td>
+<td>Anthropic cache tokens priced at different rates</td>
+</tr>
+<tr>
+<td><code>test_build_cost_summary_no_usage</code></td>
+<td>Returns zero-valued summary when usage is <code>None</code></td>
+</tr>
+<tr>
+<td><code>test_all_registry_models_have_pricing</code></td>
+<td>Every default model in <code>registry.PROVIDERS</code> has an entry in <code>PRICING</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Extend existing provider test files:</strong></p>
+<ul>
+<li><code>tests/llm/test_anthropic.py</code> — verify <code>_to_llm_response()</code> extracts usage (with and without cache fields)</li>
+<li><code>tests/llm/test_openai.py</code> — both Chat Completions and Responses API paths</li>
+<li><code>tests/llm/test_google.py</code> — verify <code>usage_metadata</code> extraction</li>
+</ul>
+<p><strong>Extend runner tests:</strong></p>
+<ul>
+<li><code>tests/agent/api/test_runner.py</code> — mock provider returning <code>LLMResponse</code> with usage across 2+ turns, verify <code>AgentResult.cost</code> has correct accumulated totals</li>
+</ul>
+<hr />
+<h2 id="file-change-summary">File change summary<a class="headerlink" href="#file-change-summary" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Change</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>llm/messages.py</code></td>
+<td>Modify</td>
+<td>Add <code>TokenUsage</code> dataclass, add <code>usage</code> field to <code>LLMResponse</code></td>
+</tr>
+<tr>
+<td><code>llm/cost.py</code></td>
+<td><strong>New</strong></td>
+<td><code>CostSummary</code>, <code>ModelPricing</code>, <code>PRICING</code> dict, utility functions</td>
+</tr>
+<tr>
+<td><code>agent/result.py</code></td>
+<td>Modify</td>
+<td>Add <code>cost: CostSummary \| None = None</code> field</td>
+</tr>
+<tr>
+<td><code>llm/anthropic.py</code></td>
+<td>Modify</td>
+<td>Extract usage in <code>_to_llm_response()</code></td>
+</tr>
+<tr>
+<td><code>llm/openai.py</code></td>
+<td>Modify</td>
+<td>Extract usage in both response conversion functions</td>
+</tr>
+<tr>
+<td><code>llm/google.py</code></td>
+<td>Modify</td>
+<td>Extract usage in <code>_to_llm_response()</code></td>
+</tr>
+<tr>
+<td><code>agent/api/runner.py</code></td>
+<td>Modify</td>
+<td>Accumulate usage across turns, add <code>provider_name</code> param</td>
+</tr>
+<tr>
+<td><code>agent/router.py</code></td>
+<td>Modify</td>
+<td>Thread <code>provider_name</code> to <code>run_agent_api()</code></td>
+</tr>
+<tr>
+<td><code>agent/cli/runner.py</code></td>
+<td>Modify</td>
+<td>Extract cost from <code>ResultMessage</code></td>
+</tr>
+<tr>
+<td><code>handlers/review.py</code></td>
+<td>Modify</td>
+<td>Add <code>cost</code> to <code>ReviewResult</code>, extend log message</td>
+</tr>
+<tr>
+<td><code>commands/ci.py</code></td>
+<td>Modify</td>
+<td>Print cost summary in CI output</td>
+</tr>
+<tr>
+<td><code>tests/llm/test_cost.py</code></td>
+<td><strong>New</strong></td>
+<td>Unit tests for cost module</td>
+</tr>
+<tr>
+<td>Existing LLM provider test files</td>
+<td>Modify</td>
+<td>Add usage extraction tests</td>
+</tr>
+<tr>
+<td><code>tests/agent/api/test_runner.py</code></td>
+<td>Modify</td>
+<td>Add cost accumulation tests</td>
+</tr>
+</tbody>
+</table>
+<h2 id="verification">Verification<a class="headerlink" href="#verification" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>Unit tests:</strong> <code>cd app &amp;&amp; uv run pytest tests/llm/test_cost.py tests/llm/ tests/agent/api/test_runner.py -v</code></li>
+<li><strong>Type check:</strong> <code>cd app &amp;&amp; uv run mypy nominal_code/llm/cost.py nominal_code/llm/messages.py nominal_code/agent/result.py</code></li>
+<li><strong>Manual smoke test (CI mode):</strong> Run <code>nominal-code ci github</code> on a test PR with <code>ANTHROPIC_API_KEY</code> set and <code>LOG_LEVEL=INFO</code>. Verify cost appears in log output.</li>
+<li><strong>Manual smoke test (CLI mode):</strong> Run <code>nominal-code review owner/repo#N</code> and verify cost appears in log output.</li>
+<li><strong>Full test suite:</strong> <code>cd app &amp;&amp; uv run pytest</code> — all existing tests must still pass (changes are backwards-compatible via defaults).</li>
+</ol>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.sections", "navigation.expand", "search.highlight", "search.suggest", "content.code.copy", "content.tabs.link"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
