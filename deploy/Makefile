@@ -28,7 +28,7 @@ deploy-ci: _ci-secret ## Deploy to Kubernetes for CI (IMAGE_TAG=sha to pin)
 	kubectl -n $(NAMESPACE) rollout status  deployment/nominal-code-server --timeout=$(TIMEOUT)s
 
 build: ## Build the container image
-	docker build -f ../ci/Dockerfile -t $(IMAGE_REF) ..
+	docker build -f ../ci/Dockerfile --build-arg SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0+local -t $(IMAGE_REF) ..
 
 teardown: ## Delete the k8s namespace and all resources
 	kubectl delete namespace $(NAMESPACE) --ignore-not-found
