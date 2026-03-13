@@ -23,7 +23,7 @@ NAMESPACE = "nominal-code"
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "test-secret")
 LOCAL_PORT = 9090
 SERVER_URL = f"http://localhost:{LOCAL_PORT}"
-JOB_IMAGE = "nominal-code"
+JOB_IMAGE = os.environ.get("K8S_IMAGE", "nominal-code")
 
 JOB_CREATION_TIMEOUT = 30
 JOB_COMPLETION_TIMEOUT = 300

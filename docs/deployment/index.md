@@ -1,6 +1,6 @@
 # Deployment
 
-Nominal Code can be deployed as a **standalone server** (single process, no orchestrator) or on **Kubernetes** (webhook server + Job-per-review scaling). Both options run the same webhook server — the difference is how review jobs are executed.
+Nominal Code can be deployed as a **standalone server** or on **Kubernetes**. Both run the same webhook server — the difference is how review jobs are executed and how the server is managed.
 
 | | Standalone | Kubernetes |
 |---|---|---|
@@ -9,24 +9,71 @@ Nominal Code can be deployed as a **standalone server** (single process, no orch
 | Conversation store | In-memory | Redis (required) |
 | Scaling | Single process | Unlimited concurrent Jobs |
 | Dependencies | Claude Code CLI on `PATH`, or an LLM provider API key | K8s cluster, container image, LLM provider API key |
-| Best for | Small teams, simple setup | Production, high-volume orgs |
+| Best for | Small teams, local development | Production, high-volume orgs |
+
+Both modes are driven by `make` targets in the `deploy/` directory:
+
+```bash
+make -C deploy serve      # standalone server
+make -C deploy deploy     # kubernetes
+```
 
 Choose your deployment model:
 
-- **[Standalone](standalone.md)** — run the server directly, no orchestrator needed
+- **[Standalone](standalone.md)** — run the server directly with `make serve`
 - **[Kubernetes](kubernetes.md)** — deploy to a K8s cluster with per-review Job isolation
 
-Both models support a [YAML config file](../reference/configuration.md#yaml-config-file) as the primary configuration method. See [Configuration](../reference/configuration.md) for the full schema.
+## Configuration Layout
+
+```
+deploy/
+├── Makefile                          # All targets: serve, deploy, teardown, logs, ...
+├── local/
+│   └── config.yaml                   # App config (standalone mode)
+├── k8s/
+│   ├── base/                         # Kustomize base manifests
+│   │   ├── config.yaml               # App config + redis/k8s settings
+│   │   ├── deployment.yaml
+│   │   ├── kustomization.yaml
+│   │   ├── namespace.yaml
+│   │   ├── rbac.yaml
+│   │   ├── redis.yaml
+│   │   └── service.yaml
+│   ├── kustomization.yaml            # Includes base + secrets
+│   ├── secret.yaml.template
+│   └── secret.yaml                   # Your secrets (gitignored)
+└── ci/                               # CI overlay (secrets from env vars)
+    ├── kustomization.yaml
+    └── deployment-patch.yaml
+```
+
+The config YAML files contain non-secret application settings (webhook host/port, reviewer bot, agent provider). The Kubernetes config adds `redis` and `kubernetes` sections that are only relevant in-cluster. Secrets (tokens, API keys, webhook secrets) are kept separate — as environment variables in standalone mode, or in Kubernetes Secret manifests for K8s deployments.
+
+## Quick Reference
+
+All commands are run from the repository root.
+
+| Command | Description |
+|---|---|
+| `make -C deploy serve` | Start the standalone webhook server |
+| `make -C deploy deploy` | Deploy to Kubernetes (pulls image from GHCR) |
+| `make -C deploy deploy-ci` | Deploy to Kubernetes with secrets from env vars |
+| `make -C deploy teardown` | Delete the `nominal-code` K8s namespace |
+| `make -C deploy logs` | Tail the K8s server pod logs |
+| `make -C deploy status` | Show K8s pods, jobs, and services |
+| `make -C deploy port-forward` | Forward `localhost:8080` to the K8s service |
+| `make -C deploy build` | Build the container image |
+| `make -C deploy help` | Show all available targets |
 
 ## Health Endpoint
 
-The server exposes a health check at:
+Both deployment modes expose a health check at:
 
 ```
 GET /health
 ```
 
-Returns `{"status": "ok"}` with a 200 status code. Use this for load balancer health checks or uptime monitoring.
+Returns `{"status": "ok"}` with a 200 status code. Use this for load balancer health checks, readiness probes, or uptime monitoring.
 
 ## Log Levels
 
