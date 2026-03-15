@@ -6,11 +6,13 @@ import time
 from pathlib import Path
 
 from nominal_code.agent.api.tools import (
+    DEFAULT_ALLOWED_CLONE_HOSTS,
     SUBMIT_REVIEW_TOOL_NAME,
     execute_tool,
     get_tool_definitions,
 )
 from nominal_code.agent.result import AgentResult
+from nominal_code.agent.sandbox import build_sanitized_env
 from nominal_code.conversation.base import truncate_messages
 from nominal_code.llm.cost import build_cost_summary
 from nominal_code.llm.messages import (
@@ -41,6 +43,8 @@ async def run_api_agent(
     allowed_tools: list[str] | None = None,
     prior_messages: list[Message] | None = None,
     provider_name: ProviderName = ProviderName.GOOGLE,
+    sanitized_env: dict[str, str] | None = None,
+    allowed_clone_hosts: frozenset[str] | None = None,
 ) -> AgentResult:
     """
     Run the agent using an LLM provider with tool use.
@@ -64,10 +68,24 @@ async def run_api_agent(
         prior_messages (list[Message] | None): Prior conversation messages
             for multi-turn continuity. Prepended before the new user message.
         provider_name (ProviderName): Provider identifier for cost tracking.
+        sanitized_env (dict[str, str] | None): Allowlisted environment for
+            subprocess tool execution. When ``None``, a default sanitized
+            environment is built automatically.
+        allowed_clone_hosts (frozenset[str] | None): Hostnames allowed for
+            ``git clone`` commands. ``None`` uses the default set.
 
     Returns:
         AgentResult: The parsed result from the agent.
     """
+
+    if sanitized_env is None:
+        sanitized_env = build_sanitized_env()
+
+    effective_clone_hosts: frozenset[str] = (
+        allowed_clone_hosts
+        if allowed_clone_hosts is not None
+        else DEFAULT_ALLOWED_CLONE_HOSTS
+    )
 
     tool_definitions: list[ToolDefinition] = get_tool_definitions(
         allowed_tools=allowed_tools,
@@ -176,6 +194,8 @@ async def run_api_agent(
                     tool_input=block.input,
                     cwd=cwd,
                     allowed_tools=allowed_tools,
+                    sanitized_env=sanitized_env,
+                    allowed_clone_hosts=effective_clone_hosts,
                 )
 
                 logger.debug(

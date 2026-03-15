@@ -233,6 +233,85 @@ class TestKubernetesRunnerBuildJobSpec:
 
         assert "resources" not in container
 
+    def test_security_context_enabled_by_default(self):
+        config = _make_config()
+        runner = KubernetesRunner(config=config, queue=_make_mock_queue())
+        job = _make_job()
+
+        spec = runner._build_job_spec(payload="{}", job=job)
+        container = spec["spec"]["template"]["spec"]["containers"][0]
+        sec_ctx = container["securityContext"]
+
+        assert sec_ctx["readOnlyRootFilesystem"] is True
+        assert sec_ctx["runAsNonRoot"] is True
+        assert sec_ctx["runAsUser"] == 1000
+        assert sec_ctx["allowPrivilegeEscalation"] is False
+        assert sec_ctx["capabilities"] == {"drop": ["ALL"]}
+
+    def test_volume_mounts_present_when_security_enabled(self):
+        config = _make_config()
+        runner = KubernetesRunner(config=config, queue=_make_mock_queue())
+        job = _make_job()
+
+        spec = runner._build_job_spec(payload="{}", job=job)
+        container = spec["spec"]["template"]["spec"]["containers"][0]
+        mount_paths = [vm["mountPath"] for vm in container["volumeMounts"]]
+
+        assert "/workspace" in mount_paths
+        assert "/tmp" in mount_paths
+
+    def test_automount_service_account_token_false_by_default(self):
+        config = _make_config()
+        runner = KubernetesRunner(config=config, queue=_make_mock_queue())
+        job = _make_job()
+
+        spec = runner._build_job_spec(payload="{}", job=job)
+        pod_spec = spec["spec"]["template"]["spec"]
+
+        assert pod_spec["automountServiceAccountToken"] is False
+
+    def test_volumes_present_when_security_enabled(self):
+        config = _make_config()
+        runner = KubernetesRunner(config=config, queue=_make_mock_queue())
+        job = _make_job()
+
+        spec = runner._build_job_spec(payload="{}", job=job)
+        pod_spec = spec["spec"]["template"]["spec"]
+        volume_names = [vol["name"] for vol in pod_spec["volumes"]]
+
+        assert "workspace" in volume_names
+        assert "tmp" in volume_names
+
+    def test_security_disabled(self):
+        config = KubernetesConfig(
+            image="nominal-code:dev",
+            pod_security_enabled=False,
+        )
+        runner = KubernetesRunner(config=config, queue=_make_mock_queue())
+        job = _make_job()
+
+        spec = runner._build_job_spec(payload="{}", job=job)
+        container = spec["spec"]["template"]["spec"]["containers"][0]
+        pod_spec = spec["spec"]["template"]["spec"]
+
+        assert "securityContext" not in container
+        assert "volumeMounts" not in container
+        assert "automountServiceAccountToken" not in pod_spec
+        assert "volumes" not in pod_spec
+
+    def test_custom_run_as_user(self):
+        config = KubernetesConfig(
+            image="nominal-code:dev",
+            run_as_user=65534,
+        )
+        runner = KubernetesRunner(config=config, queue=_make_mock_queue())
+        job = _make_job()
+
+        spec = runner._build_job_spec(payload="{}", job=job)
+        container = spec["spec"]["template"]["spec"]["containers"][0]
+
+        assert container["securityContext"]["runAsUser"] == 65534
+
     def test_redis_url_forwarded_when_set(self):
         config = _make_config()
         runner = KubernetesRunner(config=config, queue=_make_mock_queue())

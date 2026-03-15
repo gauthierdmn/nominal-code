@@ -6,6 +6,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from nominal_code.agent.prompts import (
+    TAG_BRANCH_NAME,
+    TAG_FILE_PATH,
+    TAG_UNTRUSTED_COMMENT,
+    TAG_UNTRUSTED_DIFF,
+    TAG_UNTRUSTED_REQUEST,
+)
 from nominal_code.agent.result import AgentResult
 from nominal_code.config import CliAgentConfig, ReviewerConfig
 from nominal_code.conversation.memory import MemoryConversationStore
@@ -449,6 +456,9 @@ class TestBuildReviewerPrompt:
         assert "focus on security" in result
         assert "-old" in result
         assert "+new" in result
+        assert f"<{TAG_FILE_PATH}>" in result
+        assert f"<{TAG_UNTRUSTED_DIFF}>" in result
+        assert f"<{TAG_UNTRUSTED_REQUEST}>" in result
 
     def test__build_reviewer_prompt_with_deps_path(self):
         comment = _make_comment()
@@ -522,8 +532,9 @@ class TestBuildReviewerPromptWithExistingComments:
 
         assert "Existing discussions" in result
         assert "@alice" in result
-        assert "`a.py:10`" in result
-        assert "> Bug on this line" in result
+        assert f"`<{TAG_FILE_PATH}>a.py</{TAG_FILE_PATH}>:10`" in result
+        assert "Bug on this line" in result
+        assert f"<{TAG_UNTRUSTED_COMMENT}>" in result
 
     def test__build_reviewer_prompt_no_existing_comments_omits_section(self):
         comment = _make_comment()
@@ -592,7 +603,7 @@ class TestBuildReviewerPromptWithExistingComments:
         )
 
         assert "**@alice**\n" in result
-        assert "> General comment" in result
+        assert "General comment" in result
 
 
 class TestBotCommentFiltering:
@@ -1016,6 +1027,7 @@ class TestFormatExistingComments:
 
         assert "alice" in result
         assert "Looks good!" in result
+        assert f"<{TAG_UNTRUSTED_COMMENT}>" in result
 
     def test_format_existing_comments_includes_file_path(self):
         comments = [
@@ -1056,3 +1068,98 @@ class TestFormatExistingComments:
 
         assert "alice" in result
         assert "LGTM" in result
+
+
+class TestPromptBoundaryTags:
+    def test__build_reviewer_prompt_wraps_diff_in_boundary_tags(self):
+        comment = _make_comment()
+        changed_files = [
+            ChangedFile(
+                file_path="src/main.py",
+                status=FileStatus.MODIFIED,
+                patch="@@ -1 +1 @@\n-old\n+new",
+            ),
+        ]
+
+        result = _build_reviewer_prompt(
+            event=comment, user_prompt="", changed_files=changed_files
+        )
+
+        assert f"<{TAG_UNTRUSTED_DIFF}>" in result
+        assert f"</{TAG_UNTRUSTED_DIFF}>" in result
+
+    def test__build_reviewer_prompt_wraps_user_prompt_in_boundary_tags(self):
+        comment = _make_comment()
+        changed_files = [
+            ChangedFile(
+                file_path="src/main.py",
+                status=FileStatus.MODIFIED,
+                patch="+new",
+            ),
+        ]
+
+        result = _build_reviewer_prompt(
+            event=comment, user_prompt="check security", changed_files=changed_files
+        )
+
+        assert f"<{TAG_UNTRUSTED_REQUEST}>" in result
+        assert f"</{TAG_UNTRUSTED_REQUEST}>" in result
+        assert "check security" in result
+
+    def test__build_reviewer_prompt_wraps_branch_in_boundary_tags(self):
+        comment = _make_comment(branch="feat/evil-branch")
+        changed_files = [
+            ChangedFile(
+                file_path="src/main.py",
+                status=FileStatus.MODIFIED,
+                patch="+new",
+            ),
+        ]
+
+        result = _build_reviewer_prompt(
+            event=comment, user_prompt="", changed_files=changed_files
+        )
+
+        assert f"<{TAG_BRANCH_NAME}>feat/evil-branch</{TAG_BRANCH_NAME}>" in result
+
+    def test__build_reviewer_prompt_wraps_file_paths_in_boundary_tags(self):
+        comment = _make_comment()
+        changed_files = [
+            ChangedFile(
+                file_path="src/main.py",
+                status=FileStatus.MODIFIED,
+                patch="+new",
+            ),
+        ]
+
+        result = _build_reviewer_prompt(
+            event=comment, user_prompt="", changed_files=changed_files
+        )
+
+        assert f"<{TAG_FILE_PATH}>src/main.py</{TAG_FILE_PATH}>" in result
+
+    def test__format_existing_comments_wraps_body_in_boundary_tags(self):
+        comments = [
+            ExistingComment(author="alice", body="Nice work!", created_at=""),
+        ]
+
+        result = _format_existing_comments(comments=comments)
+
+        assert f"<{TAG_UNTRUSTED_COMMENT}>" in result
+        assert f"</{TAG_UNTRUSTED_COMMENT}>" in result
+        assert "Nice work!" in result
+
+    def test__format_existing_comments_wraps_file_path_in_boundary_tags(self):
+        comments = [
+            ExistingComment(
+                author="bob",
+                body="Fix this.",
+                file_path="src/main.py",
+                line=5,
+                created_at="",
+            ),
+        ]
+
+        result = _format_existing_comments(comments=comments)
+
+        assert f"<{TAG_FILE_PATH}>src/main.py</{TAG_FILE_PATH}>" in result

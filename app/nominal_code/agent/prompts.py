@@ -9,6 +9,31 @@ if TYPE_CHECKING:
 
 NOMINAL_CONFIG_DIR: str = ".nominal"
 REPO_GUIDELINES_PATH: Path = Path(NOMINAL_CONFIG_DIR) / "guidelines.md"
+
+TAG_UNTRUSTED_DIFF: str = "untrusted-diff"
+TAG_UNTRUSTED_COMMENT: str = "untrusted-comment"
+TAG_UNTRUSTED_REQUEST: str = "untrusted-request"
+TAG_UNTRUSTED_HUNK: str = "untrusted-hunk"
+TAG_FILE_PATH: str = "file-path"
+TAG_BRANCH_NAME: str = "branch-name"
+TAG_REPO_GUIDELINES: str = "repo-guidelines"
+
+
+def wrap_tag(tag: str, content: str) -> str:
+    """
+    Wrap content in XML boundary tags for prompt injection defense.
+
+    Args:
+        tag (str): The XML tag name.
+        content (str): The content to wrap.
+
+    Returns:
+        str: The content wrapped in opening and closing XML tags.
+    """
+
+    return f"<{tag}>\n{content}\n</{tag}>"
+
+
 EXTENSION_TO_LANGUAGE: dict[str, str] = {
     ".py": "python",
     ".pyi": "python",
@@ -82,7 +107,10 @@ def resolve_system_prompt(
         file_paths=file_paths,
     )
 
-    return bot_system_prompt + "\n\n" + guidelines
+    if guidelines:
+        return bot_system_prompt + "\n\n" + wrap_tag(TAG_REPO_GUIDELINES, guidelines)
+
+    return bot_system_prompt
 
 
 def _load_repo_guidelines(repo_path: Path) -> str:

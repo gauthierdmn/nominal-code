@@ -89,15 +89,34 @@ class GitWorkspace:
         """
         Ensure the workspace is cloned and up to date.
 
-        If the directory does not exist, performs a shallow clone and
-        checks out the target branch. If it already exists, fetches
-        from origin and resets to the latest remote state.
+        When no ``clone_url`` was provided but ``.git`` already exists,
+        the workspace is treated as externally managed (e.g. pre-cloned
+        by CI or an init container) and no git operations are performed.
+
+        When a ``clone_url`` is set, clones or fetches as needed.
 
         Raises:
-            RuntimeError: If a git operation fails.
+            RuntimeError: If a git operation fails, or if no
+                ``clone_url`` was provided and ``.git`` does not exist.
         """
 
-        if (self.repo_path / GIT_FOLDER_NAME).is_dir():
+        git_dir_exists: bool = (self.repo_path / GIT_FOLDER_NAME).is_dir()
+
+        if not self._clone_url:
+            if not git_dir_exists:
+                raise RuntimeError(
+                    f"No clone URL provided and {self.repo_path / GIT_FOLDER_NAME} "
+                    "does not exist — cannot prepare workspace",
+                )
+
+            logger.info(
+                "Workspace externally managed, skipping clone/fetch for %s",
+                self.repo_path,
+            )
+
+            return
+
+        if git_dir_exists:
             await self._update()
         else:
             await self._clone()
@@ -138,6 +157,10 @@ class GitWorkspace:
         """
         Shallow clone the repository and check out the target branch.
 
+        Disables git hooks, symlinks, and the ``file://`` protocol to
+        prevent malicious repositories from executing code during clone
+        via ``.gitmodules``, ``post-checkout`` hooks, or symlink escapes.
+
         Raises:
             RuntimeError: If the clone or checkout fails.
         """
@@ -152,6 +175,12 @@ class GitWorkspace:
             "--depth=1",
             f"--branch={self._branch}",
             "--single-branch",
+            "--config",
+            "core.hooksPath=/dev/null",
+            "--config",
+            "core.symlinks=false",
+            "--config",
+            "protocol.file.allow=never",
             self._clone_url,
             self.repo_path,
         )
@@ -160,12 +189,18 @@ class GitWorkspace:
         """
         Fetch the latest changes and reset to the remote branch.
 
+        Sets ``core.hooksPath=/dev/null`` before fetching to prevent
+        hook execution during fetch/reset on an existing workspace.
+
         Raises:
             RuntimeError: If the fetch or reset fails.
         """
 
         logger.info("Updating workspace %s", self.repo_path)
 
+        await self._run_git("config", "core.hooksPath", "/dev/null")
+        await self._run_git("config", "core.symlinks", "false")
+        await self._run_git("config", "protocol.file.allow", "never")
         await self._run_git("fetch", "origin", self._branch)
         await self._run_git("reset", "--hard", f"origin/{self._branch}")
         await self._run_git("clean", "-fdx")

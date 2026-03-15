@@ -81,6 +81,8 @@ async def invoke_agent(
     agent_config: AgentConfig | None = None,
     conversation_id: str | None = None,
     prior_messages: list[Message] | None = None,
+    sanitized_env: dict[str, str] | None = None,
+    allowed_clone_hosts: frozenset[str] | None = None,
 ) -> AgentResult:
     """
     Run the agent by routing to the CLI or API backend.
@@ -101,6 +103,11 @@ async def invoke_agent(
         conversation_id (str | None): Optional conversation ID to resume.
         prior_messages (list[Message] | None): Prior conversation messages
             for multi-turn continuity (API mode only).
+        sanitized_env (dict[str, str] | None): Allowlisted environment for
+            subprocess tool execution (API mode only). CLI mode inherits the
+            full parent environment.
+        allowed_clone_hosts (frozenset[str] | None): Hostnames allowed for
+            ``git clone`` commands. ``None`` uses the default set.
 
     Returns:
         AgentResult: The parsed result from the agent.
@@ -123,6 +130,8 @@ async def invoke_agent(
                 allowed_tools=allowed_tools,
                 prior_messages=prior_messages,
                 provider_name=agent_config.provider.name,
+                sanitized_env=sanitized_env,
+                allowed_clone_hosts=allowed_clone_hosts,
             )
         finally:
             await provider.close()

@@ -20,6 +20,13 @@ class KubernetesConfig(BaseModel):
         resource_requests_memory (str): Memory request (e.g. ``"512Mi"``).
         resource_limits_cpu (str): CPU limit.
         resource_limits_memory (str): Memory limit.
+        pod_security_enabled (bool): Enable pod security hardening
+            (``securityContext``, ``automountServiceAccountToken``).
+        run_as_user (int): UID to run the container as when security is enabled.
+        read_only_root_filesystem (bool): Mount the root filesystem as
+            read-only when security is enabled.
+        automount_service_account_token (bool): Whether to mount the service
+            account token in job pods.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -36,3 +43,7 @@ class KubernetesConfig(BaseModel):
     resource_requests_memory: str = ""
     resource_limits_cpu: str = ""
     resource_limits_memory: str = ""
+    pod_security_enabled: bool = True
+    run_as_user: int = 1000
+    read_only_root_filesystem: bool = True
+    automount_service_account_token: bool = False

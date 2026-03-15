@@ -10,7 +10,15 @@ from nominal_code.agent.invoke import (
     prepare_conversation,
     save_conversation,
 )
-from nominal_code.agent.prompts import resolve_system_prompt
+from nominal_code.agent.prompts import (
+    TAG_BRANCH_NAME,
+    TAG_FILE_PATH,
+    TAG_UNTRUSTED_HUNK,
+    TAG_UNTRUSTED_REQUEST,
+    resolve_system_prompt,
+    wrap_tag,
+)
+from nominal_code.agent.sandbox import build_sanitized_env
 from nominal_code.models import BotType
 from nominal_code.platforms.base import CommentEvent, CommentReply
 from nominal_code.workspace.setup import create_workspace
@@ -82,6 +90,8 @@ async def review_and_fix(
             namespace=namespace,
         )
 
+        sanitized_env: dict[str, str] = build_sanitized_env()
+
         result = await invoke_agent(
             prompt=full_prompt,
             cwd=workspace.repo_path,
@@ -89,6 +99,7 @@ async def review_and_fix(
             agent_config=config.agent,
             conversation_id=conversation_id,
             prior_messages=prior_messages,
+            sanitized_env=sanitized_env,
         )
 
         save_conversation(
@@ -136,16 +147,17 @@ def _build_prompt(
     parts: list[str] = []
 
     if event.file_path:
-        parts.append(f"File: {event.file_path}")
+        parts.append(f"File: <{TAG_FILE_PATH}>{event.file_path}</{TAG_FILE_PATH}>")
 
     if event.diff_hunk:
-        parts.append(f"Diff context:\n```\n{event.diff_hunk}\n```")
+        parts.append(f"Diff context:\n{wrap_tag(TAG_UNTRUSTED_HUNK, event.diff_hunk)}")
 
     parts.append(
-        f"Branch: {event.pr_branch} (PR #{event.pr_number} on {event.repo_full_name})"
+        f"Branch: <{TAG_BRANCH_NAME}>{event.pr_branch}</{TAG_BRANCH_NAME}>"
+        f" (PR #{event.pr_number} on {event.repo_full_name})"
     )
 
-    parts.append(f"Request: {user_prompt}")
+    parts.append(f"Request:\n{wrap_tag(TAG_UNTRUSTED_REQUEST, user_prompt)}")
 
     if deps_path is not None:
         parts.append(

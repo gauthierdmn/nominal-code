@@ -217,6 +217,20 @@ class KubernetesRunner:
             "envFrom": env_from,
         }
 
+        if self._config.pod_security_enabled:
+            container["securityContext"] = {
+                "readOnlyRootFilesystem": self._config.read_only_root_filesystem,
+                "runAsNonRoot": True,
+                "runAsUser": self._config.run_as_user,
+                "allowPrivilegeEscalation": False,
+                "capabilities": {"drop": ["ALL"]},
+            }
+
+            container["volumeMounts"] = [
+                {"name": "workspace", "mountPath": "/workspace"},
+                {"name": "tmp", "mountPath": "/tmp"},
+            ]
+
         if self._config.image_pull_policy:
             container["imagePullPolicy"] = self._config.image_pull_policy
 
@@ -249,6 +263,15 @@ class KubernetesRunner:
             "containers": [container],
             "restartPolicy": "Never",
         }
+
+        if self._config.pod_security_enabled:
+            pod_spec["automountServiceAccountToken"] = (
+                self._config.automount_service_account_token
+            )
+            pod_spec["volumes"] = [
+                {"name": "workspace", "emptyDir": {}},
+                {"name": "tmp", "emptyDir": {}},
+            ]
 
         if self._config.service_account:
             pod_spec["serviceAccountName"] = self._config.service_account
