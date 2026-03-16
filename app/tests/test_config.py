@@ -4,14 +4,14 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-
-from nominal_code.config import ApiAgentConfig, CliAgentConfig, Config
 from nominal_code.config.settings import (
     load_file_content,
     load_language_guidelines,
     parse_reviewer_triggers,
     parse_title_tags,
 )
+
+from nominal_code.config import ApiAgentConfig, CliAgentConfig, Config
 from nominal_code.models import EventType, ProviderName
 
 

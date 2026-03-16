@@ -4,10 +4,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
+from nominal_code.config.settings import WebhookConfig
 
 from nominal_code.commands.webhook.server import create_app, should_process_event
 from nominal_code.config.policies import FilteringPolicy, RoutingPolicy
-from nominal_code.config.settings import WebhookConfig
 from nominal_code.models import EventType
 from nominal_code.platforms.base import (
     CommentEvent,

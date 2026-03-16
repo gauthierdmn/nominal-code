@@ -1,5 +1,4 @@
 # type: ignore
-import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -233,7 +232,7 @@ class TestKubernetesRunnerBuildJobSpec:
 
         assert "resources" not in container
 
-    def test_security_context_enabled_by_default(self):
+    def test_security_context_hardened(self):
         config = _make_config()
         runner = KubernetesRunner(config=config, queue=_make_mock_queue())
         job = _make_job()
@@ -248,7 +247,7 @@ class TestKubernetesRunnerBuildJobSpec:
         assert sec_ctx["allowPrivilegeEscalation"] is False
         assert sec_ctx["capabilities"] == {"drop": ["ALL"]}
 
-    def test_volume_mounts_present_when_security_enabled(self):
+    def test_volume_mounts_present(self):
         config = _make_config()
         runner = KubernetesRunner(config=config, queue=_make_mock_queue())
         job = _make_job()
@@ -260,7 +259,7 @@ class TestKubernetesRunnerBuildJobSpec:
         assert "/workspace" in mount_paths
         assert "/tmp" in mount_paths
 
-    def test_automount_service_account_token_false_by_default(self):
+    def test_automount_service_account_token_false(self):
         config = _make_config()
         runner = KubernetesRunner(config=config, queue=_make_mock_queue())
         job = _make_job()
@@ -270,7 +269,7 @@ class TestKubernetesRunnerBuildJobSpec:
 
         assert pod_spec["automountServiceAccountToken"] is False
 
-    def test_volumes_present_when_security_enabled(self):
+    def test_volumes_present(self):
         config = _make_config()
         runner = KubernetesRunner(config=config, queue=_make_mock_queue())
         job = _make_job()
@@ -284,33 +283,32 @@ class TestKubernetesRunnerBuildJobSpec:
 
     def test_redis_url_forwarded_when_set(self):
         config = _make_config()
-        runner = KubernetesRunner(config=config, queue=_make_mock_queue())
+        runner = KubernetesRunner(
+            config=config,
+            queue=_make_mock_queue(),
+            redis_url="redis://redis:6379/0",
+        )
         job = _make_job()
 
-        with patch.dict("os.environ", {"REDIS_URL": "redis://redis:6379/0"}):
-            spec = runner._build_job_spec(
-                payload="{}",
-                job=job,
-            )
+        spec = runner._build_job_spec(payload="{}", job=job)
 
         container = spec["spec"]["template"]["spec"]["containers"][0]
         env_vars = {env["name"]: env["value"] for env in container["env"]}
 
         assert env_vars["REDIS_URL"] == "redis://redis:6379/0"
+        assert env_vars["REDIS_KEY_TTL_SECONDS"] == "86400"
 
     def test_redis_url_and_ttl_forwarded(self):
         config = _make_config()
-        runner = KubernetesRunner(config=config, queue=_make_mock_queue())
+        runner = KubernetesRunner(
+            config=config,
+            queue=_make_mock_queue(),
+            redis_url="redis://redis:6379/0",
+            redis_key_ttl_seconds=3600,
+        )
         job = _make_job()
 
-        with patch.dict(
-            "os.environ",
-            {"REDIS_URL": "redis://redis:6379/0", "REDIS_KEY_TTL_SECONDS": "3600"},
-        ):
-            spec = runner._build_job_spec(
-                payload="{}",
-                job=job,
-            )
+        spec = runner._build_job_spec(payload="{}", job=job)
 
         container = spec["spec"]["template"]["spec"]["containers"][0]
         env_vars = {env["name"]: env["value"] for env in container["env"]}
@@ -323,15 +321,7 @@ class TestKubernetesRunnerBuildJobSpec:
         runner = KubernetesRunner(config=config, queue=_make_mock_queue())
         job = _make_job()
 
-        with patch.dict("os.environ", {}, clear=False):
-            env = dict(**os.environ)
-            env.pop("REDIS_URL", None)
-
-            with patch.dict("os.environ", env, clear=True):
-                spec = runner._build_job_spec(
-                    payload="{}",
-                    job=job,
-                )
+        spec = runner._build_job_spec(payload="{}", job=job)
 
         container = spec["spec"]["template"]["spec"]["containers"][0]
         env_names = [env["name"] for env in container["env"]]

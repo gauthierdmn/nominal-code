@@ -3,11 +3,11 @@ from __future__ import annotations
 import hmac
 import json
 import logging
+from collections.abc import Mapping
 from typing import Any
 from urllib.parse import quote
 
 import httpx
-from aiohttp import web
 from environs import Env
 
 from nominal_code.models import (
@@ -156,14 +156,14 @@ class GitLabPlatform:
 
         return self.base_url.replace("https://", "").replace("http://", "")
 
-    def verify_webhook(self, request: web.Request, body: bytes) -> bool:
+    def verify_webhook(self, headers: Mapping[str, str], body: bytes) -> bool:
         """
         Verify the GitLab webhook secret token.
 
         If no webhook secret is configured, verification is skipped.
 
         Args:
-            request (web.Request): The incoming HTTP request.
+            headers (Mapping[str, str]): The HTTP request headers.
             body (bytes): The raw request body (unused for token verification).
 
         Returns:
@@ -173,7 +173,7 @@ class GitLabPlatform:
         if not self.webhook_secret:
             return True
 
-        token: str | None = request.headers.get("X-Gitlab-Token")
+        token: str | None = headers.get("X-Gitlab-Token")
 
         if token is None:
             return False
@@ -182,7 +182,7 @@ class GitLabPlatform:
 
     def parse_event(
         self,
-        request: web.Request,
+        headers: Mapping[str, str],
         body: bytes,
     ) -> CommentEvent | LifecycleEvent | None:
         """
@@ -192,7 +192,7 @@ class GitLabPlatform:
         events for lifecycle actions (open, update with oldrev, reopen).
 
         Args:
-            request (web.Request): The incoming HTTP request.
+            headers (Mapping[str, str]): The HTTP request headers.
             body (bytes): The raw request body.
 
         Returns:

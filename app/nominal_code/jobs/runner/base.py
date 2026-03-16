@@ -4,7 +4,10 @@ import logging
 from typing import TYPE_CHECKING, Protocol
 
 from nominal_code.config.settings import DEFAULT_REDIS_KEY_TTL_SECONDS
+from nominal_code.conversation.base import build_conversation_store
 from nominal_code.jobs.payload import JobPayload
+from nominal_code.jobs.queue.asyncio import AsyncioJobQueue
+from nominal_code.jobs.runner.process import ProcessRunner
 
 if TYPE_CHECKING:
     from nominal_code.config import Config
@@ -68,9 +71,13 @@ def build_runner(config: Config, platforms: dict[str, Platform]) -> JobRunner:
 
         redis_queue: RedisJobQueue = RedisJobQueue(redis_url)
 
+        redis_key_ttl: int = redis.key_ttl_seconds if redis is not None else 86400
+
         runner: JobRunner = KubernetesRunner(
             config=kubernetes,
             queue=redis_queue,
+            redis_url=redis_url,
+            redis_key_ttl_seconds=redis_key_ttl,
         )
 
         logger.info(
@@ -80,10 +87,6 @@ def build_runner(config: Config, platforms: dict[str, Platform]) -> JobRunner:
         )
 
         return runner
-
-    from nominal_code.conversation.base import build_conversation_store
-    from nominal_code.jobs.queue.asyncio import AsyncioJobQueue
-    from nominal_code.jobs.runner.process import ProcessRunner
 
     conversation_store = build_conversation_store(
         redis_url=redis.url if redis is not None else "",

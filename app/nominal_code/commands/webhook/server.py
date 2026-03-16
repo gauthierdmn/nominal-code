@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from aiohttp import web
 
 from nominal_code.commands.webhook.helpers import acknowledge_event, extract_mention
+from nominal_code.commands.webhook.result import DispatchResult
 from nominal_code.config import Config, load_config
 from nominal_code.config.policies import FilteringPolicy, RoutingPolicy
 from nominal_code.config.settings import WebhookConfig
@@ -221,7 +222,7 @@ async def dispatch_lifecycle_event(
     runner: JobRunner,
     namespace: str = "",
     extra_env: dict[str, str] | None = None,
-) -> web.Response:
+) -> DispatchResult:
     """
     Dispatch a lifecycle event to the reviewer bot.
 
@@ -239,17 +240,17 @@ async def dispatch_lifecycle_event(
         extra_env (dict[str, str] | None): Additional env vars for the job container.
 
     Returns:
-        web.Response: The HTTP response.
+        DispatchResult: The dispatch result.
     """
 
     if not routing.reviewer_bot_username:
-        return web.json_response({"status": "ignored"})
+        return DispatchResult(status="ignored")
 
     if not isinstance(event, LifecycleEvent):
-        return web.json_response({"status": "ignored"})
+        return DispatchResult(status="ignored")
 
     if not isinstance(platform, ReviewerPlatform):
-        return web.json_response({"status": "ignored"})
+        return DispatchResult(status="ignored")
 
     await acknowledge_event(
         event=event,
@@ -267,7 +268,7 @@ async def dispatch_lifecycle_event(
 
     await runner.enqueue(job)
 
-    return web.json_response({"status": "accepted"})
+    return DispatchResult(status="accepted")
 
 
 async def dispatch_comment_event(
@@ -278,7 +279,7 @@ async def dispatch_comment_event(
     runner: JobRunner,
     namespace: str = "",
     extra_env: dict[str, str] | None = None,
-) -> web.Response:
+) -> DispatchResult:
     """
     Dispatch a comment event to the appropriate bot.
 
@@ -297,14 +298,14 @@ async def dispatch_comment_event(
         extra_env (dict[str, str] | None): Additional env vars for the job container.
 
     Returns:
-        web.Response: The HTTP response.
+        DispatchResult: The dispatch result.
     """
 
     if event.event_type not in COMMENT_EVENT_TYPES:
-        return web.json_response({"status": "ignored"})
+        return DispatchResult(status="ignored")
 
     if not isinstance(event, CommentEvent):
-        return web.json_response({"status": "ignored"})
+        return DispatchResult(status="ignored")
 
     comment_event: CommentEvent = event
 
@@ -332,7 +333,7 @@ async def dispatch_comment_event(
         mention_prompt = reviewer_prompt
 
     else:
-        return web.json_response({"status": "no_mention"})
+        return DispatchResult(status="no_mention")
 
     proceed: bool = await acknowledge_event(
         event=comment_event,
@@ -342,7 +343,7 @@ async def dispatch_comment_event(
     )
 
     if not proceed:
-        return web.json_response({"status": "unauthorized"})
+        return DispatchResult(status="unauthorized", http_status=403)
 
     mentioned_event: CommentEvent = replace(
         comment_event,
@@ -358,7 +359,7 @@ async def dispatch_comment_event(
 
     await runner.enqueue(job)
 
-    return web.json_response({"status": "accepted"})
+    return DispatchResult(status="accepted")
 
 
 async def _handle_health(request: web.Request) -> web.Response:
@@ -428,7 +429,7 @@ async def _handle_webhook(
 
         body: bytes = await request.read()
 
-        if not platform.verify_webhook(request=request, body=body):
+        if not platform.verify_webhook(headers=request.headers, body=body):
             logger.warning("Invalid webhook signature for %s", platform_name)
 
             return web.Response(status=401, text="Invalid signature")
@@ -436,7 +437,7 @@ async def _handle_webhook(
         await platform.authenticate(webhook_body=body)
 
         event: CommentEvent | LifecycleEvent | None = platform.parse_event(
-            request=request,
+            headers=request.headers,
             body=body,
         )
 
@@ -449,7 +450,15 @@ async def _handle_webhook(
             return web.json_response({"status": filter_reason})
 
         if event.event_type in routing.reviewer_triggers:
-            return await dispatch_lifecycle_event(
+            result: DispatchResult = await dispatch_lifecycle_event(
+                event=event,
+                filtering=filtering,
+                routing=routing,
+                platform=platform,
+                runner=runner,
+            )
+        else:
+            result = await dispatch_comment_event(
                 event=event,
                 filtering=filtering,
                 routing=routing,
@@ -457,12 +466,9 @@ async def _handle_webhook(
                 runner=runner,
             )
 
-        return await dispatch_comment_event(
-            event=event,
-            filtering=filtering,
-            routing=routing,
-            platform=platform,
-            runner=runner,
+        return web.json_response(
+            {"status": result.status},
+            status=result.http_status,
         )
 
     except Exception:

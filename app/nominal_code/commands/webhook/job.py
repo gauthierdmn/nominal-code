@@ -57,13 +57,10 @@ async def run_job_main() -> int:
 
         return 1
 
-    redis = config.webhook.redis if config.webhook is not None else None
     conversation_store: ConversationStore = build_conversation_store(
-        redis_url=redis.url if redis is not None else "",
-        redis_key_ttl_seconds=(
-            redis.key_ttl_seconds
-            if redis is not None
-            else DEFAULT_REDIS_KEY_TTL_SECONDS
+        redis_url=_env.str("REDIS_URL", ""),
+        redis_key_ttl_seconds=int(
+            _env.str("REDIS_KEY_TTL_SECONDS", str(DEFAULT_REDIS_KEY_TTL_SECONDS)),
         ),
     )
 

@@ -49,11 +49,8 @@ def platform_with_reviewer_token():
     )
 
 
-def _make_request(headers=None):
-    request = MagicMock()
-    request.headers = headers or {}
-
-    return request
+def _make_headers(headers=None):
+    return headers or {}
 
 
 def _make_comment():
@@ -107,32 +104,32 @@ class TestNameProperty:
 
 class TestVerifyWebhook:
     def test_verify_webhook_valid_token(self, platform):
-        request = _make_request({"X-Gitlab-Token": "gl-secret"})
+        headers = _make_headers({"X-Gitlab-Token": "gl-secret"})
 
-        assert platform.verify_webhook(request, b"") is True
+        assert platform.verify_webhook(headers, b"") is True
 
     def test_verify_webhook_invalid_token(self, platform):
-        request = _make_request({"X-Gitlab-Token": "wrong"})
+        headers = _make_headers({"X-Gitlab-Token": "wrong"})
 
-        assert platform.verify_webhook(request, b"") is False
+        assert platform.verify_webhook(headers, b"") is False
 
     def test_verify_webhook_missing_token(self, platform):
-        request = _make_request({})
+        headers = _make_headers({})
 
-        assert platform.verify_webhook(request, b"") is False
+        assert platform.verify_webhook(headers, b"") is False
 
     def test_verify_webhook_no_secret_configured(self, platform_no_secret):
-        request = _make_request({})
+        headers = _make_headers({})
 
-        assert platform_no_secret.verify_webhook(request, b"") is True
+        assert platform_no_secret.verify_webhook(headers, b"") is True
 
 
 class TestParseWebhook:
     def test_parse_mr_note(self, platform):
         payload = _note_payload()
         body = json.dumps(payload).encode()
-        request = _make_request()
-        result = platform.parse_event(request, body)
+        headers = _make_headers()
+        result = platform.parse_event(headers, body)
 
         assert result is not None
         assert result.platform == "gitlab"
@@ -148,8 +145,8 @@ class TestParseWebhook:
     def test_parse_mr_note_without_discussion_id(self, platform):
         payload = _note_payload(discussion_id="")
         body = json.dumps(payload).encode()
-        request = _make_request()
-        result = platform.parse_event(request, body)
+        headers = _make_headers()
+        result = platform.parse_event(headers, body)
 
         assert result is not None
         assert result.discussion_id == ""
@@ -157,16 +154,16 @@ class TestParseWebhook:
     def test_parse_non_note_event(self, platform):
         payload = {"object_kind": "push"}
         body = json.dumps(payload).encode()
-        request = _make_request()
+        headers = _make_headers()
 
-        assert platform.parse_event(request, body) is None
+        assert platform.parse_event(headers, body) is None
 
     def test_parse_note_on_issue_not_mr(self, platform):
         payload = _note_payload(noteable_type="Issue")
         body = json.dumps(payload).encode()
-        request = _make_request()
+        headers = _make_headers()
 
-        assert platform.parse_event(request, body) is None
+        assert platform.parse_event(headers, body) is None
 
     def test_parse_note_with_position(self, platform):
         payload = _note_payload()
@@ -175,8 +172,8 @@ class TestParseWebhook:
             "old_path": "src/old.py",
         }
         body = json.dumps(payload).encode()
-        request = _make_request()
-        result = platform.parse_event(request, body)
+        headers = _make_headers()
+        result = platform.parse_event(headers, body)
 
         assert result is not None
         assert result.file_path == "src/main.py"
@@ -184,8 +181,8 @@ class TestParseWebhook:
     def test_parse_clone_url(self, platform):
         payload = _note_payload()
         body = json.dumps(payload).encode()
-        request = _make_request()
-        result = platform.parse_event(request, body)
+        headers = _make_headers()
+        result = platform.parse_event(headers, body)
 
         assert result is not None
         assert result.clone_url == ""
@@ -206,8 +203,8 @@ class TestParseMergeRequest:
             },
         }
         body = json.dumps(payload).encode()
-        request = _make_request()
-        result = platform.parse_event(request, body)
+        headers = _make_headers()
+        result = platform.parse_event(headers, body)
 
         assert result is not None
         assert result.event_type == EventType.PR_OPENED
@@ -231,8 +228,8 @@ class TestParseMergeRequest:
             },
         }
         body = json.dumps(payload).encode()
-        request = _make_request()
-        result = platform.parse_event(request, body)
+        headers = _make_headers()
+        result = platform.parse_event(headers, body)
 
         assert result is not None
         assert result.event_type == EventType.PR_REOPENED
@@ -252,8 +249,8 @@ class TestParseMergeRequest:
             },
         }
         body = json.dumps(payload).encode()
-        request = _make_request()
-        result = platform.parse_event(request, body)
+        headers = _make_headers()
+        result = platform.parse_event(headers, body)
 
         assert result is not None
         assert result.event_type == EventType.PR_PUSH
@@ -272,9 +269,9 @@ class TestParseMergeRequest:
             },
         }
         body = json.dumps(payload).encode()
-        request = _make_request()
+        headers = _make_headers()
 
-        assert platform.parse_event(request, body) is None
+        assert platform.parse_event(headers, body) is None
 
     def test_parse_mr_wip_skipped(self, platform):
         payload = {
@@ -290,9 +287,9 @@ class TestParseMergeRequest:
             },
         }
         body = json.dumps(payload).encode()
-        request = _make_request()
+        headers = _make_headers()
 
-        assert platform.parse_event(request, body) is None
+        assert platform.parse_event(headers, body) is None
 
     def test_parse_mr_close_ignored(self, platform):
         payload = {
@@ -308,9 +305,9 @@ class TestParseMergeRequest:
             },
         }
         body = json.dumps(payload).encode()
-        request = _make_request()
+        headers = _make_headers()
 
-        assert platform.parse_event(request, body) is None
+        assert platform.parse_event(headers, body) is None
 
 
 class TestFetchPrBranch:

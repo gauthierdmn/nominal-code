@@ -156,6 +156,51 @@ The webhook handler's public dispatch functions (`dispatch_lifecycle_event`, `di
 
 See **[Policies](reference/policies.md)** for the full reference.
 
+## Configuration Architecture
+
+The `config/` package uses a two-layer pattern: mutable **Settings** models for input, frozen **Config** models for output.
+
+### Layer 1: Settings (input) — `config/models.py`
+
+`AppSettings` and its nested `*Settings` models (`KubernetesSettings`, `RedisSettings`, etc.) are mutable Pydantic models that mirror the shape of the YAML file and environment variables. Their job is purely structural — they hold raw values exactly as the user provided them.
+
+`AppSettings.from_env()` merges three sources in priority order: model defaults → YAML file → environment variables. The `_ENV_MAP` table flattens legacy env var names (e.g. `K8S_NAMESPACE`) into the nested structure (`["kubernetes", "namespace"]`).
+
+### Layer 2: Config (output) — `config/config.py`, `config/kubernetes.py`
+
+`Config`, `WebhookConfig`, `KubernetesConfig`, `RedisConfig`, etc. are frozen (`frozen=True`) Pydantic models that represent the validated, resolved configuration the application consumes. They are immutable and safe to pass around.
+
+### The bridge: `config/loader.py`
+
+`loader.py` transforms Settings into Config. This is where business logic lives:
+
+- **Validation** — e.g. "at least one bot must be configured", "ALLOWED_USERS is required".
+- **Derivation** — reading prompt files from disk, parsing trigger strings into `EventType` frozensets, resolving agent provider configs.
+- **Reshaping** — the Config models don't mirror the YAML structure. Fields get flattened, renamed, or combined (e.g. `resources.requests.cpu` → `resource_requests_cpu`).
+- **Conditional construction** — `KubernetesConfig` is `None` when no image is set, `RedisConfig` is `None` when no URL is set.
+
+### Why two layers?
+
+Settings and Config serve different masters:
+
+| | Settings | Config |
+|---|---|---|
+| **Serves** | The user writing YAML/env vars | The application code consuming config |
+| **Shape** | Mirrors the config file structure | Mirrors what the code needs |
+| **Mutability** | Mutable (intermediate merge target) | Frozen (safe to pass around) |
+| **Content** | Raw strings, file paths, lists | Resolved values — file contents loaded, enums parsed, frozensets built |
+| **Optionality** | Everything has defaults | Missing-means-disabled expressed as `None` |
+
+A single-layer approach would force one model to serve both roles — you'd either leak file paths and parsing logic into application code, or leak validation rules into the YAML schema. The two-layer split keeps the config file ergonomic for users while giving application code exactly the types it needs.
+
+### Adding a new config field
+
+1. Add the field with a default to the appropriate `*Settings` model in `models.py`.
+2. If it needs an env var, add a `(ENV_NAME, ["section", "field"])` entry to `_ENV_MAP` and the appropriate type set (`INT_KEYS`, `BOOL_KEYS`, or `COMMA_LIST_KEYS`).
+3. Add the field to the corresponding `*Config` model in `settings.py` or `kubernetes.py`.
+4. Forward the value in the relevant `_resolve_*()` or `load_config()` function in `loader.py`.
+5. Add tests for the env var override in `tests/test_config.py`.
+
 ## Components
 
 ### Webhook Server

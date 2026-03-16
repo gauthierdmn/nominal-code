@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -10,6 +11,23 @@ from nominal_code.agent.sandbox import redact_url
 logger: logging.Logger = logging.getLogger(__name__)
 DEPS_FOLDER_NAME: str = ".deps"
 GIT_FOLDER_NAME: str = ".git"
+DEFAULT_BASE_DIR: Path = Path(tempfile.gettempdir()) / "nominal-code"
+
+
+def build_repo_path(base_dir: Path, repo_full_name: str, pr_number: int) -> Path:
+    """
+    Build the workspace path for a specific PR/MR.
+
+    Args:
+        base_dir (Path): Base directory for all workspaces.
+        repo_full_name (str): Full repository name (e.g. ``owner/repo``).
+        pr_number (int): Pull/merge request number.
+
+    Returns:
+        Path: Absolute path to the PR workspace directory.
+    """
+
+    return base_dir / repo_full_name / f"pr-{pr_number}"
 
 
 @dataclass(frozen=True)
@@ -62,7 +80,7 @@ class GitWorkspace:
         self._clone_url: str = clone_url
         self._branch: str = branch
 
-        self.repo_path: Path = self._repo_dir / f"pr-{pr_number}"
+        self.repo_path: Path = build_repo_path(base_dir, repo_full_name, pr_number)
 
     @property
     def deps_path(self) -> Path:
