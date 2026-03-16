@@ -182,7 +182,8 @@ async def _prepare_review_context(
         ),
         workspace.ensure_ready(),
     )
-    workspace.maybe_create_deps_dir()
+    if event.clone_url:
+        workspace.maybe_create_deps_dir()
 
     all_comments: list[ExistingComment] = results[1]
 
@@ -194,7 +195,7 @@ async def _prepare_review_context(
 
     return ReviewContext(
         repo_path=workspace.repo_path,
-        deps_path=workspace.deps_path,
+        deps_path=workspace.deps_path if event.clone_url else None,
         changed_files=results[0],
         existing_comments=existing_comments,
         workspace=workspace,

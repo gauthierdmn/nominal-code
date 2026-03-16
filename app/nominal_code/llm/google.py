@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import TYPE_CHECKING, Any
 
 from nominal_code.llm.messages import (
@@ -59,7 +60,13 @@ class GoogleProvider:
                 instruction=INSTALL_INSTRUCTIONS[ProviderName.GOOGLE],
             ) from exc
 
-        self._client: genai.Client = genai.Client()
+        base_url: str = os.environ.get("GOOGLE_BASE_URL", "")
+
+        http_options = genai.types.HttpOptions(base_url=base_url) if base_url else None
+
+        self._client: genai.Client = genai.Client(
+            http_options=http_options,
+        )
 
     async def close(self) -> None:
         """

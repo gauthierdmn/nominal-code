@@ -117,12 +117,14 @@ async def prepare_job_event(
         if not isinstance(event, CommentEvent):
             raise RuntimeError("Worker job requires a comment event")
 
-    clone_url: str = platform.build_clone_url(
-        repo_full_name=event.repo_full_name,
-        read_only=(bot_type == BotType.REVIEWER),
-    )
-
-    effective_event: PullRequestEvent = replace(event, clone_url=clone_url)
+    if event.clone_url:
+        clone_url: str = platform.build_clone_url(
+            repo_full_name=event.repo_full_name,
+            read_only=(bot_type == BotType.REVIEWER),
+        )
+        effective_event: PullRequestEvent = replace(event, clone_url=clone_url)
+    else:
+        effective_event = event
     resolved_event: PullRequestEvent | None = await resolve_branch(
         event=effective_event,
         platform=platform,
