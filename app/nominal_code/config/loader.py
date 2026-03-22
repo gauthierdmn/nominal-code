@@ -9,6 +9,7 @@ from nominal_code.config.agent import (
     ProviderConfig,
     resolve_agent_config,
 )
+from nominal_code.config.env import load_app_settings
 from nominal_code.config.kubernetes import KubernetesConfig
 from nominal_code.config.models import AppSettings
 from nominal_code.config.policies import FilteringPolicy, RoutingPolicy
@@ -49,7 +50,7 @@ def load_config(config_path: str = "") -> Config:
             environment variable has an invalid value.
     """
 
-    settings: AppSettings = AppSettings.from_env()
+    settings: AppSettings = load_app_settings()
 
     worker: WorkerConfig | None = None
 
@@ -197,7 +198,7 @@ def load_config_for_cli(
         Config: A configuration suitable for one-off CLI reviews.
     """
 
-    settings: AppSettings = AppSettings.from_env()
+    settings: AppSettings = load_app_settings()
 
     reviewer_system_prompt: str = load_file_content(
         Path(settings.reviewer.system_prompt_path),
@@ -268,7 +269,7 @@ def load_config_for_ci(
         Config: A configuration suitable for CI-triggered reviews.
     """
 
-    settings: AppSettings = AppSettings.from_env()
+    settings: AppSettings = load_app_settings()
 
     model_override: str = model or settings.agent.model
 

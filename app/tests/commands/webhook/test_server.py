@@ -77,7 +77,7 @@ def _make_github_platform():
 
 
 def _make_runner(config, platforms):
-    mock_runner = MagicMock()
+    mock_runner = AsyncMock()
     mock_runner.enqueue = AsyncMock()
 
     return mock_runner
@@ -609,7 +609,7 @@ class TestAutoTriggerJob:
             pr_branch="main",
             event_type=EventType.PR_OPENED,
         )
-        app["config"].webhook = WebhookConfig(
+        webhook = WebhookConfig(
             filtering=app["config"].webhook.filtering,
             routing=RoutingPolicy(
                 reviewer_triggers=frozenset([EventType.PR_OPENED]),
@@ -617,6 +617,8 @@ class TestAutoTriggerJob:
                 reviewer_bot_username="claude-reviewer",
             ),
         )
+        app["config"].webhook = webhook
+
         app["platforms"]["github"].verify_webhook.return_value = True
         app["platforms"]["github"].parse_event.return_value = event
 
@@ -639,7 +641,7 @@ class TestAutoTriggerJob:
             pr_branch="main",
             event_type=EventType.PR_OPENED,
         )
-        app["config"].webhook = WebhookConfig(
+        webhook = WebhookConfig(
             filtering=app["config"].webhook.filtering,
             routing=RoutingPolicy(
                 reviewer_triggers=frozenset([EventType.PR_OPENED]),
@@ -647,6 +649,8 @@ class TestAutoTriggerJob:
                 reviewer_bot_username="",
             ),
         )
+        app["config"].webhook = webhook
+
         app["platforms"]["github"].verify_webhook.return_value = True
         app["platforms"]["github"].parse_event.return_value = event
 

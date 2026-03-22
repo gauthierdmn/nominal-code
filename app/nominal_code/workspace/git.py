@@ -2,15 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 from dataclasses import dataclass
 from pathlib import Path
 
-logger: logging.Logger = logging.getLogger(__name__)
+from nominal_code.agent.sandbox import redact_url
 
-TOKEN_PATTERN: re.Pattern[str] = re.compile(
-    r"(https?://[^:]+:)[^@]+(@)",
-)
+logger: logging.Logger = logging.getLogger(__name__)
 DEPS_FOLDER_NAME: str = ".deps"
 GIT_FOLDER_NAME: str = ".git"
 
@@ -89,15 +86,34 @@ class GitWorkspace:
         """
         Ensure the workspace is cloned and up to date.
 
-        If the directory does not exist, performs a shallow clone and
-        checks out the target branch. If it already exists, fetches
-        from origin and resets to the latest remote state.
+        When no ``clone_url`` was provided but ``.git`` already exists,
+        the workspace is treated as externally managed (e.g. pre-cloned
+        by CI or an init container) and no git operations are performed.
+
+        When a ``clone_url`` is set, clones or fetches as needed.
 
         Raises:
-            RuntimeError: If a git operation fails.
+            RuntimeError: If a git operation fails, or if no
+                ``clone_url`` was provided and ``.git`` does not exist.
         """
 
-        if (self.repo_path / GIT_FOLDER_NAME).is_dir():
+        git_dir_exists: bool = (self.repo_path / GIT_FOLDER_NAME).is_dir()
+
+        if not self._clone_url:
+            if not git_dir_exists:
+                raise RuntimeError(
+                    f"No clone URL provided and {self.repo_path / GIT_FOLDER_NAME} "
+                    "does not exist — cannot prepare workspace",
+                )
+
+            logger.info(
+                "Workspace externally managed, skipping clone/fetch for %s",
+                self.repo_path,
+            )
+
+            return
+
+        if git_dir_exists:
             await self._update()
         else:
             await self._clone()
@@ -138,13 +154,17 @@ class GitWorkspace:
         """
         Shallow clone the repository and check out the target branch.
 
+        Disables git hooks, symlinks, and the ``file://`` protocol to
+        prevent malicious repositories from executing code during clone
+        via ``.gitmodules``, ``post-checkout`` hooks, or symlink escapes.
+
         Raises:
             RuntimeError: If the clone or checkout fails.
         """
 
         self.repo_path.mkdir(parents=True, exist_ok=True)
 
-        logger.info("Cloning %s into %s", _redact_url(self._clone_url), self.repo_path)
+        logger.info("Cloning %s into %s", redact_url(self._clone_url), self.repo_path)
 
         await self._run_command(
             "git",
@@ -152,6 +172,12 @@ class GitWorkspace:
             "--depth=1",
             f"--branch={self._branch}",
             "--single-branch",
+            "--config",
+            "core.hooksPath=/dev/null",
+            "--config",
+            "core.symlinks=false",
+            "--config",
+            "protocol.file.allow=never",
             self._clone_url,
             self.repo_path,
         )
@@ -160,12 +186,18 @@ class GitWorkspace:
         """
         Fetch the latest changes and reset to the remote branch.
 
+        Sets ``core.hooksPath=/dev/null`` before fetching to prevent
+        hook execution during fetch/reset on an existing workspace.
+
         Raises:
             RuntimeError: If the fetch or reset fails.
         """
 
         logger.info("Updating workspace %s", self.repo_path)
 
+        await self._run_git("config", "core.hooksPath", "/dev/null")
+        await self._run_git("config", "core.symlinks", "false")
+        await self._run_git("config", "protocol.file.allow", "never")
         await self._run_git("fetch", "origin", self._branch)
         await self._run_git("reset", "--hard", f"origin/{self._branch}")
         await self._run_git("clean", "-fdx")
@@ -217,28 +249,14 @@ class GitWorkspace:
         stderr_text: str = stderr_bytes.decode().strip()
 
         if process.returncode != 0:
-            command_str: str = _redact_url(" ".join(str(arg) for arg in args))
+            command_str: str = redact_url(" ".join(str(arg) for arg in args))
 
             raise RuntimeError(
                 f"Command '{command_str}' failed (exit {process.returncode}): "
-                f"{_redact_url(stderr_text)}"
+                f"{redact_url(stderr_text)}"
             )
 
         if stderr_text:
             logger.debug("git stderr: %s", stderr_text)
 
         return stdout_text
-
-
-def _redact_url(url: str) -> str:
-    """
-    Replace embedded tokens in clone URLs with ``***``.
-
-    Args:
-        url (str): A URL that may contain an embedded token.
-
-    Returns:
-        str: The URL with the token replaced by ``***``.
-    """
-
-    return TOKEN_PATTERN.sub(r"\1***\2", url)

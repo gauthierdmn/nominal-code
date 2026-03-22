@@ -60,9 +60,7 @@ def build_runner(config: Config, platforms: dict[str, Platform]) -> JobRunner:
         redis_url: str = redis.url if redis is not None else ""
 
         if not redis_url:
-            logger.error("REDIS_URL is required when kubernetes config is set")
-
-            raise SystemExit(1)
+            raise ValueError("REDIS_URL is required when kubernetes config is set")
 
         from nominal_code.jobs.queue.redis import RedisJobQueue
         from nominal_code.jobs.runner.kubernetes import KubernetesRunner

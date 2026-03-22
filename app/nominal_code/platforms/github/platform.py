@@ -31,7 +31,7 @@ from nominal_code.platforms.http import request_with_retry
 from nominal_code.platforms.registry import register_platform
 
 _env: Env = Env()
-GITHUB_API_BASE: str = "https://api.github.com"
+GITHUB_API_BASE: str = _env.str("GITHUB_API_BASE", "https://api.github.com")
 FILES_PER_PAGE: int = 100
 
 PR_ACTION_TO_EVENT_TYPE: dict[str, EventType] = {
@@ -85,6 +85,7 @@ class GitHubPlatform:
         auth: PlatformAuth,
         webhook_secret: str = "",
         fixed_installation_id: int = NO_INSTALLATION,
+        base_url: str = "",
     ) -> None:
         """
         Initialize the GitHub platform client.
@@ -94,6 +95,9 @@ class GitHubPlatform:
             webhook_secret (str): HMAC secret for webhook verification.
             fixed_installation_id (int): Installation ID for CLI/CI modes
                 where no webhook payload provides one.
+            base_url (str): Override for the GitHub API base URL.
+                Defaults to ``GITHUB_API_BASE`` env var or
+                ``https://api.github.com``.
         """
 
         self.auth: PlatformAuth = auth
@@ -101,7 +105,7 @@ class GitHubPlatform:
         self._fixed_installation_id: int = fixed_installation_id
 
         self._client: httpx.AsyncClient = httpx.AsyncClient(
-            base_url=GITHUB_API_BASE,
+            base_url=base_url or GITHUB_API_BASE,
             timeout=30.0,
         )
 

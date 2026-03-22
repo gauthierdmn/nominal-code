@@ -115,28 +115,28 @@ class TestPushResult:
 
 class TestRedactUrl:
     def test_redact_url_replaces_token(self):
-        from nominal_code.workspace.git import _redact_url
+        from nominal_code.agent.sandbox import redact_url
 
         url = "https://x-access-token:ghp_secret123@github.com/owner/repo.git"
-        result = _redact_url(url)
+        result = redact_url(url)
 
         assert "ghp_secret123" not in result
         assert "***" in result
         assert "github.com/owner/repo.git" in result
 
     def test_redact_url_no_token_unchanged(self):
-        from nominal_code.workspace.git import _redact_url
+        from nominal_code.agent.sandbox import redact_url
 
         url = "https://github.com/owner/repo.git"
-        result = _redact_url(url)
+        result = redact_url(url)
 
         assert result == url
 
     def test_redact_url_oauth2_token(self):
-        from nominal_code.workspace.git import _redact_url
+        from nominal_code.agent.sandbox import redact_url
 
         url = "https://oauth2:glpat-mysecret@gitlab.com/group/repo.git"
-        result = _redact_url(url)
+        result = redact_url(url)
 
         assert "glpat-mysecret" not in result
         assert "***" in result

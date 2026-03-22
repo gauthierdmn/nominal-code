@@ -3,10 +3,12 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 from nominal_code.agent.prompts import (
+    TAG_REPO_GUIDELINES,
     _detect_languages,
     _load_repo_guidelines,
     _load_repo_language_guidelines,
     resolve_guidelines,
+    wrap_tag,
 )
 
 
@@ -154,6 +156,7 @@ class TestResolveSystemPrompt:
 
         assert result.startswith("You are a bot.")
         assert "Use snake_case." in result
+        assert f"<{TAG_REPO_GUIDELINES}>" in result
 
     def test_resolve_system_prompt_includes_language_guidelines(self, tmp_path):
         from nominal_code.agent.prompts import resolve_system_prompt
@@ -185,6 +188,7 @@ class TestResolveSystemPrompt:
         result = resolve_system_prompt(workspace, config, "Only base.", [])
 
         assert "Only base." in result
+        assert f"<{TAG_REPO_GUIDELINES}>" not in result
 
     def test_resolve_system_prompt_separator_between_prompt_and_guidelines(
         self, tmp_path
@@ -200,3 +204,39 @@ class TestResolveSystemPrompt:
         result = resolve_system_prompt(workspace, config, "Bot prompt.", [])
 
         assert "\n\n" in result
+
+    def test_resolve_system_prompt_wraps_guidelines_in_boundary_tags(self, tmp_path):
+        from nominal_code.agent.prompts import resolve_system_prompt
+
+        workspace = MagicMock()
+        workspace.repo_path = tmp_path
+        config = MagicMock()
+        config.prompts.coding_guidelines = "Follow PEP 8."
+        config.prompts.language_guidelines = {}
+
+        result = resolve_system_prompt(workspace, config, "Base prompt.", [])
+
+        assert f"<{TAG_REPO_GUIDELINES}>" in result
+        assert f"</{TAG_REPO_GUIDELINES}>" in result
+        assert "Follow PEP 8." in result
+
+    def test_resolve_system_prompt_empty_guidelines_no_boundary_tags(self, tmp_path):
+        from nominal_code.agent.prompts import resolve_system_prompt
+
+        workspace = MagicMock()
+        workspace.repo_path = tmp_path
+        config = MagicMock()
+        config.prompts.coding_guidelines = ""
+        config.prompts.language_guidelines = {}
+
+        result = resolve_system_prompt(workspace, config, "Base prompt.", [])
+
+        assert f"<{TAG_REPO_GUIDELINES}>" not in result
+        assert result == "Base prompt."
+
+
+class TestWrapTag:
+    def test_wrap_tag_produces_correct_xml(self):
+        result = wrap_tag("foo", "bar")
+
+        assert result == "<foo>\nbar\n</foo>"

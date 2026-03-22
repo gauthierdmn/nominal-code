@@ -12,7 +12,18 @@ from nominal_code.agent.invoke import (
     prepare_conversation,
     save_conversation,
 )
-from nominal_code.agent.prompts import resolve_guidelines, resolve_system_prompt
+from nominal_code.agent.prompts import (
+    TAG_BRANCH_NAME,
+    TAG_FILE_PATH,
+    TAG_REPO_GUIDELINES,
+    TAG_UNTRUSTED_COMMENT,
+    TAG_UNTRUSTED_DIFF,
+    TAG_UNTRUSTED_REQUEST,
+    resolve_guidelines,
+    resolve_system_prompt,
+    wrap_tag,
+)
+from nominal_code.agent.sandbox import sanitize_output
 from nominal_code.config import ApiAgentConfig
 from nominal_code.handlers.diff import build_effective_summary, filter_findings
 from nominal_code.handlers.output import (
@@ -242,7 +253,9 @@ async def review(
     )
 
     if config.reviewer is None:
-        raise RuntimeError("Reviewer config is required but not configured")
+        raise ValueError("ReviewerConfig is required but not configured")
+
+    reviewer_config = config.reviewer
 
     file_paths: list[Path] = [Path(changed.file_path) for changed in ctx.changed_files]
 
@@ -253,14 +266,19 @@ async def review(
             language_guidelines=config.prompts.language_guidelines,
             file_paths=file_paths,
         )
-        combined_system_prompt: str = (
-            config.reviewer.system_prompt + "\n\n" + effective_guidelines
-        )
+        if effective_guidelines:
+            combined_system_prompt: str = (
+                reviewer_config.system_prompt
+                + "\n\n"
+                + wrap_tag(TAG_REPO_GUIDELINES, effective_guidelines)
+            )
+        else:
+            combined_system_prompt = reviewer_config.system_prompt
     else:
         combined_system_prompt = resolve_system_prompt(
             workspace=ctx.workspace,
             config=config,
-            bot_system_prompt=config.reviewer.system_prompt,
+            bot_system_prompt=reviewer_config.system_prompt,
             file_paths=file_paths,
         )
 
@@ -396,23 +414,36 @@ async def post_review_result(
     if result.agent_review is None:
         await platform.post_reply(
             event=event,
-            reply=CommentReply(body=result.raw_output),
+            reply=CommentReply(body=sanitize_output(result.raw_output)),
         )
 
         return
 
-    if result.valid_findings:
+    sanitized_findings: list[ReviewFinding] = [
+        ReviewFinding(
+            file_path=finding.file_path,
+            line=finding.line,
+            body=sanitize_output(finding.body),
+            side=finding.side,
+            suggestion=finding.suggestion,
+            start_line=finding.start_line,
+        )
+        for finding in result.valid_findings
+    ]
+    sanitized_summary: str = sanitize_output(result.effective_summary)
+
+    if sanitized_findings:
         await platform.submit_review(
             repo_full_name=event.repo_full_name,
             pr_number=event.pr_number,
-            findings=result.valid_findings,
-            summary=result.effective_summary,
+            findings=sanitized_findings,
+            summary=sanitized_summary,
             event=event,
         )
     else:
         await platform.post_reply(
             event=event,
-            reply=CommentReply(body=result.effective_summary),
+            reply=CommentReply(body=sanitized_summary),
         )
 
 
@@ -447,7 +478,7 @@ async def run_and_post_review(
     """
 
     if config.reviewer is None:
-        raise RuntimeError("Reviewer config is required but not configured")
+        raise ValueError("ReviewerConfig is required but not configured")
 
     bot_username: str = config.reviewer.bot_username
 
@@ -494,20 +525,26 @@ def _build_reviewer_prompt(
     """
 
     parts: list[str] = [
-        f"Branch: {event.pr_branch} (PR #{event.pr_number} on {event.repo_full_name})",
+        f"Branch: <{TAG_BRANCH_NAME}>{event.pr_branch}</{TAG_BRANCH_NAME}>"
+        f" (PR #{event.pr_number} on {event.repo_full_name})",
     ]
 
     if user_prompt:
-        parts.append(f"Additional instructions: {user_prompt}")
+        parts.append(
+            f"Additional instructions:\n{wrap_tag(TAG_UNTRUSTED_REQUEST, user_prompt)}"
+        )
 
     parts.append("## Changed files\n")
 
     for changed_file in changed_files:
-        file_header: str = f"### {changed_file.file_path} ({changed_file.status})"
+        file_header: str = (
+            f"### <{TAG_FILE_PATH}>{changed_file.file_path}</{TAG_FILE_PATH}>"
+            f" ({changed_file.status})"
+        )
 
         if changed_file.patch:
             parts.append(
-                f"{file_header}\n```diff\n{changed_file.patch}\n```",
+                f"{file_header}\n{wrap_tag(TAG_UNTRUSTED_DIFF, changed_file.patch)}",
             )
         else:
             parts.append(f"{file_header}\n_(no patch available)_")
@@ -556,7 +593,7 @@ def _format_existing_comments(comments: list[ExistingComment]) -> str:
         location: str = ""
 
         if existing.file_path:
-            location = f" on `{existing.file_path}"
+            location = f" on `<{TAG_FILE_PATH}>{existing.file_path}</{TAG_FILE_PATH}>"
 
             if existing.line:
                 location += f":{existing.line}"
@@ -565,9 +602,6 @@ def _format_existing_comments(comments: list[ExistingComment]) -> str:
 
         resolved_tag: str = " (resolved)" if existing.is_resolved else ""
         header: str = f"**@{existing.author}**{location}{resolved_tag}"
-        quoted_body: str = "\n".join(
-            f"> {body_line}" for body_line in existing.body.splitlines()
-        )
-        lines.append(f"{header}\n{quoted_body}")
+        lines.append(f"{header}\n{wrap_tag(TAG_UNTRUSTED_COMMENT, existing.body)}")
 
     return "\n\n".join(lines)

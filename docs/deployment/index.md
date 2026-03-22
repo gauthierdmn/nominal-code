@@ -90,4 +90,11 @@ LOG_LEVEL=ERROR    # only errors
 
 The bot clones repositories into the workspace base directory (YAML: `workspace.base_dir`, env: `WORKSPACE_BASE_DIR`, default: system temp dir). Each PR gets its own shallow clone.
 
-In production Kubernetes deployments, reviews run in ephemeral Job pods — no disk management is needed. For local or persistent-disk deployments, periodically remove stale `pr-{N}` directories manually (e.g. via a cron job or shell script).
+In production Kubernetes deployments, reviews run in ephemeral Job pods — no disk management is needed.
+
+**Standalone mode warning:** Workspace directories accumulate over time as new PRs are reviewed. There is no automatic cleanup. Set up a cron job to purge old workspaces:
+
+```bash
+# Delete PR workspaces older than 7 days
+0 3 * * * find /tmp/nominal-code -maxdepth 3 -name 'pr-*' -type d -mtime +7 -exec rm -rf {} +
+```

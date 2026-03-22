@@ -21,4 +21,11 @@ RUN uv sync --no-dev --frozen --no-editable --extra ${EXTRAS}
 COPY ci/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+RUN groupadd --gid 1000 nominal && \
+    useradd --uid 1000 --gid nominal --create-home nominal && \
+    mkdir -p /workspace /tmp/nominal && \
+    chown -R nominal:nominal /app /workspace /tmp/nominal
+
+USER nominal
+
 ENTRYPOINT ["/entrypoint.sh"]

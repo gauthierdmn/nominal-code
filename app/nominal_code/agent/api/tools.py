@@ -3,9 +3,12 @@ from __future__ import annotations
 import asyncio
 import fnmatch
 import logging
+import re
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
+from nominal_code.agent.sandbox import build_sanitized_env, sanitize_output
 from nominal_code.llm.messages import ToolDefinition
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -15,6 +18,21 @@ MAX_GLOB_RESULTS: int = 200
 MAX_GREP_OUTPUT_LENGTH: int = 30_000
 MAX_READ_LINES: int = 2000
 MAX_LINE_LENGTH: int = 2000
+
+SHELL_INJECTION_PATTERN: re.Pattern[str] = re.compile(
+    r"[$`|;&]|\b(eval|exec|source)\b",
+)
+
+DEFAULT_ALLOWED_CLONE_HOSTS: frozenset[str] = frozenset(
+    {
+        "github.com",
+        "gitlab.com",
+    }
+)
+
+GIT_CLONE_PATTERN: re.Pattern[str] = re.compile(
+    r"^git\s+clone\s+",
+)
 
 SUBMIT_REVIEW_TOOL_NAME: str = "submit_review"
 
@@ -250,6 +268,11 @@ async def execute_tool(
     """
     Execute a tool and return the result with an error flag.
 
+    Tool output is passed through ``sanitize_output`` to redact any secret
+    patterns before being returned to the LLM. Subprocesses (Grep, Bash)
+    run with a sanitized environment that strips secrets, and ``git clone``
+    commands are restricted to ``DEFAULT_ALLOWED_CLONE_HOSTS``.
+
     Args:
         name (str): The tool name (Read, Glob, Grep, Bash).
         tool_input (dict[str, Any]): The tool input parameters from the API response.
@@ -263,20 +286,28 @@ async def execute_tool(
 
     try:
         if name == "Read":
-            return _execute_read(tool_input=tool_input, cwd=cwd), False
+            output: str = _execute_read(tool_input=tool_input, cwd=cwd)
+
+            return sanitize_output(output), False
 
         if name == "Glob":
-            return _execute_glob(tool_input=tool_input, cwd=cwd), False
+            output = _execute_glob(tool_input=tool_input, cwd=cwd)
+
+            return sanitize_output(output), False
 
         if name == "Grep":
-            return await _execute_grep(tool_input=tool_input, cwd=cwd), False
+            output = await _execute_grep(tool_input=tool_input, cwd=cwd)
+
+            return sanitize_output(output), False
 
         if name == "Bash":
-            return await _execute_bash(
+            output = await _execute_bash(
                 tool_input=tool_input,
                 cwd=cwd,
                 allowed_tools=allowed_tools,
-            ), False
+            )
+
+            return sanitize_output(output), False
 
         raise ToolError(f"Unknown tool '{name}'")
 
@@ -312,6 +343,92 @@ def _parse_bash_patterns(allowed_tools: list[str] | None) -> list[str]:
             patterns.append(entry[5:-1])
 
     return patterns
+
+
+def _validate_bash_command(command: str) -> None:
+    """
+    Reject commands containing shell metacharacters that enable injection.
+
+    Blocks ``$``, backticks, pipes, semicolons, ``&&``, ``||``, and
+    dangerous builtins (``eval``, ``exec``, ``source``) that could be
+    used to read environment variables or chain commands within an
+    otherwise-allowed fnmatch pattern.
+
+    Args:
+        command (str): The bash command string to validate.
+
+    Raises:
+        ToolError: If the command contains disallowed shell metacharacters.
+    """
+
+    if SHELL_INJECTION_PATTERN.search(command):
+        raise ToolError("Command contains disallowed shell metacharacters")
+
+
+def _validate_clone_host(
+    command: str,
+    allowed_hosts: frozenset[str],
+) -> None:
+    """
+    Validate that a ``git clone`` command targets an allowed hostname.
+
+    Extracts the URL argument from the command, parses the hostname,
+    and checks it against the allowlist. Supports both HTTPS URLs and
+    ``git@host:path`` SSH-style URLs.
+
+    Args:
+        command (str): The full ``git clone`` command string.
+        allowed_hosts (frozenset[str]): Set of permitted hostnames.
+
+    Raises:
+        ToolError: If the URL hostname is not in the allowlist, or if
+            the URL cannot be parsed.
+    """
+
+    parts: list[str] = command.split()
+    url: str = ""
+
+    for index, part in enumerate(parts):
+        if part in ("clone",) and index + 1 < len(parts):
+            remaining: list[str] = parts[index + 1 :]
+
+            for candidate in remaining:
+                if not candidate.startswith("-"):
+                    url = candidate
+
+                    break
+
+            break
+
+    if not url:
+        raise ToolError("Could not parse URL from git clone command")
+
+    if url.startswith("file://"):
+        raise ToolError("file:// protocol is not allowed")
+
+    hostname: str = ""
+
+    if url.startswith("git@") or url.startswith("ssh://"):
+        at_index: int = url.find("@")
+
+        if at_index != -1:
+            after_at: str = url[at_index + 1 :]
+            colon_index: int = after_at.find(":")
+            slash_index: int = after_at.find("/")
+
+            if colon_index != -1 and (slash_index == -1 or colon_index < slash_index):
+                hostname = after_at[:colon_index]
+            elif slash_index != -1:
+                hostname = after_at[:slash_index]
+    else:
+        parsed = urlparse(url)
+        hostname = parsed.hostname or ""
+
+    if not hostname or hostname not in allowed_hosts:
+        raise ToolError(
+            f"git clone target host '{hostname}' is not allowed. "
+            f"Permitted hosts: {sorted(allowed_hosts)}",
+        )
 
 
 def _resolve_path(file_path: str, cwd: Path) -> Path:
@@ -432,9 +549,14 @@ def _execute_glob(tool_input: dict[str, Any], cwd: Path) -> str:
     return "\n".join(matches)
 
 
-async def _execute_grep(tool_input: dict[str, Any], cwd: Path) -> str:
+async def _execute_grep(
+    tool_input: dict[str, Any],
+    cwd: Path,
+) -> str:
     """
     Search file contents using grep.
+
+    Runs with a sanitized environment that strips secrets.
 
     Args:
         tool_input (dict[str, Any]): Must contain ``pattern``, optionally
@@ -448,6 +570,7 @@ async def _execute_grep(tool_input: dict[str, Any], cwd: Path) -> str:
         ToolError: If grep times out, fails to start, or exits with an error.
     """
 
+    sanitized_env: dict[str, str] = build_sanitized_env()
     pattern: str = tool_input["pattern"]
     raw_path: str = tool_input.get("path", "")
     search_path: Path = Path(raw_path) if raw_path else cwd
@@ -470,6 +593,7 @@ async def _execute_grep(tool_input: dict[str, Any], cwd: Path) -> str:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=cwd,
+            env=sanitized_env,
         )
 
         stdout_bytes, stderr_bytes = await asyncio.wait_for(
@@ -505,6 +629,11 @@ async def _execute_bash(
     """
     Execute a bash command with allowlist validation.
 
+    Commands are checked for shell metacharacters that could enable injection
+    attacks (``$``, backticks, pipes, etc.). For ``git clone`` commands, the
+    target URL hostname is validated against ``DEFAULT_ALLOWED_CLONE_HOSTS``.
+    Runs with a sanitized environment that strips secrets.
+
     Args:
         tool_input (dict[str, Any]): Must contain ``command``.
         cwd (Path): Working directory for the command.
@@ -515,14 +644,18 @@ async def _execute_bash(
         str: Command output.
 
     Raises:
-        ToolError: If the command is not allowed, times out, fails to start,
-            or exits with a non-zero code.
+        ToolError: If the command is not allowed, contains shell injection,
+            targets a disallowed host, times out, fails to start, or exits
+            with a non-zero code.
     """
 
+    sanitized_env: dict[str, str] = build_sanitized_env()
     command: str = tool_input["command"]
     bash_patterns: list[str] = _parse_bash_patterns(allowed_tools=allowed_tools)
 
     if bash_patterns:
+        _validate_bash_command(command)
+
         allowed: bool = any(
             fnmatch.fnmatch(name=command, pat=pattern) for pattern in bash_patterns
         )
@@ -530,6 +663,12 @@ async def _execute_bash(
         if not allowed:
             raise ToolError(
                 f"Command not allowed. Permitted patterns: {bash_patterns}",
+            )
+
+        if GIT_CLONE_PATTERN.search(command):
+            _validate_clone_host(
+                command=command,
+                allowed_hosts=DEFAULT_ALLOWED_CLONE_HOSTS,
             )
 
     try:
@@ -540,6 +679,7 @@ async def _execute_bash(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=cwd,
+            env=sanitized_env,
         )
 
         stdout_bytes, stderr_bytes = await asyncio.wait_for(

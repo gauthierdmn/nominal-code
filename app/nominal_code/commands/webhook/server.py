@@ -24,6 +24,7 @@ from nominal_code.platforms.base import (
     PullRequestEvent,
     ReviewerPlatform,
 )
+
 if TYPE_CHECKING:
     from nominal_code.jobs.runner.base import JobRunner
 
@@ -62,7 +63,10 @@ async def run_webhook_server() -> None:
 
     enabled: list[str] = list(platforms.keys())
 
-    webhook: WebhookConfig = config.webhook  # type: ignore[assignment]
+    if config.webhook is None:
+        raise ValueError("WebhookConfig is required but not configured")
+
+    webhook: WebhookConfig = config.webhook
 
     bots: list[str] = []
 
@@ -415,7 +419,10 @@ async def _handle_webhook(
         platform: Platform = request.app["platforms"][platform_name]
         runner: JobRunner = request.app["runner"]
 
-        webhook: WebhookConfig = config.webhook  # type: ignore[assignment]
+        if config.webhook is None:
+            raise ValueError("WebhookConfig is required but not configured")
+
+        webhook: WebhookConfig = config.webhook
         filtering: FilteringPolicy = webhook.filtering
         routing: RoutingPolicy = webhook.routing
 
