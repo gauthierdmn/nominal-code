@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Protocol
 
+from nominal_code.config.settings import DEFAULT_REDIS_KEY_TTL_SECONDS
 from nominal_code.jobs.payload import JobPayload
 
 if TYPE_CHECKING:
@@ -86,7 +87,11 @@ def build_runner(config: Config, platforms: dict[str, Platform]) -> JobRunner:
 
     conversation_store = build_conversation_store(
         redis_url=redis.url if redis is not None else "",
-        redis_key_ttl_seconds=redis.key_ttl_seconds if redis is not None else 86400,
+        redis_key_ttl_seconds=(
+            redis.key_ttl_seconds
+            if redis is not None
+            else DEFAULT_REDIS_KEY_TTL_SECONDS
+        ),
     )
     job_queue: AsyncioJobQueue = AsyncioJobQueue()
 

@@ -284,10 +284,11 @@ Every review container runs with a restricted security context:
 
 ### Writable Volumes
 
-Since the root filesystem is read-only, two `emptyDir` volumes are mounted for workspace and temporary files:
+Since the root filesystem is read-only, three `emptyDir` volumes are mounted:
 
 - `/workspace` — repository checkout and agent working directory
 - `/tmp` — temporary files
+- `/home/nominal` — user home directory (uv cache, git config)
 
 ### Non-root Docker Images
 

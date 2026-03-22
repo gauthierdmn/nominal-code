@@ -229,6 +229,7 @@ class KubernetesRunner:
         container["volumeMounts"] = [
             {"name": "workspace", "mountPath": "/workspace"},
             {"name": "tmp", "mountPath": "/tmp"},
+            {"name": "home", "mountPath": "/home/nominal"},
         ]
 
         if self._config.image_pull_policy:
@@ -268,6 +269,7 @@ class KubernetesRunner:
         pod_spec["volumes"] = [
             {"name": "workspace", "emptyDir": {}},
             {"name": "tmp", "emptyDir": {}},
+            {"name": "home", "emptyDir": {}},
         ]
 
         if self._config.service_account:

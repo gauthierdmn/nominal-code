@@ -5,6 +5,7 @@ import logging
 from environs import Env
 
 from nominal_code.config import Config, load_config_for_ci, resolve_provider_config
+from nominal_code.config.settings import DEFAULT_REDIS_KEY_TTL_SECONDS
 from nominal_code.conversation.base import ConversationStore, build_conversation_store
 from nominal_code.handlers.review import run_and_post_review
 from nominal_code.handlers.worker import review_and_fix
@@ -59,7 +60,11 @@ async def run_job_main() -> int:
     redis = config.webhook.redis if config.webhook is not None else None
     conversation_store: ConversationStore = build_conversation_store(
         redis_url=redis.url if redis is not None else "",
-        redis_key_ttl_seconds=redis.key_ttl_seconds if redis is not None else 86400,
+        redis_key_ttl_seconds=(
+            redis.key_ttl_seconds
+            if redis is not None
+            else DEFAULT_REDIS_KEY_TTL_SECONDS
+        ),
     )
 
     platform_name: PlatformName = PlatformName(job.event.platform)

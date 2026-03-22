@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from nominal_code.config.settings import DEFAULT_REDIS_KEY_TTL_SECONDS
+
 
 class WebhookSettings(BaseModel):
     """
@@ -112,7 +114,7 @@ class RedisSettings(BaseModel):
     """
 
     url: str = ""
-    key_ttl_seconds: int = 86400
+    key_ttl_seconds: int = DEFAULT_REDIS_KEY_TTL_SECONDS
 
 
 class KubernetesResourceSettings(BaseModel):

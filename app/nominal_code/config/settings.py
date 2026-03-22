@@ -17,6 +17,7 @@ DEFAULT_REVIEWER_PROMPT_PATH: Path = Path("prompts/reviewer_prompt.md")
 DEFAULT_WORKER_PROMPT_PATH: Path = Path("prompts/system_prompt.md")
 DEFAULT_CODING_GUIDELINES_PATH: Path = Path("prompts/coding_guidelines.md")
 DEFAULT_LANGUAGE_GUIDELINES_DIR: Path = Path("prompts/languages")
+DEFAULT_REDIS_KEY_TTL_SECONDS: int = 86400
 
 
 class WorkerConfig(BaseModel):
@@ -91,7 +92,7 @@ class RedisConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     url: str = ""
-    key_ttl_seconds: int = 86400
+    key_ttl_seconds: int = DEFAULT_REDIS_KEY_TTL_SECONDS
 
 
 class WebhookConfig(BaseModel):
