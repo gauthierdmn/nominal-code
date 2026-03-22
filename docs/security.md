@@ -291,11 +291,7 @@ Since the root filesystem is read-only, two `emptyDir` volumes are mounted for w
 
 ### Non-root Docker Images
 
-All Dockerfiles create a dedicated `nominal` user (UID 1000, GID 1000) and switch to it via `USER nominal` before the entrypoint. This ensures:
-
-- **Consistent behavior across runtimes** — whether running under Kubernetes (with `runAsUser: 1000`), plain Docker, or docker-compose, the process never runs as root.
-- **No permission conflicts** — files are `chown`-ed to the `nominal` user during the build, so the non-root process can read the application and write to `/workspace` and `/tmp`.
-- **Defense-in-depth** — the image-level `USER` is the baseline. The K8s `runAsNonRoot: true` is an enforcement layer that rejects the pod if the image somehow defaults to root.
+The Dockerfile creates a dedicated `nominal` user (UID 1000, GID 1000) and `chown`s the application and workspace directories to it. The image does **not** set `USER nominal` because GitHub Actions container jobs require root access to host-mounted volumes. Instead, non-root execution is enforced at the Kubernetes layer via `runAsUser: 1000` and `runAsNonRoot: true` in the pod security context.
 
 ### Service Account Token
 

@@ -6,7 +6,6 @@ import logging
 import re
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 
 from nominal_code.agent.sandbox import build_sanitized_env, sanitize_output
 from nominal_code.llm.messages import ToolDefinition
@@ -372,63 +371,31 @@ def _validate_clone_host(
     """
     Validate that a ``git clone`` command targets an allowed hostname.
 
-    Extracts the URL argument from the command, parses the hostname,
-    and checks it against the allowlist. Supports both HTTPS URLs and
-    ``git@host:path`` SSH-style URLs.
+    Checks for ``host/`` or ``host:`` substrings in the command, which
+    covers HTTPS (``https://github.com/...``) and SSH
+    (``git@github.com:...``) URL formats. Rejects ``file://`` URLs
+    unconditionally.
 
     Args:
         command (str): The full ``git clone`` command string.
         allowed_hosts (frozenset[str]): Set of permitted hostnames.
 
     Raises:
-        ToolError: If the URL hostname is not in the allowlist, or if
-            the URL cannot be parsed.
+        ToolError: If the command contains a ``file://`` URL or does not
+            match any allowed hostname.
     """
 
-    parts: list[str] = command.split()
-    url: str = ""
-
-    for index, part in enumerate(parts):
-        if part in ("clone",) and index + 1 < len(parts):
-            remaining: list[str] = parts[index + 1 :]
-
-            for candidate in remaining:
-                if not candidate.startswith("-"):
-                    url = candidate
-
-                    break
-
-            break
-
-    if not url:
-        raise ToolError("Could not parse URL from git clone command")
-
-    if url.startswith("file://"):
+    if "file://" in command:
         raise ToolError("file:// protocol is not allowed")
 
-    hostname: str = ""
+    for host in allowed_hosts:
+        if f"{host}/" in command or f"{host}:" in command:
+            return
 
-    if url.startswith("git@") or url.startswith("ssh://"):
-        at_index: int = url.find("@")
-
-        if at_index != -1:
-            after_at: str = url[at_index + 1 :]
-            colon_index: int = after_at.find(":")
-            slash_index: int = after_at.find("/")
-
-            if colon_index != -1 and (slash_index == -1 or colon_index < slash_index):
-                hostname = after_at[:colon_index]
-            elif slash_index != -1:
-                hostname = after_at[:slash_index]
-    else:
-        parsed = urlparse(url)
-        hostname = parsed.hostname or ""
-
-    if not hostname or hostname not in allowed_hosts:
-        raise ToolError(
-            f"git clone target host '{hostname}' is not allowed. "
-            f"Permitted hosts: {sorted(allowed_hosts)}",
-        )
+    raise ToolError(
+        f"git clone target host is not allowed. "
+        f"Permitted hosts: {sorted(allowed_hosts)}",
+    )
 
 
 def _resolve_path(file_path: str, cwd: Path) -> Path:

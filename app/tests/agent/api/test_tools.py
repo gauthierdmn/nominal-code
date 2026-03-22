@@ -324,9 +324,16 @@ class TestValidateCloneHost:
         )
 
     def test_rejects_empty_url(self):
-        with pytest.raises(ToolError, match="Could not parse URL"):
+        with pytest.raises(ToolError, match="not allowed"):
             _validate_clone_host(
                 "git clone",
+                DEFAULT_ALLOWED_CLONE_HOSTS,
+            )
+
+    def test_rejects_file_protocol(self):
+        with pytest.raises(ToolError, match="file://"):
+            _validate_clone_host(
+                "git clone file:///etc/passwd",
                 DEFAULT_ALLOWED_CLONE_HOSTS,
             )
 

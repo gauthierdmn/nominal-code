@@ -26,6 +26,4 @@ RUN groupadd --gid 1000 nominal && \
     mkdir -p /workspace /tmp/nominal && \
     chown -R nominal:nominal /app /workspace /tmp/nominal
 
-USER nominal
-
 ENTRYPOINT ["/entrypoint.sh"]
