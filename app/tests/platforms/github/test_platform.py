@@ -557,58 +557,6 @@ class TestPostReaction:
             mock_request.assert_called_once()
 
 
-class TestIsPrOpen:
-    @pytest.mark.asyncio
-    async def test_is_pr_open_returns_true_when_open(self, platform):
-        mock_response = MagicMock()
-        mock_response.raise_for_status = MagicMock()
-        mock_response.json.return_value = {"state": "open"}
-
-        with patch.object(
-            platform,
-            "_request",
-            new_callable=AsyncMock,
-        ) as mock_request:
-            mock_request.return_value = mock_response
-            result = await platform.is_pr_open("owner/repo", 42)
-
-        assert result is True
-        mock_request.assert_called_once_with(
-            "GET",
-            "/repos/owner/repo/pulls/42",
-        )
-
-    @pytest.mark.asyncio
-    async def test_is_pr_open_returns_false_when_closed(self, platform):
-        mock_response = MagicMock()
-        mock_response.raise_for_status = MagicMock()
-        mock_response.json.return_value = {"state": "closed"}
-
-        with patch.object(
-            platform,
-            "_request",
-            new_callable=AsyncMock,
-        ) as mock_request:
-            mock_request.return_value = mock_response
-            result = await platform.is_pr_open("owner/repo", 42)
-
-        assert result is False
-
-    @pytest.mark.asyncio
-    async def test_is_pr_open_returns_true_on_http_error(self, platform):
-        import httpx
-
-        with patch.object(
-            platform,
-            "_request",
-            new_callable=AsyncMock,
-        ) as mock_request:
-            mock_request.side_effect = httpx.HTTPError("connection failed")
-            result = await platform.is_pr_open("owner/repo", 42)
-
-        assert result is True
-
-
 class TestFetchPrDiff:
     @pytest.mark.asyncio
     async def test_fetch_pr_diff_returns_changed_files(self, platform):

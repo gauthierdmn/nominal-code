@@ -31,7 +31,7 @@ from nominal_code.platforms.http import request_with_retry
 from nominal_code.platforms.registry import register_platform
 
 _env: Env = Env()
-GITHUB_API_BASE: str = "https://api.github.com"
+GITHUB_API_BASE: str = _env.str("GITHUB_API_BASE", "https://api.github.com")
 FILES_PER_PAGE: int = 100
 
 PR_ACTION_TO_EVENT_TYPE: dict[str, EventType] = {
@@ -85,6 +85,7 @@ class GitHubPlatform:
         auth: PlatformAuth,
         webhook_secret: str = "",
         fixed_installation_id: int = NO_INSTALLATION,
+        base_url: str = "",
     ) -> None:
         """
         Initialize the GitHub platform client.
@@ -94,6 +95,9 @@ class GitHubPlatform:
             webhook_secret (str): HMAC secret for webhook verification.
             fixed_installation_id (int): Installation ID for CLI/CI modes
                 where no webhook payload provides one.
+            base_url (str): Override for the GitHub API base URL.
+                Defaults to ``GITHUB_API_BASE`` env var or
+                ``https://api.github.com``.
         """
 
         self.auth: PlatformAuth = auth
@@ -101,7 +105,7 @@ class GitHubPlatform:
         self._fixed_installation_id: int = fixed_installation_id
 
         self._client: httpx.AsyncClient = httpx.AsyncClient(
-            base_url=GITHUB_API_BASE,
+            base_url=base_url or GITHUB_API_BASE,
             timeout=30.0,
         )
 
@@ -434,38 +438,6 @@ class GitHubPlatform:
                 repo_full_name,
                 pr_number,
             )
-
-    async def is_pr_open(self, repo_full_name: str, pr_number: int) -> bool:
-        """
-        Check whether a GitHub pull request is still open.
-
-        Returns True on HTTP errors as a safe default to avoid deleting
-        workspaces when the API is unreachable.
-
-        Args:
-            repo_full_name (str): Full repository name (e.g. ``owner/repo``).
-            pr_number (int): Pull request number.
-
-        Returns:
-            bool: True if the PR is open or on error, False if closed/merged.
-        """
-
-        url: str = f"/repos/{repo_full_name}/pulls/{pr_number}"
-
-        try:
-            response: httpx.Response = await self._request("GET", url)
-            response.raise_for_status()
-            data: dict[str, Any] = response.json()
-
-            return str(data.get("state", "")) == "open"
-        except httpx.HTTPError:
-            logger.warning(
-                "Failed to check PR state for %s#%d, assuming open",
-                repo_full_name,
-                pr_number,
-            )
-
-            return True
 
     async def fetch_pr_branch(self, repo_full_name: str, pr_number: int) -> str:
         """

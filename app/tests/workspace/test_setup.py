@@ -42,7 +42,8 @@ def _make_platform(branch="feature"):
 
 def _make_config(tmp_path):
     config = MagicMock()
-    config.workspace_base_dir = tmp_path
+    config.workspace = MagicMock()
+    config.workspace.base_dir = tmp_path
 
     return config
 

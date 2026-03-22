@@ -17,6 +17,7 @@ from nominal_code.platforms.github import (
     GitHubPlatform,
     load_private_key,
 )
+from nominal_code.platforms.github.platform import GITHUB_API_BASE
 
 _env: Env = Env()
 logger: logging.Logger = logging.getLogger(__name__)
@@ -92,6 +93,8 @@ def build_platform() -> ReviewerPlatform:
     app_id: str = _env.str("GITHUB_APP_ID", "")
     private_key: str = load_private_key()
 
+    base_url: str = GITHUB_API_BASE
+
     if app_id and private_key:
         cli_installation_id: int = _env.int("GITHUB_INSTALLATION_ID", 0)
 
@@ -101,6 +104,7 @@ def build_platform() -> ReviewerPlatform:
                 private_key=private_key,
             ),
             fixed_installation_id=cli_installation_id,
+            base_url=base_url,
         )
 
     github_token: str = _env.str("GITHUB_TOKEN", "")
@@ -112,7 +116,10 @@ def build_platform() -> ReviewerPlatform:
         )
         sys.exit(1)
 
-    return GitHubPlatform(auth=GitHubPatAuth(token=github_token))
+    return GitHubPlatform(
+        auth=GitHubPatAuth(token=github_token),
+        base_url=base_url,
+    )
 
 
 def resolve_workspace() -> str:

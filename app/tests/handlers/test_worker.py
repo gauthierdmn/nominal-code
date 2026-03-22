@@ -4,6 +4,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from nominal_code.agent.prompts import (
+    TAG_BRANCH_NAME,
+    TAG_FILE_PATH,
+    TAG_UNTRUSTED_HUNK,
+    TAG_UNTRUSTED_REQUEST,
+)
 from nominal_code.agent.result import AgentResult
 from nominal_code.config import CliAgentConfig, WorkerConfig
 from nominal_code.conversation.memory import MemoryConversationStore
@@ -15,10 +21,12 @@ from nominal_code.platforms.base import CommentEvent, PlatformName
 def _make_config(allowed_users=None):
     config = MagicMock()
     config.allowed_users = frozenset(allowed_users or ["alice"])
-    config.workspace_base_dir = "/tmp/workspaces"
+    config.workspace = MagicMock()
+    config.workspace.base_dir = "/tmp/workspaces"
     config.agent = CliAgentConfig()
-    config.coding_guidelines = "Use snake_case."
-    config.language_guidelines = {"python": "Python style rules."}
+    config.prompts = MagicMock()
+    config.prompts.coding_guidelines = "Use snake_case."
+    config.prompts.language_guidelines = {"python": "Python style rules."}
     config.worker = WorkerConfig(
         bot_username="claude-worker",
         system_prompt="Be concise.",
@@ -163,6 +171,8 @@ class TestBuildPrompt:
         assert "fix the bug" in result
         assert "owner/repo" in result
         assert "#42" in result
+        assert f"<{TAG_UNTRUSTED_REQUEST}>" in result
+        assert f"<{TAG_BRANCH_NAME}>" in result
 
     def test__build_prompt_with_deps_path(self):
         comment = _make_comment()
@@ -189,3 +199,41 @@ class TestBuildPrompt:
         assert "src/main.py" in result
         assert "@@ -1,3 +1,5 @@" in result
         assert "refactor this" in result
+        assert f"<{TAG_FILE_PATH}>" in result
+        assert f"<{TAG_UNTRUSTED_HUNK}>" in result
+
+
+class TestPromptBoundaryTags:
+    def test__build_prompt_wraps_diff_hunk_in_boundary_tags(self):
+        comment = _make_comment(
+            file_path="src/main.py",
+            diff_hunk="@@ -1,3 +1,5 @@\n context",
+        )
+
+        result = _build_prompt(event=comment, user_prompt="fix this")
+
+        assert f"<{TAG_UNTRUSTED_HUNK}>" in result
+        assert f"</{TAG_UNTRUSTED_HUNK}>" in result
+
+    def test__build_prompt_wraps_user_request_in_boundary_tags(self):
+        comment = _make_comment()
+
+        result = _build_prompt(event=comment, user_prompt="do something")
+
+        assert f"<{TAG_UNTRUSTED_REQUEST}>" in result
+        assert f"</{TAG_UNTRUSTED_REQUEST}>" in result
+        assert "do something" in result
+
+    def test__build_prompt_wraps_branch_in_boundary_tags(self):
+        comment = _make_comment(branch="feat/test")
+
+        result = _build_prompt(event=comment, user_prompt="fix")
+
+        assert f"<{TAG_BRANCH_NAME}>feat/test</{TAG_BRANCH_NAME}>" in result
+
+    def test__build_prompt_wraps_file_path_in_boundary_tags(self):
+        comment = _make_comment(file_path="src/app.py")
+
+        result = _build_prompt(event=comment, user_prompt="fix")
+
+        assert f"<{TAG_FILE_PATH}>src/app.py</{TAG_FILE_PATH}>" in result

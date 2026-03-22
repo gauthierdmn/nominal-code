@@ -4,28 +4,15 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from nominal_code.commands.webhook.helpers import acknowledge_event
-from nominal_code.config import CliAgentConfig, ReviewerConfig, WorkerConfig
+from nominal_code.config.policies import FilteringPolicy
 from nominal_code.models import BotType, EventType
 from nominal_code.platforms.base import CommentEvent, LifecycleEvent, PlatformName
 
 
-def _make_config(allowed_users=None):
-    config = MagicMock()
-    config.allowed_users = frozenset(allowed_users or ["alice"])
-    config.workspace_base_dir = "/tmp/workspaces"
-    config.agent = CliAgentConfig()
-    config.coding_guidelines = "Use snake_case."
-    config.language_guidelines = {"python": "Python style rules."}
-    config.worker = WorkerConfig(
-        bot_username="claude-worker",
-        system_prompt="Be concise.",
+def _make_filtering(allowed_users=None):
+    return FilteringPolicy(
+        allowed_users=frozenset(allowed_users or ["alice"]),
     )
-    config.reviewer = ReviewerConfig(
-        bot_username="claude-reviewer",
-        system_prompt="Review code.",
-    )
-
-    return config
 
 
 def _make_comment(
@@ -73,14 +60,14 @@ def _make_platform():
 class TestRunPreFlight:
     @pytest.mark.asyncio
     async def test_unauthorized_user_returns_false(self):
-        config = _make_config(allowed_users=["alice"])
+        filtering = _make_filtering(allowed_users=["alice"])
         platform = _make_platform()
         comment = _make_comment(author="eve")
 
         result = await acknowledge_event(
             event=comment,
             bot_type=BotType.WORKER,
-            config=config,
+            filtering=filtering,
             platform=platform,
         )
 
@@ -91,14 +78,14 @@ class TestRunPreFlight:
 
     @pytest.mark.asyncio
     async def test_authorized_user_posts_reactions_and_returns_true(self):
-        config = _make_config(allowed_users=["alice"])
+        filtering = _make_filtering(allowed_users=["alice"])
         platform = _make_platform()
         comment = _make_comment(author="alice")
 
         result = await acknowledge_event(
             event=comment,
             bot_type=BotType.WORKER,
-            config=config,
+            filtering=filtering,
             platform=platform,
         )
 
@@ -108,7 +95,7 @@ class TestRunPreFlight:
 
     @pytest.mark.asyncio
     async def test_lifecycle_event_skips_comment_reaction_but_reacts_on_pr(self):
-        config = _make_config(allowed_users=["alice"])
+        filtering = _make_filtering(allowed_users=["alice"])
         platform = _make_platform()
 
         event = LifecycleEvent(
@@ -124,7 +111,7 @@ class TestRunPreFlight:
         result = await acknowledge_event(
             event=event,
             bot_type=BotType.REVIEWER,
-            config=config,
+            filtering=filtering,
             platform=platform,
         )
 

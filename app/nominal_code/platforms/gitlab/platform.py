@@ -71,7 +71,7 @@ class GitLabPlatform:
     Verifies webhooks via secret token.
 
     Attributes:
-        _auth (PlatformAuth): Authentication strategy for token access.
+        auth (PlatformAuth): Authentication strategy for token access.
         webhook_secret (str): Secret token for webhook verification.
         base_url (str): GitLab instance base URL.
     """
@@ -91,13 +91,12 @@ class GitLabPlatform:
             base_url (str): GitLab instance base URL.
         """
 
+        self.auth: PlatformAuth = auth
         self.webhook_secret: str = webhook_secret
         self.base_url: str = base_url.rstrip("/")
 
-        self._auth: PlatformAuth = auth
         self._client: httpx.AsyncClient = httpx.AsyncClient(
             base_url=f"{self.base_url}/api/v4",
-            headers={"PRIVATE-TOKEN": self._auth.get_api_token()},
             timeout=30.0,
         )
 
@@ -110,8 +109,8 @@ class GitLabPlatform:
         """
         Send an HTTP request with transient retry.
 
-        Auth headers are set on the client, so no per-request injection
-        is needed.
+        Refreshes auth headers before each call so that auth swaps
+        (e.g. multi-tenant ContextVar auth) take effect immediately.
 
         Args:
             method (str): HTTP method (GET, POST, PUT, PATCH, DELETE).
@@ -122,6 +121,8 @@ class GitLabPlatform:
             httpx.Response: The HTTP response.
         """
 
+        self._refresh_client_headers()
+
         return await request_with_retry(self._client, method, url, **kwargs)
 
     def _refresh_client_headers(self) -> None:
@@ -131,7 +132,7 @@ class GitLabPlatform:
         Called after ``ensure_auth()`` to reflect any token changes.
         """
 
-        self._client.headers["PRIVATE-TOKEN"] = self._auth.get_api_token()
+        self._client.headers["PRIVATE-TOKEN"] = self.auth.get_api_token()
 
     @property
     def name(self) -> str:
@@ -323,39 +324,6 @@ class GitLabPlatform:
                 repo_full_name,
                 pr_number,
             )
-
-    async def is_pr_open(self, repo_full_name: str, pr_number: int) -> bool:
-        """
-        Check whether a GitLab merge request is still open.
-
-        Returns True on HTTP errors as a safe default to avoid deleting
-        workspaces when the API is unreachable.
-
-        Args:
-            repo_full_name (str): Full repository name (e.g. ``group/repo``).
-            pr_number (int): Merge request IID.
-
-        Returns:
-            bool: True if the MR is open or on error, False if closed/merged.
-        """
-
-        project_path: str = quote(repo_full_name, safe="")
-        url: str = f"/projects/{project_path}/merge_requests/{pr_number}"
-
-        try:
-            response: httpx.Response = await self._request("GET", url)
-            response.raise_for_status()
-            data: dict[str, Any] = response.json()
-
-            return str(data.get("state", "")) == "opened"
-        except httpx.HTTPError:
-            logger.warning(
-                "Failed to check MR state for %s!%d, assuming open",
-                repo_full_name,
-                pr_number,
-            )
-
-            return True
 
     async def fetch_pr_branch(self, repo_full_name: str, pr_number: int) -> str:
         """
@@ -639,7 +607,7 @@ class GitLabPlatform:
                 (unused for GitLab PAT auth).
         """
 
-        await self._auth.ensure_auth()
+        await self.auth.ensure_auth()
         self._refresh_client_headers()
 
     def _parse_note(
@@ -763,9 +731,9 @@ class GitLabPlatform:
         """
 
         if read_only:
-            token: str = self._auth.get_clone_token()
+            token: str = self.auth.get_clone_token()
         else:
-            token = self._auth.get_api_token()
+            token = self.auth.get_api_token()
 
         return f"https://oauth2:{token}@{self.host}/{repo_full_name}.git"
 

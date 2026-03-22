@@ -23,6 +23,7 @@ API_SERVER_URL: str = "https://kubernetes.default.svc"
 JOB_NAME_MAX_LENGTH: int = 63
 SLUG_PATTERN: re.Pattern[str] = re.compile(pattern=r"[^a-z0-9]")
 DEFAULT_JOB_TIMEOUT_MARGIN_SECONDS: int = 10
+DEFAULT_RUN_AS_USER: int = 1000
 JOB_CHANNEL_PREFIX: str = "nc:job"
 
 
@@ -217,6 +218,20 @@ class KubernetesRunner:
             "envFrom": env_from,
         }
 
+        container["securityContext"] = {
+            "readOnlyRootFilesystem": True,
+            "runAsNonRoot": True,
+            "runAsUser": DEFAULT_RUN_AS_USER,
+            "allowPrivilegeEscalation": False,
+            "capabilities": {"drop": ["ALL"]},
+        }
+
+        container["volumeMounts"] = [
+            {"name": "workspace", "mountPath": "/workspace"},
+            {"name": "tmp", "mountPath": "/tmp"},
+            {"name": "home", "mountPath": "/home/nominal"},
+        ]
+
         if self._config.image_pull_policy:
             container["imagePullPolicy"] = self._config.image_pull_policy
 
@@ -249,6 +264,13 @@ class KubernetesRunner:
             "containers": [container],
             "restartPolicy": "Never",
         }
+
+        pod_spec["automountServiceAccountToken"] = False
+        pod_spec["volumes"] = [
+            {"name": "workspace", "emptyDir": {}},
+            {"name": "tmp", "emptyDir": {}},
+            {"name": "home", "emptyDir": {}},
+        ]
 
         if self._config.service_account:
             pod_spec["serviceAccountName"] = self._config.service_account

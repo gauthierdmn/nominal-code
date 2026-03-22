@@ -143,6 +143,19 @@ Used by **CI mode**. Calls the LLM provider API directly with tool use. Supports
 
 The dispatcher in `agent/invoke.py` routes to the appropriate backend based on whether the config is a `CliAgentConfig` or `ApiAgentConfig`.
 
+## Policies
+
+Event handling is governed by two frozen Pydantic models that separate **what** gets processed from **how** it gets dispatched:
+
+- **`FilteringPolicy`** — repository allowlists, user authorization, and PR title tag matching. Applied before any dispatch decision.
+- **`RoutingPolicy`** — reviewer auto-trigger events and bot usernames for `@mention` matching.
+
+Both policies are fields on the top-level `Config` (`config.filtering`, `config.routing`) and are constructed from the YAML file and environment variables at startup.
+
+The webhook handler's public dispatch functions (`dispatch_lifecycle_event`, `dispatch_comment_event`, `filter_event`) accept policies directly rather than the full `Config`, making them reusable in contexts that construct their own policies — such as a multi-tenant enterprise wrapper that builds per-organization policies from a database.
+
+See **[Policies](reference/policies.md)** for the full reference.
+
 ## Components
 
 ### Webhook Server
@@ -234,10 +247,6 @@ Manages per-PR cloned repositories. Handles initial cloning, updating (fetch + r
 
 Helper functions for branch resolution and workspace construction. `resolve_branch()` fetches the PR branch from the platform API when the webhook payload doesn't include it. `create_workspace()` and `setup_workspace()` construct and initialise `GitWorkspace` instances.
 
-### Workspace Cleaner (`workspace/cleanup.py`)
-
-A background task that periodically scans the workspace directory and deletes workspaces for PRs that are no longer open. Queries each configured platform's API to check PR state. On API failure, workspaces are kept (safe default). Also cleans up orphaned `.deps/` directories and empty parent directories.
-
 ### Error Handling (`agent/errors.py`)
 
 An async context manager (`handle_agent_errors()`) that wraps handler execution. Catches workspace setup failures and agent runtime errors, posts user-facing error messages to the platform, and prevents unhandled exceptions from crashing the event loop.
@@ -276,22 +285,17 @@ In **Kubernetes mode**, the `RedisJobQueue` replaces the in-memory `AsyncioJobQu
 3. The Job pod runs `nominal-code run-job`, performs the review, and publishes a completion signal to `nc:job:{job_name}:done` via Redis pub/sub.
 4. The server receives the signal and the consumer moves on to the next queued job.
 
-## Cleanup Loop
-
-The workspace cleaner lifecycle:
-
-1. **Startup** — `run_once()` immediately removes stale workspaces from a previous run.
-2. **Periodic** — `start()` launches a background task that sleeps for `CLEANUP_INTERVAL_HOURS`, then runs cleanup, and repeats.
-3. **Shutdown** — the background task is cancelled when the server stops.
-
-Set `CLEANUP_INTERVAL_HOURS=0` to disable the periodic loop entirely.
-
 ## Source Layout
 
 ```
 nominal_code/
 ├── main.py              # Entry point: dispatches to webhook server, CLI, or CI
-├── config.py            # Frozen dataclass config loaded from env vars / files
+├── config/
+│   ├── settings.py      # Frozen Config model loaded from env vars / files
+│   ├── policies.py      # FilteringPolicy and RoutingPolicy (frozen Pydantic models)
+│   ├── loader.py        # load_config(), load_config_for_cli(), load_config_for_ci()
+│   ├── agent.py         # AgentConfig, CliAgentConfig, ApiAgentConfig
+│   └── kubernetes.py    # KubernetesConfig
 ├── models.py            # Shared enums (EventType, BotType, FileStatus) and dataclasses
 ├── commands/
 │   ├── cli.py           # One-shot review CLI (argparse, platform construction)
@@ -333,7 +337,7 @@ nominal_code/
 │   ├── payload.py       # ReviewJob serializable dataclass
 │   ├── execute.py       # Shared execution logic: routes by bot type, prepares and runs jobs
 │   ├── runner/          # Job runner implementations
-│   │   ├── base.py      # JobRunner protocol
+│   │   ├── base.py      # JobRunner protocol + build_runner() factory
 │   │   ├── process.py   # ProcessRunner: job enqueueing and handler dispatch
 │   │   └── kubernetes.py # Kubernetes Job dispatcher with Redis queue integration
 │   └── queue/           # Job queue implementations
@@ -353,6 +357,5 @@ nominal_code/
 │       └── platform.py  # GitLab webhook handler and REST API client
 └── workspace/
     ├── git.py           # GitWorkspace: clone, update, push per-PR workspaces
-    ├── setup.py         # Branch resolution and workspace construction helpers
-    └── cleanup.py       # Background task to delete stale PR workspaces
+    └── setup.py         # Branch resolution and workspace construction helpers
 ```

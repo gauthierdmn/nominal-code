@@ -78,7 +78,6 @@ The dispatcher in `agent/invoke.py` routes based on the agent config type (`CliA
 - `AGENT_MODEL`, `AGENT_MAX_TURNS`, `AGENT_CLI_PATH` — agent configuration.
 - `ALLOWED_REPOS` — comma-separated repository full names to process (e.g. `owner/repo-a,owner/repo-b`). When unset, all repos are accepted.
 - `REVIEWER_TRIGGERS` — comma-separated lifecycle events that auto-trigger the reviewer (e.g. `pr_opened,pr_push`).
-- `CLEANUP_INTERVAL_HOURS` — workspace cleanup frequency (default: `6`; `0` disables).
 - `LOG_LEVEL` — logging verbosity (default: `INFO`).
 
 ## File tree
@@ -100,5 +99,5 @@ nominal_code/
 │   ├── runner/          # JobRunner protocol (base.py), ProcessRunner, KubernetesRunner
 │   └── queue/           # JobQueue protocol (base.py), AsyncioJobQueue, RedisJobQueue
 ├── platforms/           # Platform protocol + GitHub/GitLab implementations (subpackages)
-└── workspace/           # Git workspace management and cleanup
+└── workspace/           # Git workspace management
 ```

@@ -82,7 +82,6 @@ See [Prompt File Configuration](configuration.md#prompt-file-configuration) for 
 | `REVIEWER_TRIGGERS` | `reviewer.triggers` | `webhook` | — | Comma-separated PR lifecycle events that auto-trigger the reviewer (e.g. `pr_opened,pr_push`) |
 | `PR_TITLE_INCLUDE_TAGS` | `access.pr_title_include_tags` | `webhook` | — | Comma-separated allowlist of tags. Only events whose PR title contains `[tag]` are processed |
 | `PR_TITLE_EXCLUDE_TAGS` | `access.pr_title_exclude_tags` | `webhook` | — | Comma-separated blocklist of tags. Events whose PR title contains `[tag]` are skipped |
-| `CLEANUP_INTERVAL_HOURS` | `workspace.cleanup_interval_hours` | `webhook` | `6` | Hours between workspace cleanup runs (`0` to disable) |
 | `WORKSPACE_BASE_DIR` | `workspace.base_dir` | `webhook` `cli` | System temp dir | Directory for cloning repos |
 
 See [Repository Filtering](configuration.md#repository-filtering), [Auto-Trigger](configuration.md#auto-trigger), and [PR Title Tag Filtering](configuration.md#pr-title-tag-filtering) for rules and examples.

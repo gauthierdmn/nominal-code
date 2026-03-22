@@ -11,8 +11,11 @@ from nominal_code.config import (
     CliAgentConfig,
     Config,
     ReviewerConfig,
+    WebhookConfig,
     WorkerConfig,
+    WorkspaceConfig,
 )
+from nominal_code.config.policies import FilteringPolicy, RoutingPolicy
 from nominal_code.conversation.memory import MemoryConversationStore
 from nominal_code.jobs.queue.asyncio import AsyncioJobQueue
 from nominal_code.jobs.runner.process import ProcessRunner
@@ -66,16 +69,21 @@ async def test_webhook_server_posts_review(
             bot_username=REVIEWER_BOT,
             system_prompt="You are a test reviewer.",
         ),
-        webhook_host="0.0.0.0",
-        webhook_port=0,
-        allowed_users=frozenset({ALLOWED_USER}),
-        workspace_base_dir=Path(tempfile.mkdtemp()),
         agent=CliAgentConfig(),
-        coding_guidelines="",
-        language_guidelines={},
-        cleanup_interval_hours=0,
-        reviewer_triggers=frozenset({EventType.PR_OPENED}),
-        pr_title_include_tags=frozenset({"nominalbot"}),
+        workspace=WorkspaceConfig(base_dir=Path(tempfile.mkdtemp())),
+        webhook=WebhookConfig(
+            host="0.0.0.0",
+            port=0,
+            filtering=FilteringPolicy(
+                allowed_users=frozenset({ALLOWED_USER}),
+                pr_title_include_tags=frozenset({"nominalbot"}),
+            ),
+            routing=RoutingPolicy(
+                reviewer_triggers=frozenset({EventType.PR_OPENED}),
+                worker_bot_username=WORKER_BOT,
+                reviewer_bot_username=REVIEWER_BOT,
+            ),
+        ),
     )
 
     platform = GitHubPlatform(

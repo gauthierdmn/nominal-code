@@ -40,7 +40,6 @@ platforms/
 | `authenticate()` | Yes | Yes |
 | `post_reply()` | Yes | Yes |
 | `post_reaction()` | Yes | Yes |
-| `is_pr_open()` | Yes | Yes |
 | `fetch_pr_branch()` | Yes | Yes |
 | `build_clone_url(read_only=)` | Yes | Yes |
 | `fetch_pr_comments()` | — | Yes |
@@ -102,7 +101,6 @@ Two auth modes, detected automatically by the factory:
 - **GitHub submit_review()** posts a native review with inline comments via `POST /repos/{repo}/pulls/{pr}/reviews`.
 - **GitLab submit_review()** posts a top-level note for the summary, then creates individual diff discussions per finding (requires fetching MR versions for base/head SHAs).
 - **Pagination** — `fetch_pr_diff()` on GitHub paginates at 100 files per page. GitLab fetches all diffs in one call.
-- **is_pr_open()** defaults to `True` on API errors (safe default for workspace cleanup).
 - **Auth call sites** — `authenticate(webhook_body=body)` is called once per webhook request (before `parse_event()`). `authenticate()` (no args) is called before `post_reaction()` in dispatch, inside each job closure (to handle token expiry during queue wait), and before `fetch_pr_branch()` in CLI mode. GitLab PAT mode is a no-op.
 - **Registry replacement** — `register_platform("gitlab", factory, allow_replace=True)` allows downstream packages (e.g. nominal-cloud) to override default platform factories.
 - **Job extra_env** — `JobPayload.extra_env` carries environment variables (e.g. `GITLAB_TOKEN`) into K8s job pods.

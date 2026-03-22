@@ -436,58 +436,6 @@ class TestPostReaction:
             assert "award_emoji" in call_args[0][1]
 
 
-class TestIsPrOpen:
-    @pytest.mark.asyncio
-    async def test_is_pr_open_returns_true_when_opened(self, platform):
-        mock_response = MagicMock()
-        mock_response.raise_for_status = MagicMock()
-        mock_response.json.return_value = {"state": "opened"}
-
-        with patch.object(
-            platform,
-            "_request",
-            new_callable=AsyncMock,
-        ) as mock_request:
-            mock_request.return_value = mock_response
-            result = await platform.is_pr_open("group/repo", 10)
-
-        assert result is True
-        mock_request.assert_called_once_with(
-            "GET",
-            "/projects/group%2Frepo/merge_requests/10",
-        )
-
-    @pytest.mark.asyncio
-    async def test_is_pr_open_returns_false_when_merged(self, platform):
-        mock_response = MagicMock()
-        mock_response.raise_for_status = MagicMock()
-        mock_response.json.return_value = {"state": "merged"}
-
-        with patch.object(
-            platform,
-            "_request",
-            new_callable=AsyncMock,
-        ) as mock_request:
-            mock_request.return_value = mock_response
-            result = await platform.is_pr_open("group/repo", 10)
-
-        assert result is False
-
-    @pytest.mark.asyncio
-    async def test_is_pr_open_returns_true_on_http_error(self, platform):
-        import httpx
-
-        with patch.object(
-            platform,
-            "_request",
-            new_callable=AsyncMock,
-        ) as mock_request:
-            mock_request.side_effect = httpx.HTTPError("connection failed")
-            result = await platform.is_pr_open("group/repo", 10)
-
-        assert result is True
-
-
 class TestFetchPrDiff:
     @pytest.mark.asyncio
     async def test_fetch_pr_diff_returns_changed_files(self, platform):
@@ -1006,7 +954,7 @@ class TestFactory:
 
         assert result is not None
         assert isinstance(result, GitLabPlatform)
-        assert result._auth.get_api_token() == "glpat-test456"
+        assert result.auth.get_api_token() == "glpat-test456"
         assert result.webhook_secret == "secret"
         assert result.base_url == "https://git.example.com"
 
@@ -1035,7 +983,7 @@ class TestFactory:
             result = _create_gitlab_platform()
 
         assert result is not None
-        assert result._auth.get_clone_token() == "glpat-readonly"
+        assert result.auth.get_clone_token() == "glpat-readonly"
 
 
 class TestGitLabPlatformInit:
@@ -1043,7 +991,7 @@ class TestGitLabPlatformInit:
         auth = GitLabPatAuth(token="glpat-abc")
         platform = GitLabPlatform(auth=auth)
 
-        assert platform._auth.get_api_token() == "glpat-abc"
+        assert platform.auth.get_api_token() == "glpat-abc"
 
     def test_init_stores_webhook_secret(self):
         auth = GitLabPatAuth(token="glpat-abc")
@@ -1073,13 +1021,13 @@ class TestGitLabPlatformInit:
         auth = GitLabPatAuth(token="tok")
         platform = GitLabPlatform(auth=auth)
 
-        assert platform._auth.get_clone_token() == "tok"
+        assert platform.auth.get_clone_token() == "tok"
 
     def test_init_stores_reviewer_token(self):
         auth = GitLabPatAuth(token="tok", reviewer_token="readonly-tok")
         platform = GitLabPlatform(auth=auth)
 
-        assert platform._auth.get_clone_token() == "readonly-tok"
+        assert platform.auth.get_clone_token() == "readonly-tok"
 
 
 class TestGitLabHostProperty:
@@ -1109,10 +1057,10 @@ class TestAuthenticate:
 
         await platform.authenticate(webhook_body=body)
 
-        assert platform._auth.get_api_token() == "glpat-test456"
+        assert platform.auth.get_api_token() == "glpat-test456"
 
     @pytest.mark.asyncio
     async def test_authenticate_without_webhook_body(self, platform):
         await platform.authenticate()
 
-        assert platform._auth.get_api_token() == "glpat-test456"
+        assert platform.auth.get_api_token() == "glpat-test456"

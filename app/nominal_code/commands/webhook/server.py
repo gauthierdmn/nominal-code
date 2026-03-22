@@ -5,17 +5,16 @@ import logging
 import sys
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
-from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from aiohttp import web
 
 from nominal_code.commands.webhook.helpers import acknowledge_event, extract_mention
 from nominal_code.config import Config, load_config
-from nominal_code.conversation.base import ConversationStore, build_conversation_store
+from nominal_code.config.policies import FilteringPolicy, RoutingPolicy
+from nominal_code.config.settings import WebhookConfig
 from nominal_code.jobs.payload import JobPayload
-from nominal_code.jobs.queue.asyncio import AsyncioJobQueue
-from nominal_code.jobs.runner.process import ProcessRunner
+from nominal_code.jobs.runner import build_runner
 from nominal_code.models import COMMENT_EVENT_TYPES, BotType
 from nominal_code.platforms import build_platforms
 from nominal_code.platforms.base import (
@@ -25,7 +24,6 @@ from nominal_code.platforms.base import (
     PullRequestEvent,
     ReviewerPlatform,
 )
-from nominal_code.workspace.cleanup import WorkspaceCleaner
 
 if TYPE_CHECKING:
     from nominal_code.jobs.runner.base import JobRunner
@@ -55,35 +53,7 @@ async def run_webhook_server() -> None:
         )
         sys.exit(1)
 
-    runner: JobRunner
-
-    if config.kubernetes is not None:
-        if not config.redis_url:
-            logger.error("REDIS_URL is required when JOB_RUNNER=kubernetes")
-            sys.exit(1)
-
-        from nominal_code.jobs.queue.redis import RedisJobQueue
-        from nominal_code.jobs.runner.kubernetes import KubernetesRunner
-
-        redis_queue: RedisJobQueue = RedisJobQueue(config.redis_url)
-
-        runner = KubernetesRunner(
-            config=config.kubernetes,
-            queue=redis_queue,
-        )
-    else:
-        conversation_store: ConversationStore = build_conversation_store(
-            redis_url=config.redis_url,
-            redis_key_ttl_seconds=config.redis_key_ttl_seconds,
-        )
-        job_queue: AsyncioJobQueue = AsyncioJobQueue()
-
-        runner = ProcessRunner(
-            config=config,
-            platforms=platforms,
-            conversation_store=conversation_store,
-            queue=job_queue,
-        )
+    runner: JobRunner = build_runner(config=config, platforms=platforms)
 
     app: web.Application = create_app(
         config=config,
@@ -93,34 +63,30 @@ async def run_webhook_server() -> None:
 
     enabled: list[str] = list(platforms.keys())
 
+    if config.webhook is None:
+        raise ValueError("WebhookConfig is required but not configured")
+
+    webhook: WebhookConfig = config.webhook
+
     bots: list[str] = []
 
-    if config.worker is not None:
-        bots.append(f"worker=@{config.worker.bot_username}")
+    if webhook.routing.worker_bot_username:
+        bots.append(f"worker=@{webhook.routing.worker_bot_username}")
 
-    if config.reviewer is not None:
-        bots.append(f"reviewer=@{config.reviewer.bot_username}")
+    if webhook.routing.reviewer_bot_username:
+        bots.append(f"reviewer=@{webhook.routing.reviewer_bot_username}")
 
-    runner_mode: str = "kubernetes" if config.kubernetes is not None else "in-process"
+    runner_mode: str = "kubernetes" if webhook.kubernetes is not None else "in-process"
 
     logger.info(
         "Starting server on %s:%d | platforms=%s | %s | runner=%s | allowed_users=%s",
-        config.webhook_host,
-        config.webhook_port,
+        webhook.host,
+        webhook.port,
         enabled,
         " | ".join(bots),
         runner_mode,
-        config.allowed_users,
+        webhook.filtering.allowed_users,
     )
-
-    cleaner: WorkspaceCleaner | None = None
-
-    if config.cleanup_interval_hours > 0:
-        cleaner = WorkspaceCleaner(
-            base_dir=config.workspace_base_dir,
-            platforms=platforms,
-            cleanup_wait=timedelta(hours=config.cleanup_interval_hours),
-        )
 
     web_runner: web.AppRunner = web.AppRunner(app)
 
@@ -128,15 +94,11 @@ async def run_webhook_server() -> None:
 
     site: web.TCPSite = web.TCPSite(
         runner=web_runner,
-        host=config.webhook_host,
-        port=config.webhook_port,
+        host=webhook.host,
+        port=webhook.port,
     )
 
     try:
-        if cleaner is not None:
-            cleaner.purge()
-            await cleaner.start()
-
         await site.start()
         logger.info("Server is running, waiting for webhooks...")
         await asyncio.Event().wait()
@@ -146,10 +108,6 @@ async def run_webhook_server() -> None:
 
     finally:
         logger.info("Shutting down...")
-
-        if cleaner is not None:
-            await cleaner.stop()
-
         await web_runner.cleanup()
 
 
@@ -188,7 +146,10 @@ def create_app(
     return app
 
 
-def should_process_event(event: PullRequestEvent, config: Config) -> bool:
+def should_process_event(
+    event: PullRequestEvent,
+    filtering: FilteringPolicy,
+) -> bool:
     """
     Check whether an event passes the PR title tag filters.
 
@@ -197,29 +158,207 @@ def should_process_event(event: PullRequestEvent, config: Config) -> bool:
 
     Args:
         event (PullRequestEvent): The parsed webhook event.
-        config (Config): Application configuration with tag filter lists.
+        filtering (FilteringPolicy): Filtering policy with title tag lists.
 
     Returns:
         bool: True if the event should be processed.
     """
 
-    if not config.pr_title_include_tags and not config.pr_title_exclude_tags:
+    if not filtering.pr_title_include_tags and not filtering.pr_title_exclude_tags:
         return True
 
     title_lower: str = event.pr_title.lower()
 
-    for tag in config.pr_title_exclude_tags:
+    for tag in filtering.pr_title_exclude_tags:
         if f"[{tag}]" in title_lower:
             return False
 
-    if config.pr_title_include_tags:
-        for tag in config.pr_title_include_tags:
+    if filtering.pr_title_include_tags:
+        for tag in filtering.pr_title_include_tags:
             if f"[{tag}]" in title_lower:
                 return True
 
         return False
 
     return True
+
+
+def filter_event(event: PullRequestEvent, filtering: FilteringPolicy) -> str | None:
+    """
+    Apply standard event filters and return a reason string if filtered.
+
+    Checks ``allowed_repos`` and PR title tag filters. Returns ``None``
+    when the event should proceed.
+
+    Args:
+        event (PullRequestEvent): The parsed webhook event.
+        filtering (FilteringPolicy): Filtering policy.
+
+    Returns:
+        str | None: A filter reason (``"filtered"``) or ``None`` if the
+            event passes all filters.
+    """
+
+    if filtering.allowed_repos and event.repo_full_name not in filtering.allowed_repos:
+        logger.debug(
+            "Ignoring event from repo %s (not in allowed repos)",
+            event.repo_full_name,
+        )
+
+        return "filtered"
+
+    if not should_process_event(event=event, filtering=filtering):
+        return "filtered"
+
+    return None
+
+
+async def dispatch_lifecycle_event(
+    event: PullRequestEvent,
+    filtering: FilteringPolicy,
+    routing: RoutingPolicy,
+    platform: Platform,
+    runner: JobRunner,
+    namespace: str = "",
+    extra_env: dict[str, str] | None = None,
+) -> web.Response:
+    """
+    Dispatch a lifecycle event to the reviewer bot.
+
+    Validates that a reviewer bot username is configured, the event is a
+    lifecycle event, and the platform supports reviews. Acknowledges the
+    event and enqueues a reviewer job.
+
+    Args:
+        event (PullRequestEvent): The parsed event.
+        filtering (FilteringPolicy): Filtering policy (for user authorization).
+        routing (RoutingPolicy): Routing policy.
+        platform (Platform): The platform client.
+        runner (JobRunner): Job runner for dispatching review jobs.
+        namespace (str): Logical namespace for job isolation.
+        extra_env (dict[str, str] | None): Additional env vars for the job container.
+
+    Returns:
+        web.Response: The HTTP response.
+    """
+
+    if not routing.reviewer_bot_username:
+        return web.json_response({"status": "ignored"})
+
+    if not isinstance(event, LifecycleEvent):
+        return web.json_response({"status": "ignored"})
+
+    if not isinstance(platform, ReviewerPlatform):
+        return web.json_response({"status": "ignored"})
+
+    await acknowledge_event(
+        event=event,
+        bot_type=BotType.REVIEWER,
+        filtering=filtering,
+        platform=platform,
+    )
+
+    job: JobPayload = JobPayload(
+        event=event,
+        bot_type=BotType.REVIEWER.value,
+        namespace=namespace,
+        extra_env=extra_env or {},
+    )
+
+    await runner.enqueue(job)
+
+    return web.json_response({"status": "accepted"})
+
+
+async def dispatch_comment_event(
+    event: PullRequestEvent,
+    filtering: FilteringPolicy,
+    routing: RoutingPolicy,
+    platform: Platform,
+    runner: JobRunner,
+    namespace: str = "",
+    extra_env: dict[str, str] | None = None,
+) -> web.Response:
+    """
+    Dispatch a comment event to the appropriate bot.
+
+    Checks for @mentions of the worker and reviewer bots using the
+    usernames from the routing policy. Authorizes the comment author
+    against the filtering policy and enqueues a job. Worker mentions
+    take precedence over reviewer mentions.
+
+    Args:
+        event (PullRequestEvent): The parsed event.
+        filtering (FilteringPolicy): Filtering policy (for user authorization).
+        routing (RoutingPolicy): Routing policy (for bot usernames).
+        platform (Platform): The platform client.
+        runner (JobRunner): Job runner for dispatching review jobs.
+        namespace (str): Logical namespace for job isolation.
+        extra_env (dict[str, str] | None): Additional env vars for the job container.
+
+    Returns:
+        web.Response: The HTTP response.
+    """
+
+    if event.event_type not in COMMENT_EVENT_TYPES:
+        return web.json_response({"status": "ignored"})
+
+    if not isinstance(event, CommentEvent):
+        return web.json_response({"status": "ignored"})
+
+    comment_event: CommentEvent = event
+
+    worker_prompt: str | None = None
+    reviewer_prompt: str | None = None
+
+    if routing.worker_bot_username:
+        worker_prompt = extract_mention(
+            text=comment_event.body,
+            bot_username=routing.worker_bot_username,
+        )
+
+    if routing.reviewer_bot_username:
+        reviewer_prompt = extract_mention(
+            text=comment_event.body,
+            bot_username=routing.reviewer_bot_username,
+        )
+
+    if worker_prompt is not None:
+        bot_type: BotType = BotType.WORKER
+        mention_prompt: str = worker_prompt
+
+    elif reviewer_prompt is not None and isinstance(platform, ReviewerPlatform):
+        bot_type = BotType.REVIEWER
+        mention_prompt = reviewer_prompt
+
+    else:
+        return web.json_response({"status": "no_mention"})
+
+    proceed: bool = await acknowledge_event(
+        event=comment_event,
+        bot_type=bot_type,
+        filtering=filtering,
+        platform=platform,
+    )
+
+    if not proceed:
+        return web.json_response({"status": "unauthorized"})
+
+    mentioned_event: CommentEvent = replace(
+        comment_event,
+        mention_prompt=mention_prompt,
+    )
+
+    job: JobPayload = JobPayload(
+        event=mentioned_event,
+        bot_type=bot_type.value,
+        namespace=namespace,
+        extra_env=extra_env or {},
+    )
+
+    await runner.enqueue(job)
+
+    return web.json_response({"status": "accepted"})
 
 
 async def _handle_health(request: web.Request) -> web.Response:
@@ -280,6 +419,13 @@ async def _handle_webhook(
         platform: Platform = request.app["platforms"][platform_name]
         runner: JobRunner = request.app["runner"]
 
+        if config.webhook is None:
+            raise ValueError("WebhookConfig is required but not configured")
+
+        webhook: WebhookConfig = config.webhook
+        filtering: FilteringPolicy = webhook.filtering
+        routing: RoutingPolicy = webhook.routing
+
         body: bytes = await request.read()
 
         if not platform.verify_webhook(request=request, body=body):
@@ -297,100 +443,27 @@ async def _handle_webhook(
         if event is None:
             return web.json_response({"status": "ignored"})
 
-        if config.allowed_repos and event.repo_full_name not in config.allowed_repos:
-            logger.debug(
-                "Ignoring event from repo %s (not in ALLOWED_REPOS)",
-                event.repo_full_name,
-            )
+        filter_reason: str | None = filter_event(event=event, filtering=filtering)
 
-            return web.json_response({"status": "filtered"})
+        if filter_reason is not None:
+            return web.json_response({"status": filter_reason})
 
-        if not should_process_event(event=event, config=config):
-            return web.json_response({"status": "filtered"})
-
-        if event.event_type in config.reviewer_triggers:
-            if config.reviewer is None:
-                return web.json_response({"status": "ignored"})
-
-            if not isinstance(event, LifecycleEvent):
-                return web.json_response({"status": "ignored"})
-
-            if not isinstance(platform, ReviewerPlatform):
-                return web.json_response({"status": "ignored"})
-
-            await acknowledge_event(
+        if event.event_type in routing.reviewer_triggers:
+            return await dispatch_lifecycle_event(
                 event=event,
-                bot_type=BotType.REVIEWER,
-                config=config,
+                filtering=filtering,
+                routing=routing,
                 platform=platform,
+                runner=runner,
             )
 
-            job: JobPayload = JobPayload(
-                event=event,
-                bot_type=BotType.REVIEWER.value,
-            )
-
-            await runner.enqueue(job)
-
-            return web.json_response({"status": "accepted"})
-
-        if event.event_type not in COMMENT_EVENT_TYPES:
-            return web.json_response({"status": "ignored"})
-
-        if not isinstance(event, CommentEvent):
-            return web.json_response({"status": "ignored"})
-
-        comment_event: CommentEvent = event
-
-        worker_prompt: str | None = None
-        reviewer_prompt: str | None = None
-
-        if config.worker is not None:
-            worker_prompt = extract_mention(
-                text=comment_event.body,
-                bot_username=config.worker.bot_username,
-            )
-
-        if config.reviewer is not None:
-            reviewer_prompt = extract_mention(
-                text=comment_event.body,
-                bot_username=config.reviewer.bot_username,
-            )
-
-        if worker_prompt is not None:
-            bot_type: BotType = BotType.WORKER
-            mention_prompt: str = worker_prompt
-
-        elif reviewer_prompt is not None and isinstance(platform, ReviewerPlatform):
-            bot_type = BotType.REVIEWER
-            mention_prompt = reviewer_prompt
-
-        else:
-            return web.json_response({"status": "no_mention"})
-
-        proceed = await acknowledge_event(
-            event=comment_event,
-            bot_type=bot_type,
-            config=config,
+        return await dispatch_comment_event(
+            event=event,
+            filtering=filtering,
+            routing=routing,
             platform=platform,
+            runner=runner,
         )
-
-        if not proceed:
-            return web.json_response({"status": "unauthorized"})
-
-        mentioned_event: CommentEvent = replace(
-            comment_event,
-            mention_prompt=mention_prompt,
-        )
-
-        job = JobPayload(
-            event=mentioned_event,
-            bot_type=bot_type.value,
-        )
-
-        await runner.enqueue(job)
-
-        return web.json_response({"status": "accepted"})
 
     except Exception:
         logger.exception("Unhandled error in webhook handler for %s", platform_name)
