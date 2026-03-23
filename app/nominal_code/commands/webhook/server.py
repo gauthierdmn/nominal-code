@@ -10,6 +10,9 @@ from typing import TYPE_CHECKING
 from aiohttp import web
 
 from nominal_code.commands.webhook.helpers import acknowledge_event, extract_mention
+from nominal_code.commands.webhook.middleware import build_rate_limit_middleware
+from nominal_code.commands.webhook.rate_limiter import WebhookRateLimiter
+from nominal_code.commands.webhook.stats import WebhookStats
 from nominal_code.config import Config, load_config
 from nominal_code.config.policies import FilteringPolicy, RoutingPolicy
 from nominal_code.config.settings import WebhookConfig
@@ -128,13 +131,21 @@ def create_app(
         web.Application: The configured aiohttp application.
     """
 
-    app: web.Application = web.Application(client_max_size=5 * 1024 * 1024)
+    limiter: WebhookRateLimiter = WebhookRateLimiter()
+    stats: WebhookStats = WebhookStats()
+
+    app: web.Application = web.Application(
+        client_max_size=5 * 1024 * 1024,
+        middlewares=[build_rate_limit_middleware(limiter)],
+    )
 
     app["config"] = config
     app["platforms"] = platforms
     app["runner"] = runner
+    app["stats"] = stats
 
     app.router.add_get(path="/health", handler=_handle_health)
+    app.router.add_get(path="/stats", handler=_handle_stats)
 
     for platform_name in platforms:
         handler: Callable[
@@ -373,6 +384,22 @@ async def _handle_health(request: web.Request) -> web.Response:
     """
 
     return web.json_response({"status": "ok"})
+
+
+async def _handle_stats(request: web.Request) -> web.Response:
+    """
+    Return webhook processing statistics.
+
+    Args:
+        request (web.Request): The incoming request.
+
+    Returns:
+        web.Response: JSON response with per-platform stats.
+    """
+
+    stats: WebhookStats = request.app["stats"]
+
+    return web.json_response(stats.get_summary())
 
 
 def _make_webhook_handler(
