@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -10,6 +11,23 @@ from nominal_code.agent.sandbox import redact_url
 logger: logging.Logger = logging.getLogger(__name__)
 DEPS_FOLDER_NAME: str = ".deps"
 GIT_FOLDER_NAME: str = ".git"
+DEFAULT_BASE_DIR: Path = Path(tempfile.gettempdir()) / "nominal-code"
+
+
+def build_repo_path(base_dir: Path, repo_full_name: str, pr_number: int) -> Path:
+    """
+    Build the workspace path for a specific PR/MR.
+
+    Args:
+        base_dir (Path): Base directory for all workspaces.
+        repo_full_name (str): Full repository name (e.g. ``owner/repo``).
+        pr_number (int): Pull/merge request number.
+
+    Returns:
+        Path: Absolute path to the PR workspace directory.
+    """
+
+    return base_dir / repo_full_name / f"pr-{pr_number}"
 
 
 @dataclass(frozen=True)
@@ -37,6 +55,7 @@ class GitWorkspace:
 
     Attributes:
         repo_path (Path): Absolute path to the cloned repository.
+        read_only (bool): Whether the workspace is read-only.
     """
 
     def __init__(
@@ -46,6 +65,7 @@ class GitWorkspace:
         pr_number: int,
         clone_url: str,
         branch: str,
+        read_only: bool = False,
     ) -> None:
         """
         Initialize the workspace configuration.
@@ -54,15 +74,18 @@ class GitWorkspace:
             base_dir (Path): Base directory for all workspaces.
             repo_full_name (str): Full repository name (e.g. ``owner/repo``).
             pr_number (int): Pull/merge request number.
-            clone_url (str): Authenticated clone URL.
+            clone_url (str): Authenticated clone URL. Empty when
+                ``read_only`` is True.
             branch (str): Branch to check out.
+            read_only (bool): When True the workspace was pre-cloned.
         """
 
         self._repo_dir: Path = base_dir / repo_full_name
         self._clone_url: str = clone_url
         self._branch: str = branch
+        self.read_only: bool = read_only
 
-        self.repo_path: Path = self._repo_dir / f"pr-{pr_number}"
+        self.repo_path: Path = build_repo_path(base_dir, repo_full_name, pr_number)
 
     @property
     def deps_path(self) -> Path:
@@ -78,7 +101,13 @@ class GitWorkspace:
     def maybe_create_deps_dir(self) -> None:
         """
         Create the shared dependencies directory if it does not exist.
+
+        Skipped for read-only workspaces where the filesystem may not
+        be writable.
         """
+
+        if self.read_only:
+            return
 
         self.deps_path.mkdir(parents=True, exist_ok=True)
 
@@ -86,28 +115,27 @@ class GitWorkspace:
         """
         Ensure the workspace is cloned and up to date.
 
-        When no ``clone_url`` was provided but ``.git`` already exists,
-        the workspace is treated as externally managed (e.g. pre-cloned
-        by CI or an init container) and no git operations are performed.
+        For read-only workspaces, validates that ``.git`` exists and
+        returns without performing any git operations.
 
-        When a ``clone_url`` is set, clones or fetches as needed.
+        For writable workspaces, clones or fetches as needed.
 
         Raises:
-            RuntimeError: If a git operation fails, or if no
-                ``clone_url`` was provided and ``.git`` does not exist.
+            RuntimeError: If a git operation fails, or if the workspace
+                is read-only and ``.git`` does not exist.
         """
 
         git_dir_exists: bool = (self.repo_path / GIT_FOLDER_NAME).is_dir()
 
-        if not self._clone_url:
+        if self.read_only:
             if not git_dir_exists:
                 raise RuntimeError(
-                    f"No clone URL provided and {self.repo_path / GIT_FOLDER_NAME} "
-                    "does not exist — cannot prepare workspace",
+                    f"Read-only workspace at {self.repo_path} has no "
+                    f"{GIT_FOLDER_NAME} directory — was the init container skipped?",
                 )
 
             logger.info(
-                "Workspace externally managed, skipping clone/fetch for %s",
+                "Workspace is read-only, skipping clone/fetch for %s",
                 self.repo_path,
             )
 

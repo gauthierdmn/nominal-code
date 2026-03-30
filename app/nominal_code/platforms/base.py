@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
-
-from aiohttp import web
 
 if TYPE_CHECKING:
     from nominal_code.models import ChangedFile, EventType, ReviewFinding
@@ -193,12 +192,12 @@ class Platform(Protocol):
 
         ...
 
-    def verify_webhook(self, request: web.Request, body: bytes) -> bool:
+    def verify_webhook(self, headers: Mapping[str, str], body: bytes) -> bool:
         """
         Verify the webhook signature or token.
 
         Args:
-            request (web.Request): The incoming HTTP request.
+            headers (Mapping[str, str]): The HTTP request headers.
             body (bytes): The raw request body.
 
         Returns:
@@ -209,7 +208,7 @@ class Platform(Protocol):
 
     def parse_event(
         self,
-        request: web.Request,
+        headers: Mapping[str, str],
         body: bytes,
     ) -> CommentEvent | LifecycleEvent | None:
         """
@@ -218,7 +217,7 @@ class Platform(Protocol):
         Returns None if the event type is not relevant.
 
         Args:
-            request (web.Request): The incoming HTTP request.
+            headers (Mapping[str, str]): The HTTP request headers.
             body (bytes): The raw request body.
 
         Returns:

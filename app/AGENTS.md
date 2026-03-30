@@ -5,6 +5,7 @@ AI-powered code review bot that monitors GitHub PRs and GitLab MRs. When a user 
 ## Architecture
 
 - **Async-first** — built on aiohttp + asyncio; all I/O (HTTP, git, agent) is non-blocking.
+- **Two-layer config** — mutable `*Settings` models (`config/models.py`) parse YAML/env vars; `loader.py` transforms them into frozen `*Config` models (`config/config.py`, `config/kubernetes.py`) that application code consumes. See `docs/architecture.md` for details.
 - **Protocol-based platforms** — GitHub and GitLab implement the same `Platform` / `ReviewerPlatform` protocols, making it easy to add new providers.
 - **Per-PR job serialisation** — `JobQueue` protocol with two implementations (`AsyncioJobQueue` for in-process, `RedisJobQueue` for Kubernetes) guarantees only one agent job runs per PR at a time, preventing race conditions on the same workspace.
 - **Multi-turn conversations** — `ConversationStore` maps (platform, repo, PR, bot) to conversation IDs and message histories so conversations resume across comments.
@@ -85,7 +86,13 @@ The dispatcher in `agent/invoke.py` routes based on the agent config type (`CliA
 ```
 nominal_code/
 ├── main.py              # Entry point: dispatches to webhook server, CLI, or CI
-├── config.py            # Frozen dataclass config loaded from env vars / files
+├── config/
+│   ├── models.py        # Mutable *Settings models (YAML/env input layer)
+│   ├── config.py        # Frozen *Config models (application output layer)
+│   ├── loader.py        # Settings → Config transformation with validation
+│   ├── policies.py      # FilteringPolicy and RoutingPolicy (frozen)
+│   ├── agent.py         # AgentConfig, CliAgentConfig, ApiAgentConfig
+│   └── kubernetes.py    # KubernetesConfig (frozen)
 ├── models.py            # Shared enums (EventType, BotType, FileStatus) and dataclasses (ReviewFinding, AgentReview, ChangedFile)
 ├── commands/            # Entry points: CLI review, CI mode, webhook server, K8s job runner
 │   ├── webhook/         # Webhook server (server.py), helpers, mention extraction, K8s job runner (job.py)

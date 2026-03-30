@@ -4,11 +4,11 @@ import hashlib
 import hmac
 import json
 import logging
+from collections.abc import Mapping
 from contextvars import ContextVar
 from typing import Any
 
 import httpx
-from aiohttp import web
 from environs import Env
 
 from nominal_code.models import ChangedFile, EventType, FileStatus, ReviewFinding
@@ -230,14 +230,14 @@ class GitHubPlatform:
 
         return int(installation.get("id", 0))
 
-    def verify_webhook(self, request: web.Request, body: bytes) -> bool:
+    def verify_webhook(self, headers: Mapping[str, str], body: bytes) -> bool:
         """
         Verify the GitHub webhook HMAC-SHA256 signature.
 
         If no webhook secret is configured, verification is skipped.
 
         Args:
-            request (web.Request): The incoming HTTP request.
+            headers (Mapping[str, str]): The HTTP request headers.
             body (bytes): The raw request body.
 
         Returns:
@@ -247,7 +247,7 @@ class GitHubPlatform:
         if not self.webhook_secret:
             return True
 
-        signature: str | None = request.headers.get("X-Hub-Signature-256")
+        signature: str | None = headers.get("X-Hub-Signature-256")
 
         if not signature:
             return False
@@ -265,7 +265,7 @@ class GitHubPlatform:
 
     def parse_event(
         self,
-        request: web.Request,
+        headers: Mapping[str, str],
         body: bytes,
     ) -> CommentEvent | LifecycleEvent | None:
         """
@@ -283,14 +283,14 @@ class GitHubPlatform:
         before ``parse_event()`` in the webhook handler.
 
         Args:
-            request (web.Request): The incoming HTTP request.
+            headers (Mapping[str, str]): The HTTP request headers.
             body (bytes): The raw request body.
 
         Returns:
             CommentEvent | LifecycleEvent | None: Parsed event, or None if not relevant.
         """
 
-        event_header: str = request.headers.get("X-GitHub-Event", "")
+        event_header: str = headers.get("X-GitHub-Event", "")
 
         try:
             payload: dict[str, Any] = json.loads(body)
