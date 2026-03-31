@@ -66,7 +66,6 @@ async def run_job_main() -> int:
     platform_name: PlatformName = PlatformName(job.event.platform)
     platform: ReviewerPlatform = _build_platform(platform_name)
     handler: JobHandler = DefaultJobHandler()
-    pre_cloned: bool = not job.event.clone_url
 
     exit_code: int = await _run_job(
         job=job,
@@ -74,7 +73,6 @@ async def run_job_main() -> int:
         platform=platform,
         handler=handler,
         conversation_store=conversation_store,
-        pre_cloned=pre_cloned,
     )
 
     _publish_completion(exit_code=exit_code, job=job, redis=redis)
@@ -88,7 +86,6 @@ async def _run_job(
     platform: ReviewerPlatform,
     handler: JobHandler,
     conversation_store: ConversationStore | None = None,
-    pre_cloned: bool = False,
 ) -> int:
     """
     Execute a job via the unified dispatch pipeline.
@@ -100,8 +97,6 @@ async def _run_job(
         handler (JobHandler): The job handler to delegate execution to.
         conversation_store (ConversationStore | None): Conversation store
             for conversation continuity.
-        pre_cloned (bool): When True, the repository was pre-cloned
-            externally and clone URL resolution is skipped.
 
     Returns:
         int: Exit code (0 on success, 1 on failure).
@@ -124,7 +119,6 @@ async def _run_job(
             handler=handler,
             config=config,
             conversation_store=conversation_store,
-            pre_cloned=pre_cloned,
         )
     except Exception:
         logger.exception(
