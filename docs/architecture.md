@@ -43,8 +43,7 @@ GitHub/GitLab sends webhook             GitHub/GitLab sends webhook
                                ▼
                     job runs serially per PR
                                │
-                    ├─ [WORKER]  clone/update → run agent (all tools) → post reply
-                    └─ [REVIEWER] clone/update → fetch diff + comments → run agent (read-only) → submit review
+                    └─ clone/update → fetch diff + comments → run agent (read-only) → submit review
 ```
 
 ### CLI Flow
@@ -83,12 +82,11 @@ exit 0
 nominal-code ci {platform}
         │
         ▼
-_load_platform_ci()                 ← import platform-specific CI module
-        │                              GitHub: platforms/github/ci.py
-        │                              GitLab: platforms/gitlab/ci.py
+build_platform(name, config)        ← construct platform from CI config
+        │                              GitHub: commands/ci/github.py
+        │                              GitLab: commands/ci/gitlab.py
         │
         ├─ build_event()            ← read event from CI env vars
-        ├─ build_platform()         ← construct platform from CI env vars
         ├─ resolve_workspace()      ← use CI runner checkout
         │
         ▼
@@ -212,23 +210,18 @@ An [aiohttp](https://docs.aiohttp.org/) application that exposes:
 
 Each incoming request is verified, parsed, and dispatched. The HTTP response is returned immediately; actual processing happens asynchronously via the job queue.
 
-### Platform Registry
-
-A factory-based registry where each platform module self-registers at import time. At startup, `build_platforms()` calls each factory and returns only the platforms that are configured (i.e. have their required tokens set).
-
 ### Pre-flight Checks (`commands/webhook/helpers.py`)
 
 - **`run_pre_flight()`** — central pre-flight for all events. For comment events: validates the author against `ALLOWED_USERS`, logs the event, posts the eyes reaction. For lifecycle events: logs with event type/title/author, posts a PR reaction, and skips auth and comment reaction. Returns whether the job should proceed.
 
-### Job Processing (`jobs/runner/process.py`)
+### Job Processing (`commands/webhook/jobs/runner/process.py`)
 
-- **`ProcessRunner`** — sets clone URLs on the event, builds the appropriate handler closure, and enqueues jobs for serial execution via the job queue.
+- **`ProcessRunner`** — sets clone URLs on the event, builds the handler closure, and enqueues jobs for serial execution via the job queue.
 
 ### Handlers
 
-- **`handlers.worker.review_and_fix()`** — clones the repo, runs the agent with full tools, posts the reply.
-- **`handlers.review.review()`** — core review logic (clone, fetch diff + comments, run agent, parse JSON, filter findings). Returns a `ReviewResult` without posting. Used by webhook, CLI, and CI modes.
-- **`handlers.review.review_and_post()`** — webhook entry point. Calls `review()` then posts results to the platform.
+- **`review.handler.review()`** — core review logic (clone, fetch diff + comments, run agent, parse JSON, filter findings). Returns a `ReviewResult` without posting. Used by webhook, CLI, and CI modes.
+- **`review.handler.run_and_post_review()`** — webhook/CI entry point. Calls `review()` then posts results to the platform.
 
 ### CLI Module (`commands/cli.py`)
 
@@ -239,14 +232,13 @@ A factory-based registry where each platform module self-registers at import tim
 ### CI Module (`commands/ci.py`)
 
 - **`run_ci_review()`** — main entry point for CI-triggered reviews. Dispatches to the platform-specific CI module, runs the review, and posts results.
-- **`_load_platform_ci()`** — imports the correct platform CI module (`platforms/github/ci.py` or `platforms/gitlab/ci.py`).
 
-### Platform CI Modules (`platforms/{github,gitlab}/ci.py`)
+### Platform CI Modules (`commands/ci/{github,gitlab}.py`)
 
-Each platform provides a `ci.py` module with three functions:
+Each platform provides a CI module with three functions:
 
 - **`build_event()`** — reads CI environment variables and returns a `PullRequestEvent`. GitHub reads `$GITHUB_EVENT_PATH`; GitLab reads `$CI_PROJECT_PATH`, `$CI_MERGE_REQUEST_IID`, etc.
-- **`build_platform()`** — constructs a `ReviewerPlatform` from CI tokens (`$GITHUB_TOKEN` or `$GITLAB_TOKEN`).
+- **`build_platform()`** — constructs a `Platform` from CI config (`GitHubConfig` or `GitLabConfig`).
 - **`resolve_workspace()`** — returns the CI runner's checkout directory (`$GITHUB_WORKSPACE` or `$CI_PROJECT_DIR`).
 
 ### Agent Dispatcher (`agent/invoke.py`)
@@ -271,9 +263,9 @@ Loads and composes the system prompt from multiple sources: the bot's base promp
 
 ### Conversation Store and Job Queue (`conversation/memory.py`, `jobs/queue/asyncio.py`)
 
-- **ConversationStore** — a unified in-memory store with two parallel dicts keyed by `(platform, repo, pr_number, bot_type)`: lightweight conversation IDs and full message histories (API mode only). Used to resume conversations across multiple interactions on the same PR.
-- **AsyncioJobQueue** — per-PR async job queue for in-process mode (`jobs/queue/asyncio.py`). Each PR key gets its own `asyncio.Queue` with a single consumer task, ensuring that agent invocations on the same PR run serially (no race conditions). The consumer and queue are cleaned up when drained.
-- **RedisJobQueue** — Redis-backed per-PR job queue for Kubernetes mode (`jobs/queue/redis.py`). Uses Redis lists for serial execution and Redis pub/sub for event-driven job completion. Each PR key gets a consumer task that loops with `BRPOP`, creates K8s Jobs, and awaits completion signals — no K8s API polling required.
+- **ConversationStore** — a unified in-memory store with two parallel dicts keyed by `(platform, repo, pr_number)`: lightweight conversation IDs and full message histories (API mode only). Used to resume conversations across multiple interactions on the same PR.
+- **AsyncioJobQueue** — per-PR async job queue for in-process mode (`commands/webhook/jobs/queue/asyncio.py`). Each PR key gets its own `asyncio.Queue` with a single consumer task, ensuring that agent invocations on the same PR run serially (no race conditions). The consumer and queue are cleaned up when drained.
+- **RedisJobQueue** — Redis-backed per-PR job queue for Kubernetes mode (`commands/webhook/jobs/queue/redis.py`). Uses Redis lists for serial execution and Redis pub/sub for event-driven job completion. Each PR key gets a consumer task that loops with `BRPOP`, creates K8s Jobs, and awaits completion signals — no K8s API polling required.
 
 ### Cost Tracking (`llm/cost.py`)
 
@@ -316,7 +308,7 @@ In CI mode, the workspace is the CI runner's checkout directory (e.g. `$GITHUB_W
 
 The job queue ensures that only one agent runs per PR at a time. This prevents race conditions when multiple comments arrive in quick succession on the same PR.
 
-Jobs are keyed by `(platform_name, repo_full_name, pr_number, bot_type)`. When a job is enqueued:
+Jobs are keyed by `(platform_name, repo_full_name, pr_number)`. When a job is enqueued:
 
 1. If no queue exists for that key, one is created along with a consumer task.
 2. The job is put into the queue.
@@ -325,7 +317,7 @@ Jobs are keyed by `(platform_name, repo_full_name, pr_number, bot_type)`. When a
 
 In **Kubernetes mode**, the `RedisJobQueue` replaces the in-memory `AsyncioJobQueue`. The flow is:
 
-1. Webhook arrives → `KubernetesRunner.run()` enqueues the job payload to a Redis list keyed by `nc:queue:{platform}:{repo}:{pr}:{bot}`.
+1. Webhook arrives → `KubernetesRunner.run()` enqueues the job payload to a Redis list keyed by `nc:queue:{platform}:{repo}:{pr}`.
 2. A per-PR consumer task `BRPOP`s from the list and creates a K8s Job for each dequeued payload.
 3. The Job pod runs `nominal-code run-job`, performs the review, and publishes a completion signal to `nc:job:{job_name}:done` via Redis pub/sub.
 4. The server receives the signal and the consumer moves on to the next queued job.
@@ -341,14 +333,27 @@ nominal_code/
 │   ├── loader.py        # load_config(), load_config_for_cli(), load_config_for_ci()
 │   ├── agent.py         # AgentConfig, CliAgentConfig, ApiAgentConfig
 │   └── kubernetes.py    # KubernetesConfig
-├── models.py            # Shared enums (EventType, BotType, FileStatus) and dataclasses
+├── models.py            # Shared enums (EventType, FileStatus) and dataclasses
 ├── commands/
 │   ├── cli.py           # One-shot review CLI (argparse, platform construction)
-│   ├── ci.py            # CI mode dispatcher (delegates to platform-specific CI modules)
+│   ├── ci/              # CI mode
+│   │   ├── github.py    # CI mode: build event, platform, and workspace from GitHub Actions env vars
+│   │   └── gitlab.py    # CI mode: build event, platform, and workspace from GitLab CI env vars
 │   └── webhook/         # Webhook server and K8s job entrypoint
 │       ├── server.py    # aiohttp app with /health and /webhooks/{platform} routes
 │       ├── helpers.py   # Pre-flight checks (auth, reactions, logging), mention extraction
-│       └── entrypoint.py # K8s job runner CLI command
+│       ├── entrypoint.py # K8s job runner CLI command
+│       └── jobs/        # Job processing (moved from top-level jobs/)
+│           ├── payload.py       # ReviewJob serializable dataclass
+│           ├── execute.py       # Shared execution logic: prepares and runs jobs
+│           ├── runner/          # Job runner implementations
+│           │   ├── base.py      # JobRunner protocol + build_runner() factory
+│           │   ├── process.py   # ProcessRunner: job enqueueing and handler dispatch
+│           │   └── kubernetes.py # Kubernetes Job dispatcher with Redis queue integration
+│           └── queue/           # Job queue implementations
+│               ├── base.py      # JobQueue protocol
+│               ├── asyncio.py   # AsyncioJobQueue (per-PR in-memory async queue)
+│               └── redis.py     # RedisJobQueue (Redis-backed per-PR queue + pub/sub)
 ├── llm/
 │   ├── provider.py      # LLM provider protocol and base classes
 │   ├── registry.py      # Provider registry and factory
@@ -373,32 +378,17 @@ nominal_code/
 │   ├── base.py          # Conversation store protocol
 │   ├── memory.py        # In-memory conversation store
 │   └── redis.py         # Redis-backed conversation store
-├── handlers/
-│   ├── review.py        # Reviewer bot: structured code review with inline comments
-│   ├── worker.py        # Worker bot: full-access agent that pushes code changes
+├── review/
+│   ├── handler.py       # Review orchestration: diff fetching, prompt building, output parsing
 │   ├── diff.py          # Diff handling utilities
 │   └── output.py        # Output parsing and JSON repair
-├── jobs/
-│   ├── payload.py       # ReviewJob serializable dataclass
-│   ├── execute.py       # Shared execution logic: routes by bot type, prepares and runs jobs
-│   ├── runner/          # Job runner implementations
-│   │   ├── base.py      # JobRunner protocol + build_runner() factory
-│   │   ├── process.py   # ProcessRunner: job enqueueing and handler dispatch
-│   │   └── kubernetes.py # Kubernetes Job dispatcher with Redis queue integration
-│   └── queue/           # Job queue implementations
-│       ├── base.py      # JobQueue protocol
-│       ├── asyncio.py   # AsyncioJobQueue (per-PR in-memory async queue)
-│       └── redis.py     # RedisJobQueue (Redis-backed per-PR queue + pub/sub)
 ├── platforms/
-│   ├── base.py          # Protocol definitions and shared dataclasses
-│   ├── registry.py      # Self-registering platform factory pattern
+│   ├── base.py          # Platform protocol and shared dataclasses
 │   ├── http.py          # request_with_retry(): HTTP request helper with transient error retries
 │   ├── github/
 │   │   ├── auth.py      # GitHubAuth ABC, PAT and App auth implementations
-│   │   ├── ci.py        # CI mode: build event, platform, and workspace from GitHub Actions env vars
 │   │   └── platform.py  # GitHub webhook handler and REST API client
 │   └── gitlab/
-│       ├── ci.py        # CI mode: build event, platform, and workspace from GitLab CI env vars
 │       └── platform.py  # GitLab webhook handler and REST API client
 └── workspace/
     ├── git.py           # GitWorkspace: clone, update, push per-PR workspaces

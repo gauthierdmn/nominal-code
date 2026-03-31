@@ -1,14 +1,14 @@
 # nominal-code
 
-AI-powered code review bot that monitors GitHub PRs and GitLab MRs. When a user @mentions a bot in a comment, or when a lifecycle event fires (PR opened, pushed, etc.), the bot spins up an LLM agent to review code or apply fixes and posts the results back to the platform.
+AI-powered code review bot that monitors GitHub PRs and GitLab MRs. When a user @mentions the bot in a comment, or when a lifecycle event fires (PR opened, pushed, etc.), the bot spins up an LLM agent to review code and posts the results back to the platform.
 
 ## Architecture
 
 - **Async-first** — built on aiohttp + asyncio; all I/O (HTTP, git, agent) is non-blocking.
-- **Two-layer config** — mutable `*Settings` models (`config/models.py`) parse YAML/env vars; `loader.py` transforms them into frozen `*Config` models (`config/config.py`, `config/kubernetes.py`) that application code consumes. See `docs/architecture.md` for details.
-- **Protocol-based platforms** — GitHub and GitLab implement the same `Platform` / `ReviewerPlatform` protocols, making it easy to add new providers.
+- **Two-layer config** — mutable `*Settings` models (`config/models.py`) parse YAML/env vars; `loader.py` transforms them into frozen `*Config` models (`config/settings.py`, `config/kubernetes.py`) that application code consumes. Platform credentials (GitHub/GitLab tokens, webhook secrets) flow through the same config pipeline.
+- **Protocol-based platforms** — GitHub and GitLab implement the same `Platform` protocol, making it easy to add new providers. Platform clients are built from `GitHubConfig`/`GitLabConfig` via explicit factory functions.
 - **Per-PR job serialisation** — `JobQueue` protocol with two implementations (`AsyncioJobQueue` for in-process, `RedisJobQueue` for Kubernetes) guarantees only one agent job runs per PR at a time, preventing race conditions on the same workspace.
-- **Multi-turn conversations** — `ConversationStore` maps (platform, repo, PR, bot) to conversation IDs and message histories so conversations resume across comments.
+- **Multi-turn conversations** — `ConversationStore` maps (platform, repo, PR) to conversation IDs and message histories so conversations resume across comments.
 - **Workspace isolation** — each PR gets its own shallow clone; a shared `.deps/` directory is available for cross-PR dependencies.
 - **Dual agent runners** — CLI and webhook modes use the Claude Code CLI (supports subscriptions); CI mode calls the LLM provider API directly (requires a provider API key).
 - **LLM cost tracking** — both runners capture token usage and compute dollar costs using a bundled pricing table. Cost summaries are logged after each review and surfaced in CI output.
@@ -25,8 +25,8 @@ AI-powered code review bot that monitors GitHub PRs and GitLab MRs. When a user 
 The call chain follows four conceptual layers:
 
 1. **Receive** — `commands/webhook/server.py` (webhooks), `commands/` (CLI/CI).
-2. **Prepare** — `workspace/setup.py::prepare_job_event()` resolves clone URLs and branches; `jobs/runner/process.py` wraps with error handling and queue management.
-3. **Orchestrate** — `handlers/review.py` and `handlers/worker.py` (business logic: diff fetching, prompt building, output parsing).
+2. **Prepare** — `workspace/setup.py::prepare_job_event()` resolves clone URLs and branches; `commands/webhook/jobs/runner/process.py` wraps with error handling and queue management.
+3. **Orchestrate** — `review/handler.py` (business logic: diff fetching, prompt building, output parsing).
 4. **Invoke** — `agent/invoke.py` provides agent execution with explicit conversation lifecycle (`prepare_conversation`, `invoke_agent`, `save_conversation`).
 
 ## Agent runner selection
@@ -35,16 +35,9 @@ The call chain follows four conceptual layers:
 |------|--------|-------------|
 | Webhook server | Claude Code CLI (`agent/cli/runner.py`) | `CliAgentConfig` |
 | CLI review | Claude Code CLI (`agent/cli/runner.py`) | `CliAgentConfig` |
-| CI (`commands/ci.py`) | LLM provider API (`agent/api/runner.py`) | `ApiAgentConfig` |
+| CI (`commands/ci/`) | LLM provider API (`agent/api/runner.py`) | `ApiAgentConfig` |
 
 The dispatcher in `agent/invoke.py` routes based on the agent config type (`CliAgentConfig` or `ApiAgentConfig`). The API runner implements its own tool execution (Read, Glob, Grep, Bash with allowlist) and supports multiple providers (Anthropic, OpenAI, Google Gemini, DeepSeek, Groq, Together, Fireworks).
-
-## Bot types
-
-| Bot | Purpose | Tool restrictions |
-|-----|---------|-------------------|
-| **Reviewer** | Posts structured code reviews with inline comments | `Read`, `Glob`, `Grep`, `Bash(git clone*)` |
-| **Worker** | Applies code fixes, pushes commits | Unrestricted |
 
 ## Guideline resolution
 
@@ -58,7 +51,7 @@ The dispatcher in `agent/invoke.py` routes based on the agent config type (`CliA
 ### Required (webhook mode)
 
 - `ALLOWED_USERS` — comma-separated usernames authorised to trigger jobs.
-- At least one of `WORKER_BOT_USERNAME` / `REVIEWER_BOT_USERNAME`.
+- `REVIEWER_BOT_USERNAME` — the @mention name for the reviewer bot.
 - GitHub auth (one of):
   - **PAT mode**: `GITHUB_TOKEN`.
   - **App mode**: `GITHUB_APP_ID` + one of `GITHUB_APP_PRIVATE_KEY` (inline PEM) / `GITHUB_APP_PRIVATE_KEY_PATH` (file path).
@@ -87,24 +80,24 @@ The dispatcher in `agent/invoke.py` routes based on the agent config type (`CliA
 nominal_code/
 ├── main.py              # Entry point: dispatches to webhook server, CLI, or CI
 ├── config/
-│   ├── models.py        # Mutable *Settings models (YAML/env input layer)
-│   ├── config.py        # Frozen *Config models (application output layer)
+│   ├── models.py        # Mutable *Settings models (YAML/env input layer), includes GitHubSettings/GitLabSettings
+│   ├── settings.py      # Frozen *Config models (application output layer), includes GitHubConfig/GitLabConfig
 │   ├── loader.py        # Settings → Config transformation with validation
 │   ├── policies.py      # FilteringPolicy and RoutingPolicy (frozen)
 │   ├── agent.py         # AgentConfig, CliAgentConfig, ApiAgentConfig
 │   └── kubernetes.py    # KubernetesConfig (frozen)
-├── models.py            # Shared enums (EventType, BotType, FileStatus) and dataclasses (ReviewFinding, AgentReview, ChangedFile)
-├── commands/            # Entry points: CLI review, CI mode, webhook server, K8s job runner
-│   ├── webhook/         # Webhook server (server.py), helpers, mention extraction, K8s job runner (job.py)
+├── models.py            # Shared enums (EventType, FileStatus) and dataclasses (ReviewFinding, AgentReview, ChangedFile)
+├── commands/
 │   ├── cli.py           # CLI review mode
-│   └── ci.py            # CI mode review
+│   ├── ci/              # CI mode: entry point + platform-specific event/workspace parsing
+│   └── webhook/         # Webhook server, helpers, mention extraction, K8s job runner
+│       ├── server.py    # aiohttp webhook server
+│       ├── job.py       # K8s pod entry point (run-job)
+│       └── jobs/        # Job payload, dispatch, handler, runner and queue subpackages
 ├── llm/                 # LLM provider abstraction, cost tracking, canonical message types
 ├── agent/               # Agent invocation (invoke.py), dual runners, prompt composition, error handling
 ├── conversation/        # Conversation persistence (memory + Redis stores)
-├── handlers/            # Bot handlers: reviewer (structured review) and worker (code fixes)
-├── jobs/                # Job payload, runner and queue subpackages
-│   ├── runner/          # JobRunner protocol (base.py), ProcessRunner, KubernetesRunner
-│   └── queue/           # JobQueue protocol (base.py), AsyncioJobQueue, RedisJobQueue
-├── platforms/           # Platform protocol + GitHub/GitLab implementations (subpackages)
+├── review/            # Review handler (structured review with inline comments)
+├── platforms/           # Platform protocol + GitHub/GitLab implementations, build_platforms(config)
 └── workspace/           # Git workspace management
 ```

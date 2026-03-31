@@ -3,13 +3,13 @@ import asyncio
 
 import pytest
 
-from nominal_code.jobs.payload import JobPayload
-from nominal_code.jobs.queue.asyncio import AsyncioJobQueue
+from nominal_code.commands.webhook.jobs.payload import JobPayload
+from nominal_code.commands.webhook.jobs.queue.asyncio import AsyncioJobQueue
 from nominal_code.models import EventType
 from nominal_code.platforms.base import CommentEvent, PlatformName
 
 
-def _make_job(pr_number=1, bot_type="worker"):
+def _make_job(pr_number=1):
     event = CommentEvent(
         platform=PlatformName.GITHUB,
         repo_full_name="owner/repo",
@@ -22,7 +22,7 @@ def _make_job(pr_number=1, bot_type="worker"):
         body="@bot review",
     )
 
-    return JobPayload(event=event, bot_type=bot_type)
+    return JobPayload(event=event)
 
 
 class TestJobQueue:
@@ -102,26 +102,6 @@ class TestJobQueue:
 
         assert executed == [True]
 
-    @pytest.mark.asyncio
-    async def test_enqueue_different_bot_types_run_concurrently(self):
-        queue = AsyncioJobQueue()
-        order = []
-
-        async def callback(job):
-            if job.bot_type == "worker":
-                await asyncio.sleep(0.05)
-                order.append("worker")
-            else:
-                order.append("reviewer")
-
-        queue.set_job_callback(callback)
-
-        await queue.enqueue(_make_job(bot_type="worker"))
-        await queue.enqueue(_make_job(bot_type="reviewer"))
-        await asyncio.sleep(0.1)
-
-        assert order == ["reviewer", "worker"]
-
 
 class TestJobQueueInit:
     def test_job_queue_init_creates_empty_queues(self):
@@ -156,7 +136,7 @@ class TestJobQueueConsume:
         await queue.enqueue(_make_job())
         await asyncio.sleep(0.1)
 
-        key = ("github", "owner/repo", 1, "worker")
+        key = ("github", "owner/repo", 1, "")
 
         assert len(executed) == 2
         assert key not in queue._queues
@@ -198,7 +178,7 @@ class TestJobQueueConsume:
         await queue.enqueue(_make_job(pr_number=99))
         await asyncio.sleep(0.1)
 
-        key = ("github", "owner/repo", 99, "worker")
+        key = ("github", "owner/repo", 99, "")
 
         assert key not in queue._queues
 
@@ -217,7 +197,7 @@ class TestJobQueueEdgeCases:
         await queue.enqueue(_make_job())
         await asyncio.sleep(0.1)
 
-        key = ("github", "owner/repo", 1, "worker")
+        key = ("github", "owner/repo", 1, "")
 
         assert executed == [True]
         assert key not in queue._queues
@@ -243,7 +223,7 @@ class TestJobQueueEdgeCases:
 
         assert executed == [0, 1]
 
-        key = ("github", "owner/repo", 1, "worker")
+        key = ("github", "owner/repo", 1, "")
 
         assert key not in queue._queues
         assert key not in queue._consumers
@@ -260,7 +240,7 @@ class TestJobQueueEdgeCases:
         await queue.enqueue(_make_job())
         await asyncio.sleep(0.1)
 
-        key = ("github", "owner/repo", 1, "worker")
+        key = ("github", "owner/repo", 1, "")
 
         assert key not in queue._queues
         assert key not in queue._consumers
@@ -281,7 +261,7 @@ class TestJobQueueEdgeCases:
         await queue.enqueue(_make_job())
         await asyncio.sleep(0.1)
 
-        key = ("github", "owner/repo", 1, "worker")
+        key = ("github", "owner/repo", 1, "")
 
         assert len(attempted) == 2
         assert key not in queue._queues
@@ -326,7 +306,7 @@ class TestJobQueueEdgeCases:
 
         assert executed == [0, 1, 2, 3, 4]
 
-        key = ("github", "owner/repo", 1, "worker")
+        key = ("github", "owner/repo", 1, "")
 
         assert key not in queue._queues
         assert key not in queue._consumers

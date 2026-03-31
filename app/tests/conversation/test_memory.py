@@ -1,7 +1,6 @@
 # type: ignore
 from nominal_code.conversation.memory import MemoryConversationStore
 from nominal_code.llm.messages import Message, TextBlock
-from nominal_code.models import BotType
 from nominal_code.platforms.base import PlatformName
 
 
@@ -12,7 +11,6 @@ class TestConversationStoreConversationId:
             platform=PlatformName.GITHUB,
             repo="owner/repo",
             pr_number=1,
-            bot_type=BotType.WORKER,
         )
 
         assert result is None
@@ -23,14 +21,12 @@ class TestConversationStoreConversationId:
             platform=PlatformName.GITHUB,
             repo="owner/repo",
             pr_number=42,
-            bot_type=BotType.REVIEWER,
             value="conv-123",
         )
         result = store.get_conversation_id(
             platform=PlatformName.GITHUB,
             repo="owner/repo",
             pr_number=42,
-            bot_type=BotType.REVIEWER,
         )
 
         assert result == "conv-123"
@@ -41,14 +37,12 @@ class TestConversationStoreConversationId:
             platform=PlatformName.GITHUB,
             repo="owner/repo",
             pr_number=1,
-            bot_type=BotType.WORKER,
             value="conv-1",
         )
         store.set_conversation_id(
             platform=PlatformName.GITHUB,
             repo="owner/repo",
-            pr_number=1,
-            bot_type=BotType.REVIEWER,
+            pr_number=2,
             value="conv-2",
         )
 
@@ -57,7 +51,6 @@ class TestConversationStoreConversationId:
                 platform=PlatformName.GITHUB,
                 repo="owner/repo",
                 pr_number=1,
-                bot_type=BotType.WORKER,
             )
             == "conv-1"
         )
@@ -65,8 +58,7 @@ class TestConversationStoreConversationId:
             store.get_conversation_id(
                 platform=PlatformName.GITHUB,
                 repo="owner/repo",
-                pr_number=1,
-                bot_type=BotType.REVIEWER,
+                pr_number=2,
             )
             == "conv-2"
         )
@@ -77,14 +69,12 @@ class TestConversationStoreConversationId:
             platform=PlatformName.GITHUB,
             repo="owner/repo",
             pr_number=1,
-            bot_type=BotType.WORKER,
             value="old",
         )
         store.set_conversation_id(
             platform=PlatformName.GITHUB,
             repo="owner/repo",
             pr_number=1,
-            bot_type=BotType.WORKER,
             value="new",
         )
 
@@ -93,7 +83,6 @@ class TestConversationStoreConversationId:
                 platform=PlatformName.GITHUB,
                 repo="owner/repo",
                 pr_number=1,
-                bot_type=BotType.WORKER,
             )
             == "new"
         )
@@ -104,7 +93,6 @@ class TestConversationStoreConversationId:
             platform=PlatformName.GITHUB,
             repo="owner/repo",
             pr_number=1,
-            bot_type=BotType.WORKER,
             value="conv-pr1",
         )
 
@@ -113,7 +101,6 @@ class TestConversationStoreConversationId:
                 platform=PlatformName.GITHUB,
                 repo="owner/repo",
                 pr_number=2,
-                bot_type=BotType.WORKER,
             )
             is None
         )
@@ -126,7 +113,6 @@ class TestConversationStoreMessages:
             platform=PlatformName.GITHUB,
             repo="owner/repo",
             pr_number=1,
-            bot_type=BotType.WORKER,
         )
 
         assert result is None
@@ -138,14 +124,12 @@ class TestConversationStoreMessages:
             platform=PlatformName.GITHUB,
             repo="owner/repo",
             pr_number=42,
-            bot_type=BotType.REVIEWER,
             value=messages,
         )
         result = store.get_messages(
             platform=PlatformName.GITHUB,
             repo="owner/repo",
             pr_number=42,
-            bot_type=BotType.REVIEWER,
         )
 
         assert result is messages
@@ -159,14 +143,12 @@ class TestConversationStoreMessages:
             platform=PlatformName.GITHUB,
             repo="owner/repo",
             pr_number=1,
-            bot_type=BotType.WORKER,
             value=msgs1,
         )
         store.set_messages(
             platform=PlatformName.GITHUB,
             repo="owner/repo",
-            pr_number=1,
-            bot_type=BotType.REVIEWER,
+            pr_number=2,
             value=msgs2,
         )
 
@@ -175,7 +157,6 @@ class TestConversationStoreMessages:
                 platform=PlatformName.GITHUB,
                 repo="owner/repo",
                 pr_number=1,
-                bot_type=BotType.WORKER,
             )
             is msgs1
         )
@@ -183,8 +164,7 @@ class TestConversationStoreMessages:
             store.get_messages(
                 platform=PlatformName.GITHUB,
                 repo="owner/repo",
-                pr_number=1,
-                bot_type=BotType.REVIEWER,
+                pr_number=2,
             )
             is msgs2
         )
@@ -197,14 +177,12 @@ class TestConversationStoreMessages:
             platform=PlatformName.GITHUB,
             repo="owner/repo",
             pr_number=1,
-            bot_type=BotType.WORKER,
             value=old_msgs,
         )
         store.set_messages(
             platform=PlatformName.GITHUB,
             repo="owner/repo",
             pr_number=1,
-            bot_type=BotType.WORKER,
             value=new_msgs,
         )
 
@@ -212,7 +190,6 @@ class TestConversationStoreMessages:
             platform=PlatformName.GITHUB,
             repo="owner/repo",
             pr_number=1,
-            bot_type=BotType.WORKER,
         )
 
         assert result is new_msgs

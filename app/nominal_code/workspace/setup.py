@@ -4,9 +4,7 @@ import logging
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from nominal_code.models import BotType
 from nominal_code.platforms.base import (
-    CommentEvent,
     CommentReply,
     Platform,
     PullRequestEvent,
@@ -95,24 +93,19 @@ def create_workspace(
 
 async def prepare_job_event(
     event: PullRequestEvent,
-    bot_type: BotType,
     platform: Platform,
     pre_cloned: bool = False,
 ) -> PullRequestEvent:
     """
     Resolve clone URL and branch for a job event.
 
-    For reviewer jobs, uses the read-only reviewer clone URL. For worker
-    jobs, validates that the event is a ``CommentEvent`` and uses the
-    read-write clone URL.
-
-    When ``pre_cloned`` is True the repository was cloned by an
-    external process and the clone URL is left empty so that
-    ``create_workspace`` marks the resulting ``GitWorkspace`` as read-only.
+    Resolves the authenticated clone URL. When ``pre_cloned`` is True
+    the repository was cloned by an external process and the clone URL
+    is left empty so that ``create_workspace`` marks the resulting
+    ``GitWorkspace`` as read-only.
 
     Args:
         event (PullRequestEvent): The raw event from the job payload.
-        bot_type (BotType): Which bot personality will handle the job.
         platform (Platform): The platform client.
         pre_cloned (bool): When True, skip clone URL resolution and
             preserve the empty clone URL for a read-only workspace.
@@ -121,21 +114,14 @@ async def prepare_job_event(
         PullRequestEvent: The event with clone URL and branch resolved.
 
     Raises:
-        RuntimeError: If the event type is incompatible with the bot type,
-            the platform doesn't support reviewer operations, or branch
-            resolution fails.
+        RuntimeError: If branch resolution fails.
     """
-
-    if bot_type == BotType.WORKER:
-        if not isinstance(event, CommentEvent):
-            raise RuntimeError("Worker job requires a comment event")
 
     if pre_cloned:
         clone_url: str = ""
     else:
         clone_url = platform.build_clone_url(
             repo_full_name=event.repo_full_name,
-            read_only=(bot_type == BotType.REVIEWER),
         )
 
     effective_event: PullRequestEvent = replace(event, clone_url=clone_url)

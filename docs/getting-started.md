@@ -114,4 +114,4 @@ Minimal steps to go from zero to a working review.
 - **[Configuration](reference/configuration.md)** — YAML config file, prompts, guidelines, auto-trigger, per-repo overrides
 - **[Environment Variables](reference/env-vars.md)** — full variable reference grouped by feature
 - **Platforms:** [GitHub](platforms/github.md) | [GitLab](platforms/gitlab.md)
-- **Bots:** [Reviewer](bots/reviewer.md) | [Worker (Beta)](bots/worker.md)
+- [Review Process](review.md)

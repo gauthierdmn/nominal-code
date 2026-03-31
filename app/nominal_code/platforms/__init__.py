@@ -1,31 +1,82 @@
 from __future__ import annotations
 
-from types import ModuleType
+import logging
+from typing import TYPE_CHECKING
 
-import nominal_code.platforms.github as _github  # noqa: F401
-import nominal_code.platforms.gitlab as _gitlab  # noqa: F401
-from nominal_code.platforms.base import PlatformAuth, PlatformName
-from nominal_code.platforms.registry import build_platforms
+from nominal_code.platforms.base import Platform, PlatformAuth, PlatformName
+from nominal_code.platforms.github.platform import create_github_platform
+from nominal_code.platforms.gitlab.platform import create_gitlab_platform
+
+if TYPE_CHECKING:
+    from nominal_code.config.settings import Config
+
+logger: logging.Logger = logging.getLogger(__name__)
 
 
-def load_platform_ci(platform_name: PlatformName) -> ModuleType:
+def build_platforms(config: Config) -> dict[str, Platform]:
     """
-    Import and return the platform-specific CI module.
+    Build all configured platform clients from config.
+
+    Platforms whose credentials are missing are silently skipped.
+
+    Args:
+        config (Config): The application configuration.
+
+    Returns:
+        dict[str, Platform]: Mapping of platform names to their instances.
+    """
+
+    platforms: dict[str, Platform] = {}
+
+    github: Platform | None = create_github_platform(config.github)
+
+    if github is not None:
+        platforms["github"] = github
+        logger.info("Platform 'github' enabled")
+    else:
+        logger.debug("Platform 'github' not configured, skipping")
+
+    gitlab: Platform | None = create_gitlab_platform(config.gitlab)
+
+    if gitlab is not None:
+        platforms["gitlab"] = gitlab
+        logger.info("Platform 'gitlab' enabled")
+    else:
+        logger.debug("Platform 'gitlab' not configured, skipping")
+
+    return platforms
+
+
+def build_platform(platform_name: PlatformName, config: Config) -> Platform:
+    """
+    Build a single platform client from config.
 
     Args:
         platform_name (PlatformName): The target platform.
+        config (Config): The application configuration.
 
     Returns:
-        ModuleType: The platform CI module exposing ``build_event``,
-            ``build_platform``, and ``resolve_workspace``.
+        Platform: The constructed platform client.
+
+    Raises:
+        ValueError: If the platform is not configured.
     """
 
     if platform_name == PlatformName.GITHUB:
-        from nominal_code.platforms.github import ci as _ci
+        platform: Platform | None = create_github_platform(config.github)
     else:
-        from nominal_code.platforms.gitlab import ci as _ci  # type: ignore[no-redef]
+        platform = create_gitlab_platform(config.gitlab)
 
-    return _ci
+    if platform is None:
+        raise ValueError(
+            f"Platform '{platform_name.value}' is not configured (missing credentials)",
+        )
+
+    return platform
 
 
-__all__: list[str] = ["PlatformAuth", "build_platforms", "load_platform_ci"]
+__all__: list[str] = [
+    "PlatformAuth",
+    "build_platform",
+    "build_platforms",
+]

@@ -5,22 +5,18 @@ from nominal_code.config.agent import (
     ApiAgentConfig,
     CliAgentConfig,
     ProviderConfig,
-    resolve_provider_config,
 )
 from nominal_code.config.kubernetes import KubernetesConfig
-from nominal_code.config.loader import (
-    load_config,
-    load_config_for_ci,
-    load_config_for_cli,
-)
+from nominal_code.config.loader import load_config
 from nominal_code.config.policies import FilteringPolicy, RoutingPolicy
 from nominal_code.config.settings import (
     Config,
+    GitHubConfig,
+    GitLabConfig,
     PromptsConfig,
     RedisConfig,
     ReviewerConfig,
     WebhookConfig,
-    WorkerConfig,
     WorkspaceConfig,
 )
 
@@ -30,6 +26,8 @@ __all__ = [
     "CliAgentConfig",
     "Config",
     "FilteringPolicy",
+    "GitHubConfig",
+    "GitLabConfig",
     "KubernetesConfig",
     "PromptsConfig",
     "ProviderConfig",
@@ -37,10 +35,6 @@ __all__ = [
     "ReviewerConfig",
     "RoutingPolicy",
     "WebhookConfig",
-    "WorkerConfig",
     "WorkspaceConfig",
     "load_config",
-    "load_config_for_ci",
-    "load_config_for_cli",
-    "resolve_provider_config",
 ]

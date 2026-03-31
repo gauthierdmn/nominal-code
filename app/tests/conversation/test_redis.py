@@ -9,7 +9,6 @@ from nominal_code.llm.messages import (
     ToolResultBlock,
     ToolUseBlock,
 )
-from nominal_code.models import BotType
 from nominal_code.platforms.base import PlatformName
 
 pytest.importorskip("redis")
@@ -31,10 +30,9 @@ class TestBuildKey:
             platform=PlatformName.GITHUB,
             repo="owner/repo",
             pr_number=42,
-            bot_type=BotType.WORKER,
         )
 
-        assert result == "nc:msgs:github:owner/repo:42:worker"
+        assert result == "nc:msgs:github:owner/repo:42"
 
     def test_build_key_conversation(self):
         result = _build_key(
@@ -42,10 +40,9 @@ class TestBuildKey:
             platform=PlatformName.GITLAB,
             repo="group/project",
             pr_number=7,
-            bot_type=BotType.REVIEWER,
         )
 
-        assert result == "nc:conv:gitlab:group/project:7:reviewer"
+        assert result == "nc:conv:gitlab:group/project:7"
 
 
 class TestSerializationRoundTrip:
@@ -179,7 +176,6 @@ class TestRedisConversationStoreGetConversationId:
             platform=PlatformName.GITHUB,
             repo="owner/repo",
             pr_number=1,
-            bot_type=BotType.WORKER,
         )
 
         assert result is None
@@ -193,7 +189,6 @@ class TestRedisConversationStoreGetConversationId:
             platform=PlatformName.GITHUB,
             repo="owner/repo",
             pr_number=42,
-            bot_type=BotType.REVIEWER,
         )
 
         assert result == "conv-123"
@@ -207,7 +202,6 @@ class TestRedisConversationStoreGetConversationId:
             platform=PlatformName.GITHUB,
             repo="owner/repo",
             pr_number=1,
-            bot_type=BotType.WORKER,
         )
 
         assert result is None
@@ -222,12 +216,11 @@ class TestRedisConversationStoreSetConversationId:
             platform=PlatformName.GITHUB,
             repo="owner/repo",
             pr_number=42,
-            bot_type=BotType.REVIEWER,
             value="conv-abc",
         )
 
         client.set.assert_called_once_with(
-            "nc:conv:github:owner/repo:42:reviewer",
+            "nc:conv:github:owner/repo:42",
             b"conv-abc",
             ex=timedelta(hours=1),
         )
@@ -241,7 +234,6 @@ class TestRedisConversationStoreSetConversationId:
             platform=PlatformName.GITHUB,
             repo="owner/repo",
             pr_number=1,
-            bot_type=BotType.WORKER,
             value="val",
         )
 
@@ -256,7 +248,6 @@ class TestRedisConversationStoreGetMessages:
             platform=PlatformName.GITHUB,
             repo="owner/repo",
             pr_number=1,
-            bot_type=BotType.WORKER,
         )
 
         assert result is None
@@ -272,7 +263,6 @@ class TestRedisConversationStoreGetMessages:
             platform=PlatformName.GITHUB,
             repo="owner/repo",
             pr_number=42,
-            bot_type=BotType.REVIEWER,
         )
 
         assert result is not None
@@ -288,7 +278,6 @@ class TestRedisConversationStoreGetMessages:
             platform=PlatformName.GITHUB,
             repo="owner/repo",
             pr_number=1,
-            bot_type=BotType.WORKER,
         )
 
         assert result is None
@@ -302,7 +291,6 @@ class TestRedisConversationStoreGetMessages:
             platform=PlatformName.GITHUB,
             repo="owner/repo",
             pr_number=1,
-            bot_type=BotType.WORKER,
         )
 
         assert result is None
@@ -318,14 +306,13 @@ class TestRedisConversationStoreSetMessages:
             platform=PlatformName.GITHUB,
             repo="owner/repo",
             pr_number=42,
-            bot_type=BotType.WORKER,
             value=messages,
         )
 
         client.set.assert_called_once()
         call_args = client.set.call_args
 
-        assert call_args[0][0] == "nc:msgs:github:owner/repo:42:worker"
+        assert call_args[0][0] == "nc:msgs:github:owner/repo:42"
         assert call_args[1]["ex"] == timedelta(hours=2)
 
     def test_set_silently_catches_redis_error(self):
@@ -338,6 +325,5 @@ class TestRedisConversationStoreSetMessages:
             platform=PlatformName.GITHUB,
             repo="owner/repo",
             pr_number=1,
-            bot_type=BotType.WORKER,
             value=messages,
         )

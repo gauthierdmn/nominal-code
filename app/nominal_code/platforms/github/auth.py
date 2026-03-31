@@ -3,15 +3,12 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
-from pathlib import Path
 
 import httpx
 import jwt
-from environs import Env
 
 from nominal_code.platforms.base import PlatformAuth
 
-_env: Env = Env()
 logger: logging.Logger = logging.getLogger(__name__)
 
 JWT_EXPIRY_SECONDS: int = 600
@@ -41,20 +38,17 @@ class GitHubPatAuth(PlatformAuth):
 
     Attributes:
         token (str): The primary GitHub PAT.
-        reviewer_token (str): Optional read-only token for reviewer clones.
     """
 
-    def __init__(self, token: str, reviewer_token: str = "") -> None:
+    def __init__(self, token: str) -> None:
         """
         Initialize PAT-based authentication.
 
         Args:
             token (str): The primary GitHub personal access token.
-            reviewer_token (str): Optional read-only token for reviewer clones.
         """
 
         self.token: str = token
-        self.reviewer_token: str = reviewer_token
 
     def get_api_token(self, account_id: int = 0) -> str:
         """
@@ -68,19 +62,6 @@ class GitHubPatAuth(PlatformAuth):
         """
 
         return self.token
-
-    def get_clone_token(self, account_id: int = 0) -> str:
-        """
-        Return the reviewer token, falling back to the main PAT.
-
-        Args:
-            account_id (int): Ignored for PAT auth.
-
-        Returns:
-            str: The reviewer token or main token.
-        """
-
-        return self.reviewer_token or self.token
 
     async def ensure_auth(self, account_id: int = 0) -> None:
         """
@@ -147,22 +128,6 @@ class GitHubAppAuth(PlatformAuth):
             )
 
         return cached.token
-
-    def get_clone_token(self, account_id: int = 0) -> str:
-        """
-        Return the clone token for a specific installation.
-
-        For App auth, the installation token handles scoping via
-        permissions, so this returns the same token as ``get_api_token()``.
-
-        Args:
-            account_id (int): The GitHub App installation ID.
-
-        Returns:
-            str: The cached installation access token.
-        """
-
-        return self.get_api_token(account_id)
 
     async def ensure_auth(self, account_id: int = 0) -> None:
         """
@@ -290,35 +255,3 @@ class GitHubAppAuth(PlatformAuth):
 
         for key in expired_keys:
             del self._token_cache[key]
-
-
-def load_private_key() -> str:
-    """
-    Load the GitHub App private key from environment variables.
-
-    Checks ``GITHUB_APP_PRIVATE_KEY`` for an inline PEM string first,
-    then ``GITHUB_APP_PRIVATE_KEY_PATH`` for a file path.
-
-    Returns:
-        str: The PEM private key contents, or empty string if not configured.
-    """
-
-    inline_key: str = _env.str("GITHUB_APP_PRIVATE_KEY", "")
-
-    if inline_key:
-        return inline_key
-
-    key_path: str = _env.str("GITHUB_APP_PRIVATE_KEY_PATH", "")
-
-    if key_path:
-        try:
-            return Path(key_path).read_text()
-        except OSError:
-            logger.exception(
-                "Failed to read GitHub App private key from %s",
-                key_path,
-            )
-
-            return ""
-
-    return ""

@@ -15,7 +15,7 @@ from nominal_code.agent.invoke import (
 from nominal_code.agent.result import AgentResult
 from nominal_code.config import CliAgentConfig
 from nominal_code.conversation.memory import MemoryConversationStore
-from nominal_code.models import BotType, EventType
+from nominal_code.models import EventType
 from nominal_code.platforms.base import CommentEvent, PlatformName
 
 
@@ -160,13 +160,11 @@ class TestConversationLifecycle:
             platform=PlatformName.GITHUB,
             repo="owner/repo",
             pr_number=42,
-            bot_type=BotType.WORKER,
             value="prev-sess",
         )
 
         conversation_id, prior_messages = prepare_conversation(
             event=event,
-            bot_type=BotType.WORKER,
             agent_config=config.agent,
             conversation_store=store,
         )
@@ -180,7 +178,6 @@ class TestConversationLifecycle:
 
         conversation_id, prior_messages = prepare_conversation(
             event=event,
-            bot_type=BotType.WORKER,
             agent_config=config.agent,
             conversation_store=None,
         )
@@ -196,7 +193,6 @@ class TestConversationLifecycle:
 
         save_conversation(
             event=event,
-            bot_type=BotType.WORKER,
             result=agent_result,
             agent_config=config.agent,
             conversation_store=store,
@@ -206,7 +202,6 @@ class TestConversationLifecycle:
             platform=PlatformName.GITHUB,
             repo="owner/repo",
             pr_number=42,
-            bot_type=BotType.WORKER,
         )
 
         assert stored == "stored-sess"
@@ -219,7 +214,6 @@ class TestConversationLifecycle:
 
         save_conversation(
             event=event,
-            bot_type=BotType.WORKER,
             result=agent_result,
             agent_config=config.agent,
             conversation_store=store,
@@ -229,7 +223,6 @@ class TestConversationLifecycle:
             platform=PlatformName.GITHUB,
             repo="owner/repo",
             pr_number=42,
-            bot_type=BotType.WORKER,
         )
 
         assert stored is None
@@ -241,7 +234,6 @@ class TestConversationLifecycle:
 
         save_conversation(
             event=event,
-            bot_type=BotType.WORKER,
             result=agent_result,
             agent_config=config.agent,
             conversation_store=None,

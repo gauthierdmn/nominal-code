@@ -7,8 +7,8 @@ from dataclasses import dataclass
 
 import pytest
 
-from nominal_code.jobs.payload import JobPayload
-from nominal_code.jobs.queue.asyncio import AsyncioJobQueue
+from nominal_code.commands.webhook.jobs.payload import JobPayload
+from nominal_code.commands.webhook.jobs.queue.asyncio import AsyncioJobQueue
 from tests.integration.github import api as github_api
 from tests.integration.gitlab import api as gitlab_api
 

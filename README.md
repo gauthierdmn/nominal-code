@@ -130,7 +130,7 @@ Full reference: [Configuration](https://gauthierdmn.github.io/nominal-code/refer
 - [Getting Started](https://gauthierdmn.github.io/nominal-code/getting-started/) — from zero to a working review
 - **Modes:** [CI](https://gauthierdmn.github.io/nominal-code/modes/ci/) | [CLI](https://gauthierdmn.github.io/nominal-code/modes/cli/) | [Webhook](https://gauthierdmn.github.io/nominal-code/modes/webhook/)
 - **Platforms:** [GitHub](https://gauthierdmn.github.io/nominal-code/platforms/github/) | [GitLab](https://gauthierdmn.github.io/nominal-code/platforms/gitlab/)
-- **Bots:** [Reviewer](https://gauthierdmn.github.io/nominal-code/bots/reviewer/) | [Worker (Beta)](https://gauthierdmn.github.io/nominal-code/bots/worker/)
+- [Review Process](https://gauthierdmn.github.io/nominal-code/review/)
 - **Reference:** [Configuration](https://gauthierdmn.github.io/nominal-code/reference/configuration/) | [Environment Variables](https://gauthierdmn.github.io/nominal-code/reference/env-vars/)
 - [Architecture](https://gauthierdmn.github.io/nominal-code/architecture/) | [Deployment](https://gauthierdmn.github.io/nominal-code/deployment/) | [Security](https://gauthierdmn.github.io/nominal-code/security/)
 

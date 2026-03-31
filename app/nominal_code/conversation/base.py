@@ -7,7 +7,6 @@ from typing import Protocol, runtime_checkable
 from nominal_code.config.settings import DEFAULT_REDIS_KEY_TTL_SECONDS
 from nominal_code.conversation.memory import MemoryConversationStore
 from nominal_code.llm.messages import Message, TextBlock
-from nominal_code.models import BotType
 from nominal_code.platforms.base import PlatformName
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -22,7 +21,7 @@ class ConversationStore(Protocol):
 
     Implementations must support storing and retrieving conversation IDs
     (CLI session IDs or provider response IDs) and full message histories
-    (API mode only), keyed by ``(platform, repo, pr_number, bot_type)``.
+    (API mode only), keyed by ``(platform, repo, pr_number, namespace)``.
     An optional ``namespace`` parameter isolates keys across logical
     boundaries.
     """
@@ -32,7 +31,6 @@ class ConversationStore(Protocol):
         platform: PlatformName,
         repo: str,
         pr_number: int,
-        bot_type: BotType,
         namespace: str = "",
     ) -> str | None:
         """
@@ -42,7 +40,6 @@ class ConversationStore(Protocol):
             platform (PlatformName): The platform name.
             repo (str): The full repository name.
             pr_number (int): The pull/merge request number.
-            bot_type (BotType): The type of bot.
             namespace (str): Logical namespace for key isolation.
 
         Returns:
@@ -56,7 +53,6 @@ class ConversationStore(Protocol):
         platform: PlatformName,
         repo: str,
         pr_number: int,
-        bot_type: BotType,
         value: str,
         namespace: str = "",
     ) -> None:
@@ -67,7 +63,6 @@ class ConversationStore(Protocol):
             platform (PlatformName): The platform name.
             repo (str): The full repository name.
             pr_number (int): The pull/merge request number.
-            bot_type (BotType): The type of bot.
             value (str): The conversation ID to store.
             namespace (str): Logical namespace for key isolation.
         """
@@ -79,7 +74,6 @@ class ConversationStore(Protocol):
         platform: PlatformName,
         repo: str,
         pr_number: int,
-        bot_type: BotType,
         namespace: str = "",
     ) -> list[Message] | None:
         """
@@ -89,7 +83,6 @@ class ConversationStore(Protocol):
             platform (PlatformName): The platform name.
             repo (str): The full repository name.
             pr_number (int): The pull/merge request number.
-            bot_type (BotType): The type of bot.
             namespace (str): Logical namespace for key isolation.
 
         Returns:
@@ -103,7 +96,6 @@ class ConversationStore(Protocol):
         platform: PlatformName,
         repo: str,
         pr_number: int,
-        bot_type: BotType,
         value: list[Message],
         namespace: str = "",
     ) -> None:
@@ -114,7 +106,6 @@ class ConversationStore(Protocol):
             platform (PlatformName): The platform name.
             repo (str): The full repository name.
             pr_number (int): The pull/merge request number.
-            bot_type (BotType): The type of bot.
             value (list[Message]): The messages to store.
             namespace (str): Logical namespace for key isolation.
         """

@@ -60,27 +60,24 @@ class TestRoutingPolicy:
         policy = RoutingPolicy()
 
         assert policy.reviewer_triggers == frozenset()
-        assert policy.worker_bot_username == ""
-        assert policy.reviewer_bot_username == ""
+        assert policy.reviewer_bot_username is None
 
     def test_all_fields_set(self):
         policy = RoutingPolicy(
             reviewer_triggers=frozenset({EventType.PR_OPENED, EventType.PR_PUSH}),
-            worker_bot_username="claude-worker",
             reviewer_bot_username="claude-reviewer",
         )
 
         assert policy.reviewer_triggers == frozenset(
             {EventType.PR_OPENED, EventType.PR_PUSH},
         )
-        assert policy.worker_bot_username == "claude-worker"
         assert policy.reviewer_bot_username == "claude-reviewer"
 
     def test_is_frozen(self):
-        policy = RoutingPolicy(worker_bot_username="claude-worker")
+        policy = RoutingPolicy(reviewer_bot_username="claude-reviewer")
 
         with pytest.raises(ValidationError):
-            policy.worker_bot_username = "other-bot"
+            policy.reviewer_bot_username = "other-bot"
 
     def test_reviewer_triggers_accepts_event_types(self):
         policy = RoutingPolicy(
@@ -92,11 +89,9 @@ class TestRoutingPolicy:
 
     def test_equality(self):
         policy_a = RoutingPolicy(
-            worker_bot_username="claude-worker",
             reviewer_bot_username="claude-reviewer",
         )
         policy_b = RoutingPolicy(
-            worker_bot_username="claude-worker",
             reviewer_bot_username="claude-reviewer",
         )
 
@@ -121,7 +116,7 @@ class TestPolicyComposition:
         )
         routing = RoutingPolicy(
             reviewer_triggers=frozenset({EventType.PR_OPENED}),
-            worker_bot_username="claude-worker",
+            reviewer_bot_username="claude-reviewer",
         )
 
         assert filtering.allowed_users == frozenset({"alice"})
@@ -149,16 +144,13 @@ class TestPolicyComposition:
     def test_override_routing_with_org_values(self):
         global_routing = RoutingPolicy(
             reviewer_triggers=frozenset({EventType.PR_OPENED}),
-            worker_bot_username="claude-worker",
             reviewer_bot_username="claude-reviewer",
         )
 
         org_routing = RoutingPolicy(
             reviewer_triggers=global_routing.reviewer_triggers,
-            worker_bot_username="org-worker-bot",
-            reviewer_bot_username=global_routing.reviewer_bot_username,
+            reviewer_bot_username="org-reviewer-bot",
         )
 
-        assert org_routing.worker_bot_username == "org-worker-bot"
-        assert org_routing.reviewer_bot_username == "claude-reviewer"
+        assert org_routing.reviewer_bot_username == "org-reviewer-bot"
         assert org_routing.reviewer_triggers == global_routing.reviewer_triggers

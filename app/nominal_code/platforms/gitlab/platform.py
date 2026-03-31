@@ -4,12 +4,15 @@ import hmac
 import json
 import logging
 from collections.abc import Mapping
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from nominal_code.config.settings import GitLabConfig
 from urllib.parse import quote
 
 import httpx
-from environs import Env
 
+from nominal_code.config.settings import DEFAULT_GITLAB_API_BASE
 from nominal_code.models import (
     ChangedFile,
     DiffSide,
@@ -28,12 +31,9 @@ from nominal_code.platforms.base import (
 )
 from nominal_code.platforms.gitlab.auth import GitLabPatAuth
 from nominal_code.platforms.http import request_with_retry
-from nominal_code.platforms.registry import register_platform
 
-GITLAB_API_BASE: str = "https://gitlab.com"
 DISCUSSIONS_PER_PAGE: int = 100
 
-_env: Env = Env()
 logger: logging.Logger = logging.getLogger(__name__)
 
 
@@ -79,20 +79,21 @@ class GitLabPlatform:
     def __init__(
         self,
         auth: PlatformAuth,
-        webhook_secret: str = "",
-        base_url: str = GITLAB_API_BASE,
+        webhook_secret: str | None = None,
+        base_url: str = DEFAULT_GITLAB_API_BASE,
     ) -> None:
         """
         Initialize the GitLab platform client.
 
         Args:
             auth (PlatformAuth): Authentication strategy for token access.
-            webhook_secret (str): Secret token for webhook verification.
+            webhook_secret (str | None): Secret token for webhook verification.
+                None to skip verification.
             base_url (str): GitLab instance base URL.
         """
 
         self.auth: PlatformAuth = auth
-        self.webhook_secret: str = webhook_secret
+        self.webhook_secret: str | None = webhook_secret
         self.base_url: str = base_url.rstrip("/")
 
         self._client: httpx.AsyncClient = httpx.AsyncClient(
@@ -170,7 +171,7 @@ class GitLabPlatform:
             bool: True if the token matches or no secret is configured.
         """
 
-        if not self.webhook_secret:
+        if self.webhook_secret is None:
             return True
 
         token: str | None = headers.get("X-Gitlab-Token")
@@ -716,58 +717,45 @@ class GitLabPlatform:
     def build_clone_url(
         self,
         repo_full_name: str,
-        *,
-        read_only: bool = False,
     ) -> str:
         """
         Build an authenticated clone URL for a GitLab repository.
 
         Args:
             repo_full_name (str): Full repository name.
-            read_only (bool): If True, use the read-only clone token.
 
         Returns:
             str: The authenticated HTTPS clone URL.
         """
 
-        if read_only:
-            token: str = self.auth.get_clone_token()
-        else:
-            token = self.auth.get_api_token()
+        token: str = self.auth.get_api_token()
 
         return f"https://oauth2:{token}@{self.host}/{repo_full_name}.git"
 
 
-def _create_gitlab_platform() -> GitLabPlatform | None:
+def create_gitlab_platform(config: GitLabConfig) -> GitLabPlatform | None:
     """
-    Factory that builds a GitLabPlatform from environment variables.
+    Build a GitLabPlatform from configuration.
 
-    Returns None if ``GITLAB_TOKEN`` is not set, indicating GitLab is not
+    Returns None if ``token`` is not set, indicating GitLab is not
     configured.
+
+    Args:
+        config (GitLabConfig): The frozen GitLab configuration.
 
     Returns:
         GitLabPlatform | None: A configured client, or None.
     """
 
-    token: str = _env.str("GITLAB_TOKEN", "")
-
-    if not token:
+    if not config.token:
         return None
 
-    webhook_secret: str = _env.str("GITLAB_WEBHOOK_SECRET", "")
-    base_url: str = _env.str("GITLAB_API_BASE", GITLAB_API_BASE)
-    reviewer_token: str = _env.str("GITLAB_REVIEWER_TOKEN", "")
-
     auth: GitLabPatAuth = GitLabPatAuth(
-        token=token,
-        reviewer_token=reviewer_token,
+        token=config.token,
     )
 
     return GitLabPlatform(
         auth=auth,
-        webhook_secret=webhook_secret,
-        base_url=base_url,
+        webhook_secret=config.webhook_secret,
+        base_url=config.api_base,
     )
-
-
-register_platform("gitlab", _create_gitlab_platform)

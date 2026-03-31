@@ -34,8 +34,7 @@ New here? Start with the **[Getting Started](getting-started.md)** guide.
 - :material-webhook: **[Webhook Mode](modes/webhook.md)** — real-time interactive reviews via `@mention`
 - :material-github: **[GitHub](platforms/github.md)** — webhook setup, tokens, supported events
 - :material-gitlab: **[GitLab](platforms/gitlab.md)** — webhook setup, self-hosted support
-- :material-eye: **[Reviewer Bot](bots/reviewer.md)** — read-only agent that posts structured reviews
-- :material-robot: **[Worker Bot (Beta)](bots/worker.md)** — full-access agent that pushes code changes
+- :material-eye: **[Review Process](review.md)** — how the bot reviews code, tool restrictions, output format
 - :material-cog: **[Configuration](reference/configuration.md)** — modes, prompts, guidelines, behavior
 - :material-filter: **[Policies](reference/policies.md)** — filtering and routing policy models
 - :material-format-list-bulleted: **[Environment Variables](reference/env-vars.md)** — full variable reference by feature

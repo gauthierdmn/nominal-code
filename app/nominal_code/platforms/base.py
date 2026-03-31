@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from nominal_code.models import ChangedFile, EventType, ReviewFinding
@@ -160,21 +160,6 @@ class PlatformAuth(ABC):
             str: A valid API token.
         """
 
-    @abstractmethod
-    def get_clone_token(self, account_id: int = 0) -> str:
-        """
-        Return a token suitable for cloning repositories.
-
-        Returns a read-only reviewer token when configured, falling back
-        to the main API token otherwise.
-
-        Args:
-            account_id (int): Platform-specific account identifier.
-
-        Returns:
-            str: A valid clone token.
-        """
-
 
 class Platform(Protocol):
     """
@@ -309,8 +294,6 @@ class Platform(Protocol):
     def build_clone_url(
         self,
         repo_full_name: str,
-        *,
-        read_only: bool = False,
     ) -> str:
         """
         Build an authenticated clone URL for a repository.
@@ -320,21 +303,12 @@ class Platform(Protocol):
 
         Args:
             repo_full_name (str): Full repository name (e.g. ``owner/repo``).
-            read_only (bool): If True, use a read-only reviewer token when
-                available.
 
         Returns:
             str: The authenticated HTTPS clone URL.
         """
 
         ...
-
-
-@runtime_checkable
-class ReviewerPlatform(Platform, Protocol):
-    """
-    Protocol extending Platform with reviewer-specific API calls.
-    """
 
     async def fetch_pr_comments(
         self,

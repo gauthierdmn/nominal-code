@@ -9,7 +9,6 @@ from nominal_code.platforms.base import (
     LifecycleEvent,
     PlatformName,
     PullRequestEvent,
-    ReviewerPlatform,
 )
 
 
@@ -191,10 +190,3 @@ class TestExistingComment:
 
         with pytest.raises(AttributeError):
             comment.author = "other"
-
-
-class TestReviewerPlatformProtocol:
-    def test_is_runtime_checkable(self):
-        assert hasattr(ReviewerPlatform, "__protocol_attrs__") or callable(
-            getattr(ReviewerPlatform, "__instancecheck__", None)
-        )

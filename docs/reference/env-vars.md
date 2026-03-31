@@ -37,15 +37,14 @@ When both a PAT and a GitHub App are configured, the App takes precedence. See [
 
 ## Bot Identity
 
-These can also be set in the YAML config file under `reviewer`, `worker`, and `access`.
+These can also be set in the YAML config file under `reviewer` and `access`.
 
 | Variable | YAML path | Modes | Default | Description |
 |---|---|---|---|---|
 | `REVIEWER_BOT_USERNAME` | `reviewer.bot_username` | `webhook` | — | The `@mention` name for the reviewer bot |
-| `WORKER_BOT_USERNAME` | `worker.bot_username` | `webhook` | — | The `@mention` name for the worker bot *(beta)* |
 | `ALLOWED_USERS` | `access.allowed_users` | `webhook` | — | Comma-separated usernames allowed to trigger the bot |
 
-At least one of `WORKER_BOT_USERNAME` or `REVIEWER_BOT_USERNAME` must be set in webhook mode. You can deploy worker-only, reviewer-only, or both.
+`REVIEWER_BOT_USERNAME` must be set in webhook mode.
 
 ## Server
 
@@ -68,7 +67,6 @@ At least one of `WORKER_BOT_USERNAME` or `REVIEWER_BOT_USERNAME` must be set in 
 | Variable | YAML path | Modes | Default | Description |
 |---|---|---|---|---|
 | `REVIEWER_SYSTEM_PROMPT` | `reviewer.system_prompt_path` | `webhook` `cli` | `prompts/reviewer_prompt.md` | Path to the reviewer bot system prompt file |
-| `WORKER_SYSTEM_PROMPT` | `worker.system_prompt_path` | `webhook` | `prompts/system_prompt.md` | Path to the worker bot system prompt file |
 | `CODING_GUIDELINES` | `prompts.coding_guidelines_path` | `webhook` `cli` `ci` | `prompts/coding_guidelines.md` | Path to a coding guidelines file appended to the system prompt |
 | `LANGUAGE_GUIDELINES_DIR` | `prompts.language_guidelines_dir` | `webhook` `cli` | `prompts/languages` | Directory containing language-specific guideline files (e.g. `python.md`) |
 

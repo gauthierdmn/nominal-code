@@ -35,7 +35,7 @@ class TestHandleAgentErrors:
         platform = _make_platform()
         executed = []
 
-        async with handle_agent_errors(event, platform, "worker"):
+        async with handle_agent_errors(event, platform, "reviewer"):
             executed.append(True)
 
         assert executed == [True]
@@ -46,7 +46,7 @@ class TestHandleAgentErrors:
         event = _make_event()
         platform = _make_platform()
 
-        async with handle_agent_errors(event, platform, "worker"):
+        async with handle_agent_errors(event, platform, "reviewer"):
             raise RuntimeError("workspace setup failed")
 
         platform.post_reply.assert_awaited_once()
@@ -59,7 +59,7 @@ class TestHandleAgentErrors:
         event = _make_event()
         platform = _make_platform()
 
-        async with handle_agent_errors(event, platform, "worker"):
+        async with handle_agent_errors(event, platform, "reviewer"):
             raise ValueError("unexpected crash")
 
         platform.post_reply.assert_awaited_once()
@@ -72,7 +72,7 @@ class TestHandleAgentErrors:
         event = _make_event()
         platform = _make_platform()
 
-        async with handle_agent_errors(event, platform, "worker"):
+        async with handle_agent_errors(event, platform, "reviewer"):
             raise RuntimeError("boom")
 
         call_kwargs = platform.post_reply.call_args.kwargs
@@ -97,7 +97,7 @@ class TestHandleAgentErrors:
         platform = _make_platform()
         platform.post_reply.side_effect = Exception("post failed")
 
-        async with handle_agent_errors(event, platform, "worker"):
+        async with handle_agent_errors(event, platform, "reviewer"):
             raise RuntimeError("workspace failed")
 
     @pytest.mark.asyncio
@@ -115,7 +115,7 @@ class TestHandleAgentErrors:
         platform = _make_platform()
         result = None
 
-        async with handle_agent_errors(event, platform, "worker") as value:
+        async with handle_agent_errors(event, platform, "reviewer") as value:
             result = value
 
         assert result is None

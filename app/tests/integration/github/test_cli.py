@@ -4,12 +4,12 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from nominal_code.agent.result import AgentResult
-from nominal_code.config import Config
-from nominal_code.handlers.review import review
+from nominal_code.config import load_config
 from nominal_code.models import EventType
 from nominal_code.platforms.base import CommentReply, PlatformName, PullRequestEvent
 from nominal_code.platforms.github import GitHubPlatform
 from nominal_code.platforms.github.auth import GitHubPatAuth
+from nominal_code.review.handler import review
 from tests.integration.conftest import PrInfo
 from tests.integration.github.api import (
     fetch_pr_comments,
@@ -46,7 +46,7 @@ async def _run_review(
     canned_result: AgentResult,
     dry_run: bool = False,
 ) -> None:
-    config = Config.for_cli()
+    config = load_config()
 
     with patch(
         "nominal_code.agent.invoke.run_cli_agent",

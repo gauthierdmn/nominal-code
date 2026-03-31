@@ -4,7 +4,6 @@ import logging
 import re
 from typing import TYPE_CHECKING
 
-from nominal_code.models import BotType
 from nominal_code.platforms.base import CommentEvent, LifecycleEvent
 
 if TYPE_CHECKING:
@@ -49,7 +48,6 @@ def extract_mention(text: str, bot_username: str) -> str | None:
 
 async def acknowledge_event(
     event: CommentEvent | LifecycleEvent,
-    bot_type: BotType,
     filtering: FilteringPolicy,
     platform: Platform,
 ) -> bool:
@@ -63,7 +61,6 @@ async def acknowledge_event(
 
     Args:
         event (CommentEvent | LifecycleEvent): The parsed event.
-        bot_type (BotType): Which bot personality to use.
         filtering (FilteringPolicy): Filtering policy with allowed users.
         platform (Platform): The platform client for API calls.
 
@@ -81,8 +78,7 @@ async def acknowledge_event(
             return False
 
         logger.info(
-            "Processing %s comment from %s on %s#%d: %s",
-            bot_type.value,
+            "Processing comment from %s on %s#%d: %s",
             event.author_username,
             event.repo_full_name,
             event.pr_number,

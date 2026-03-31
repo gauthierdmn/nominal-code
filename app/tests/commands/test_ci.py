@@ -1,20 +1,19 @@
 # type: ignore
+import contextlib
 import os
-from types import ModuleType
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nominal_code.commands.ci import (
+from nominal_code.commands.ci.main import (
     _build_ci_config,
     run_ci_review,
 )
 from nominal_code.config import ApiAgentConfig
-from nominal_code.handlers.review import ReviewResult
 from nominal_code.llm.cost import CostSummary, format_cost_summary
 from nominal_code.models import AgentReview, EventType, ProviderName, ReviewFinding
-from nominal_code.platforms import load_platform_ci
 from nominal_code.platforms.base import PlatformName, PullRequestEvent
+from nominal_code.review.handler import ReviewResult
 
 DUMMY_EVENT = PullRequestEvent(
     platform=PlatformName.GITHUB,
@@ -31,27 +30,10 @@ CI_ENV = {
     "INPUT_CODING_GUIDELINES": "",
 }
 
-LOAD_CI = "nominal_code.commands.ci.load_platform_ci"
-REVIEW = "nominal_code.commands.ci.run_and_post_review"
-
-
-def _make_platform_ci_module(
-    event=None,
-    platform=None,
-    workspace="/workspace",
-):
-    module = MagicMock(spec=ModuleType)
-    module.build_event = MagicMock(
-        return_value=event or DUMMY_EVENT,
-    )
-    module.build_platform = MagicMock(
-        return_value=platform or _make_mock_platform(),
-    )
-    module.resolve_workspace = MagicMock(
-        return_value=workspace,
-    )
-
-    return module
+BUILD_PLATFORM = "nominal_code.commands.ci.main.build_platform"
+BUILD_EVENT = "nominal_code.commands.ci.main._build_ci_event"
+RESOLVE_WORKSPACE = "nominal_code.commands.ci.main._resolve_ci_workspace"
+REVIEW = "nominal_code.commands.ci.main.run_and_post_review"
 
 
 def _make_mock_platform():
@@ -75,6 +57,16 @@ def _make_review_result(
         effective_summary=summary,
         raw_output=raw_output,
     )
+
+
+@contextlib.contextmanager
+def _patch_ci_setup(event=None, platform=None, workspace="/workspace"):
+    with (
+        patch(BUILD_PLATFORM, return_value=platform or _make_mock_platform()),
+        patch(BUILD_EVENT, return_value=event or DUMMY_EVENT),
+        patch(RESOLVE_WORKSPACE, return_value=workspace),
+    ):
+        yield
 
 
 class TestBuildCiConfig:
@@ -228,22 +220,6 @@ class TestFormatCostSummary:
         assert "API calls" not in result
 
 
-class TestLoadPlatformCi:
-    def test_load_platform_ci_github(self):
-        module = load_platform_ci(PlatformName.GITHUB)
-
-        assert hasattr(module, "build_event")
-        assert hasattr(module, "build_platform")
-        assert hasattr(module, "resolve_workspace")
-
-    def test_load_platform_ci_gitlab(self):
-        module = load_platform_ci(PlatformName.GITLAB)
-
-        assert hasattr(module, "build_event")
-        assert hasattr(module, "build_platform")
-        assert hasattr(module, "resolve_workspace")
-
-
 class TestRunCiReview:
     @pytest.mark.asyncio
     async def test_run_ci_review_unknown_platform(self):
@@ -265,12 +241,9 @@ class TestRunCiReview:
             findings=findings,
             summary="Issues",
         )
-        module = _make_platform_ci_module(
-            platform=mock_platform,
-        )
 
         with (
-            patch(LOAD_CI, return_value=module),
+            _patch_ci_setup(platform=mock_platform),
             patch(
                 REVIEW,
                 new_callable=AsyncMock,
@@ -285,10 +258,9 @@ class TestRunCiReview:
     @pytest.mark.asyncio
     async def test_run_ci_review_success_no_findings(self):
         result = _make_review_result()
-        module = _make_platform_ci_module()
 
         with (
-            patch(LOAD_CI, return_value=module),
+            _patch_ci_setup(),
             patch(
                 REVIEW,
                 new_callable=AsyncMock,
@@ -301,13 +273,9 @@ class TestRunCiReview:
         assert exit_code == 0
 
     @pytest.mark.asyncio
-    async def test_run_ci_review_returns_one_on_runtime_error(
-        self,
-    ):
-        module = _make_platform_ci_module()
-
+    async def test_run_ci_review_returns_one_on_runtime_error(self):
         with (
-            patch(LOAD_CI, return_value=module),
+            _patch_ci_setup(),
             patch(
                 REVIEW,
                 new_callable=AsyncMock,
@@ -320,13 +288,9 @@ class TestRunCiReview:
         assert exit_code == 1
 
     @pytest.mark.asyncio
-    async def test_run_ci_review_returns_one_on_unexpected_error(
-        self,
-    ):
-        module = _make_platform_ci_module()
-
+    async def test_run_ci_review_returns_one_on_unexpected_error(self):
         with (
-            patch(LOAD_CI, return_value=module),
+            _patch_ci_setup(),
             patch(
                 REVIEW,
                 new_callable=AsyncMock,
@@ -340,12 +304,11 @@ class TestRunCiReview:
 
     @pytest.mark.asyncio
     async def test_run_ci_review_parses_max_turns(self):
-        module = _make_platform_ci_module()
         result = _make_review_result()
         env = {**CI_ENV, "INPUT_MAX_TURNS": "invalid"}
 
         with (
-            patch(LOAD_CI, return_value=module),
+            _patch_ci_setup(),
             patch(
                 REVIEW,
                 new_callable=AsyncMock,
@@ -361,12 +324,11 @@ class TestRunCiReview:
 
     @pytest.mark.asyncio
     async def test_run_ci_review_passes_custom_prompt(self):
-        module = _make_platform_ci_module()
         result = _make_review_result()
         env = {**CI_ENV, "INPUT_PROMPT": "focus on security"}
 
         with (
-            patch(LOAD_CI, return_value=module),
+            _patch_ci_setup(),
             patch(
                 REVIEW,
                 new_callable=AsyncMock,
@@ -388,11 +350,10 @@ class TestRunCiReview:
             pr_branch="fix",
             event_type=EventType.PR_OPENED,
         )
-        module = _make_platform_ci_module(event=gitlab_event)
         result = _make_review_result()
 
         with (
-            patch(LOAD_CI, return_value=module) as mock_load,
+            _patch_ci_setup(event=gitlab_event),
             patch(
                 REVIEW,
                 new_callable=AsyncMock,
@@ -403,4 +364,13 @@ class TestRunCiReview:
             exit_code = await run_ci_review("gitlab")
 
         assert exit_code == 0
-        mock_load.assert_called_once_with(platform_name=PlatformName.GITLAB)
+
+    @pytest.mark.asyncio
+    async def test_run_ci_review_platform_not_configured(self):
+        with patch(
+            BUILD_PLATFORM,
+            side_effect=ValueError("not configured"),
+        ):
+            exit_code = await run_ci_review("github")
+
+        assert exit_code == 1

@@ -6,33 +6,59 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
 
-from nominal_code.config.agent import AgentConfig, ProviderConfig
+from nominal_code.config.agent import AgentConfig
 from nominal_code.config.kubernetes import KubernetesConfig
 from nominal_code.config.policies import FilteringPolicy, RoutingPolicy
-from nominal_code.models import EventType, ProviderName
+from nominal_code.models import EventType
 
 logger: logging.Logger = logging.getLogger(__name__)
 
+DEFAULT_GITHUB_API_BASE: str = "https://api.github.com"
+DEFAULT_GITLAB_API_BASE: str = "https://gitlab.com"
 DEFAULT_REVIEWER_PROMPT_PATH: Path = Path("prompts/reviewer_prompt.md")
-DEFAULT_WORKER_PROMPT_PATH: Path = Path("prompts/system_prompt.md")
 DEFAULT_CODING_GUIDELINES_PATH: Path = Path("prompts/coding_guidelines.md")
 DEFAULT_LANGUAGE_GUIDELINES_DIR: Path = Path("prompts/languages")
 DEFAULT_REDIS_KEY_TTL_SECONDS: int = 86400
 
 
-class WorkerConfig(BaseModel):
+class GitHubConfig(BaseModel):
     """
-    Worker bot configuration.
+    GitHub platform configuration.
 
     Attributes:
-        bot_username (str): The @mention name for the worker bot.
-        system_prompt (str): System prompt text for worker bot invocations.
+        token (str): Personal access token.
+        app_id (str): GitHub App numeric ID.
+        private_key (str): Resolved PEM-encoded RSA private key.
+        installation_id (int): Fixed installation ID for CLI/CI modes.
+        webhook_secret (str): Webhook HMAC verification secret.
+        api_base (str): GitHub API base URL.
     """
 
     model_config = ConfigDict(frozen=True)
 
-    bot_username: str
-    system_prompt: str
+    token: str | None = None
+    app_id: str | None = None
+    private_key: str | None = None
+    installation_id: int = 0
+    webhook_secret: str | None = None
+    api_base: str = DEFAULT_GITHUB_API_BASE
+
+
+class GitLabConfig(BaseModel):
+    """
+    GitLab platform configuration.
+
+    Attributes:
+        token (str): Personal access token.
+        webhook_secret (str): Webhook verification secret.
+        api_base (str): Resolved GitLab instance base URL.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    token: str | None = None
+    webhook_secret: str | None = None
+    api_base: str = DEFAULT_GITLAB_API_BASE
 
 
 class ReviewerConfig(BaseModel):
@@ -91,7 +117,7 @@ class RedisConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    url: str = ""
+    url: str
     key_ttl_seconds: int = DEFAULT_REDIS_KEY_TTL_SECONDS
 
 
@@ -128,7 +154,8 @@ class Config(BaseModel):
     Application configuration loaded from YAML and/or environment variables.
 
     Attributes:
-        worker (WorkerConfig | None): Worker bot config, or None if disabled.
+        github (GitHubConfig): GitHub platform configuration.
+        gitlab (GitLabConfig): GitLab platform configuration.
         reviewer (ReviewerConfig | None): Reviewer bot config, or None if disabled.
         agent (AgentConfig): Agent runner configuration.
         workspace (WorkspaceConfig): Workspace directory configuration.
@@ -139,7 +166,8 @@ class Config(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    worker: WorkerConfig | None = None
+    github: GitHubConfig = GitHubConfig()
+    gitlab: GitLabConfig = GitLabConfig()
     reviewer: ReviewerConfig | None = None
     agent: AgentConfig
     workspace: WorkspaceConfig = WorkspaceConfig()
@@ -147,84 +175,19 @@ class Config(BaseModel):
     webhook: WebhookConfig | None = None
 
     @classmethod
-    def from_env(cls) -> Config:
+    def from_env(cls, **kwargs: object) -> Config:
         """
         Build a Config by reading YAML and environment variables.
 
-        Backward-compatible wrapper around ``load_config()``.
+        Accepts the same keyword arguments as ``load_config()``.
 
         Returns:
-            Config: A fully populated configuration instance.
-
-        Raises:
-            ValueError: If ALLOWED_USERS is empty, no bot is configured, or an
-                environment variable has an invalid value.
+            Config: The resolved configuration instance.
         """
 
         from nominal_code.config.loader import load_config
 
-        return load_config()
-
-    @classmethod
-    def for_cli(
-        cls,
-        model: str = "",
-        max_turns: int = 0,
-        provider: ProviderName | None = None,
-    ) -> Config:
-        """
-        Build a Config for CLI mode.
-
-        Backward-compatible wrapper around ``load_config_for_cli()``.
-
-        Args:
-            model (str): Optional agent model override.
-            max_turns (int): Optional agent max turns override.
-            provider (ProviderName | None): Optional LLM provider.
-
-        Returns:
-            Config: A configuration suitable for one-off CLI reviews.
-        """
-
-        from nominal_code.config.loader import load_config_for_cli
-
-        return load_config_for_cli(
-            model=model,
-            max_turns=max_turns,
-            provider=provider,
-        )
-
-    @classmethod
-    def for_ci(
-        cls,
-        provider: ProviderConfig,
-        model: str = "",
-        max_turns: int = 0,
-        guidelines_path: Path = Path(),
-    ) -> Config:
-        """
-        Build a Config for CI mode.
-
-        Backward-compatible wrapper around ``load_config_for_ci()``.
-
-        Args:
-            provider (ProviderConfig): The resolved provider configuration.
-            model (str): Optional model override.
-            max_turns (int): Optional agent max turns override.
-            guidelines_path (Path): Optional path to a coding guidelines file.
-
-        Returns:
-            Config: A configuration suitable for CI-triggered reviews.
-        """
-
-        from nominal_code.config.loader import load_config_for_ci
-
-        return load_config_for_ci(
-            provider=provider,
-            model=model,
-            max_turns=max_turns,
-            guidelines_path=guidelines_path,
-        )
+        return load_config(**kwargs)  # type: ignore[arg-type]
 
 
 def parse_title_tags(tags: str) -> frozenset[str]:

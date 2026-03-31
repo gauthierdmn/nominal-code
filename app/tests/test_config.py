@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from nominal_code.config import ApiAgentConfig, CliAgentConfig, Config
+from nominal_code.config import ApiAgentConfig, CliAgentConfig, Config, load_config
 from nominal_code.config.settings import (
     load_file_content,
     load_language_guidelines,
@@ -13,17 +13,6 @@ from nominal_code.config.settings import (
     parse_title_tags,
 )
 from nominal_code.models import EventType, ProviderName
-
-
-@pytest.fixture
-def _worker_only_env():
-    env = {
-        "WORKER_BOT_USERNAME": "claude-worker",
-        "ALLOWED_USERS": "alice,bob",
-    }
-
-    with patch.dict(os.environ, env, clear=True):
-        yield
 
 
 @pytest.fixture
@@ -38,22 +27,7 @@ def _reviewer_only_env():
 
 
 @pytest.fixture
-def _both_bots_env():
-    env = {
-        "WORKER_BOT_USERNAME": "claude-worker",
-        "REVIEWER_BOT_USERNAME": "claude-reviewer",
-        "ALLOWED_USERS": "alice,bob",
-    }
-
-    with patch.dict(os.environ, env, clear=True):
-        yield
-
-
-@pytest.fixture
 def _full_env(tmp_path):
-    worker_prompt_file = tmp_path / "custom_prompt.md"
-    worker_prompt_file.write_text("You are a custom bot.", encoding="utf-8")
-
     reviewer_prompt_file = tmp_path / "custom_reviewer_prompt.md"
     reviewer_prompt_file.write_text("Review carefully.", encoding="utf-8")
 
@@ -64,7 +38,6 @@ def _full_env(tmp_path):
     lang_dir.mkdir()
 
     env = {
-        "WORKER_BOT_USERNAME": "claude-worker",
         "REVIEWER_BOT_USERNAME": "claude-reviewer",
         "WEBHOOK_HOST": "127.0.0.1",
         "WEBHOOK_PORT": "9090",
@@ -73,7 +46,6 @@ def _full_env(tmp_path):
         "AGENT_MAX_TURNS": "10",
         "AGENT_MODEL": "claude-sonnet-4-20250514",
         "AGENT_CLI_PATH": "/usr/local/bin/claude",
-        "WORKER_SYSTEM_PROMPT": str(worker_prompt_file),
         "REVIEWER_SYSTEM_PROMPT": str(reviewer_prompt_file),
         "CODING_GUIDELINES": str(guidelines_file),
         "LANGUAGE_GUIDELINES_DIR": str(lang_dir),
@@ -84,25 +56,9 @@ def _full_env(tmp_path):
 
 
 class TestFromEnv:
-    def test_from_env_worker_only(self, _worker_only_env):
-        config = Config.from_env()
-
-        assert config.worker is not None
-        assert config.worker.bot_username == "claude-worker"
-        assert config.reviewer is None
-
     def test_from_env_reviewer_only(self, _reviewer_only_env):
-        config = Config.from_env()
+        config = Config.from_env(require_webhook=True)
 
-        assert config.reviewer is not None
-        assert config.reviewer.bot_username == "claude-reviewer"
-        assert config.worker is None
-
-    def test_from_env_both_bots(self, _both_bots_env):
-        config = Config.from_env()
-
-        assert config.worker is not None
-        assert config.worker.bot_username == "claude-worker"
         assert config.reviewer is not None
         assert config.reviewer.bot_username == "claude-reviewer"
 
@@ -112,26 +68,23 @@ class TestFromEnv:
         }
 
         with patch.dict(os.environ, env, clear=True):
-            with pytest.raises(ValueError, match="At least one"):
-                Config.from_env()
+            with pytest.raises(ValueError, match="REVIEWER_BOT_USERNAME"):
+                Config.from_env(require_webhook=True)
 
-    def test_from_env_shared_defaults(self, _both_bots_env):
-        config = Config.from_env()
+    def test_from_env_shared_defaults(self, _reviewer_only_env):
+        config = Config.from_env(require_webhook=True)
 
         assert config.webhook is not None
         assert config.webhook.host == "0.0.0.0"
         assert config.webhook.port == 8080
         assert config.webhook.filtering.allowed_users == frozenset({"alice", "bob"})
         assert config.agent.max_turns == 0
-        assert config.agent.model == ""
-        assert config.agent.cli_path == ""
+        assert config.agent.model is None
+        assert config.agent.cli_path is None
 
     def test_from_env_full_config(self, _full_env):
-        config = Config.from_env()
+        config = Config.from_env(require_webhook=True)
 
-        assert config.worker is not None
-        assert config.worker.bot_username == "claude-worker"
-        assert config.worker.system_prompt == "You are a custom bot."
         assert config.reviewer is not None
         assert config.reviewer.bot_username == "claude-reviewer"
         assert config.reviewer.system_prompt == "Review carefully."
@@ -148,41 +101,6 @@ class TestFromEnv:
         assert config.prompts.coding_guidelines == "Use snake_case."
         assert config.prompts.language_guidelines == {}
 
-    def test_from_env_worker_system_prompt_from_file(self, tmp_path, _worker_only_env):
-        prompt_file = tmp_path / "prompt.md"
-        prompt_file.write_text("Be helpful.\n", encoding="utf-8")
-
-        with patch.dict(os.environ, {"WORKER_SYSTEM_PROMPT": str(prompt_file)}):
-            config = Config.from_env()
-
-        assert config.worker is not None
-        assert config.worker.system_prompt == "Be helpful."
-
-    def test_from_env_worker_system_prompt_missing_file_returns_empty(
-        self,
-        _worker_only_env,
-    ):
-        with patch.dict(
-            os.environ,
-            {"WORKER_SYSTEM_PROMPT": "/nonexistent/prompt.md"},
-        ):
-            config = Config.from_env()
-
-        assert config.worker is not None
-        assert config.worker.system_prompt == ""
-
-    def test_from_env_worker_system_prompt_defaults_empty(
-        self,
-        _worker_only_env,
-        tmp_path,
-        monkeypatch,
-    ):
-        monkeypatch.chdir(tmp_path)
-        config = Config.from_env()
-
-        assert config.worker is not None
-        assert config.worker.system_prompt == ""
-
     def test_from_env_reviewer_system_prompt_from_file(
         self,
         tmp_path,
@@ -192,7 +110,7 @@ class TestFromEnv:
         prompt_file.write_text("Review code.\n", encoding="utf-8")
 
         with patch.dict(os.environ, {"REVIEWER_SYSTEM_PROMPT": str(prompt_file)}):
-            config = Config.from_env()
+            config = Config.from_env(require_webhook=True)
 
         assert config.reviewer is not None
         assert config.reviewer.system_prompt == "Review code."
@@ -205,12 +123,12 @@ class TestFromEnv:
             os.environ,
             {"REVIEWER_SYSTEM_PROMPT": "/nonexistent/reviewer.md"},
         ):
-            config = Config.from_env()
+            config = Config.from_env(require_webhook=True)
 
         assert config.reviewer is not None
         assert config.reviewer.system_prompt == ""
 
-    def test_from_env_coding_guidelines_from_file(self, tmp_path, _both_bots_env):
+    def test_from_env_coding_guidelines_from_file(self, tmp_path, _reviewer_only_env):
         guidelines_file = tmp_path / "guidelines.md"
         guidelines_file.write_text("Use snake_case.\n", encoding="utf-8")
 
@@ -218,111 +136,111 @@ class TestFromEnv:
             os.environ,
             {"CODING_GUIDELINES": str(guidelines_file)},
         ):
-            config = Config.from_env()
+            config = Config.from_env(require_webhook=True)
 
         assert config.prompts.coding_guidelines == "Use snake_case."
 
     def test_from_env_coding_guidelines_missing_file_returns_empty(
         self,
-        _both_bots_env,
+        _reviewer_only_env,
     ):
         with patch.dict(
             os.environ,
             {"CODING_GUIDELINES": "/nonexistent/guidelines.md"},
         ):
-            config = Config.from_env()
+            config = Config.from_env(require_webhook=True)
 
         assert config.prompts.coding_guidelines == ""
 
     def test_from_env_coding_guidelines_defaults_empty(
         self,
-        _both_bots_env,
+        _reviewer_only_env,
         tmp_path,
         monkeypatch,
     ):
         monkeypatch.chdir(tmp_path)
-        config = Config.from_env()
+        config = Config.from_env(require_webhook=True)
 
         assert config.prompts.coding_guidelines == ""
 
     def test_from_env_missing_allowed_users_raises(self):
         env = {
-            "WORKER_BOT_USERNAME": "claude-worker",
+            "REVIEWER_BOT_USERNAME": "claude-reviewer",
         }
 
         with patch.dict(os.environ, env, clear=True):
             with pytest.raises(ValueError, match="ALLOWED_USERS"):
-                Config.from_env()
+                Config.from_env(require_webhook=True)
 
     def test_from_env_empty_allowed_users_raises(self):
         env = {
-            "WORKER_BOT_USERNAME": "claude-worker",
+            "REVIEWER_BOT_USERNAME": "claude-reviewer",
             "ALLOWED_USERS": "  , , ",
         }
 
         with patch.dict(os.environ, env, clear=True):
             with pytest.raises(ValueError, match="at least one username"):
-                Config.from_env()
+                Config.from_env(require_webhook=True)
 
-    def test_from_env_reviewer_triggers_parsed(self, _both_bots_env):
+    def test_from_env_reviewer_triggers_parsed(self, _reviewer_only_env):
         with patch.dict(os.environ, {"REVIEWER_TRIGGERS": "pr_opened,pr_push"}):
-            config = Config.from_env()
+            config = Config.from_env(require_webhook=True)
 
         assert config.webhook is not None
         assert config.webhook.routing.reviewer_triggers == frozenset(
             {EventType.PR_OPENED, EventType.PR_PUSH},
         )
 
-    def test_from_env_reviewer_triggers_empty(self, _both_bots_env):
-        config = Config.from_env()
+    def test_from_env_reviewer_triggers_empty(self, _reviewer_only_env):
+        config = Config.from_env(require_webhook=True)
 
         assert config.webhook is not None
         assert config.webhook.routing.reviewer_triggers == frozenset()
 
-    def test_from_env_allowed_repos_parsed(self, _both_bots_env):
+    def test_from_env_allowed_repos_parsed(self, _reviewer_only_env):
         with patch.dict(
             os.environ,
             {"ALLOWED_REPOS": "owner/repo-a, owner/repo-b"},
         ):
-            config = Config.from_env()
+            config = Config.from_env(require_webhook=True)
 
         assert config.webhook is not None
         assert config.webhook.filtering.allowed_repos == frozenset(
             {"owner/repo-a", "owner/repo-b"},
         )
 
-    def test_from_env_allowed_repos_default_empty(self, _both_bots_env):
-        config = Config.from_env()
+    def test_from_env_allowed_repos_default_empty(self, _reviewer_only_env):
+        config = Config.from_env(require_webhook=True)
 
         assert config.webhook is not None
         assert config.webhook.filtering.allowed_repos == frozenset()
 
-    def test_from_env_default_agent_is_cli(self, _both_bots_env):
-        config = Config.from_env()
+    def test_from_env_default_agent_is_cli(self, _reviewer_only_env):
+        config = Config.from_env(require_webhook=True)
 
         assert isinstance(config.agent, CliAgentConfig)
 
-    def test_from_env_agent_provider_creates_api_config(self, _both_bots_env):
+    def test_from_env_agent_provider_creates_api_config(self, _reviewer_only_env):
         with patch.dict(os.environ, {"AGENT_PROVIDER": "openai"}):
-            config = Config.from_env()
+            config = Config.from_env(require_webhook=True)
 
         assert isinstance(config.agent, ApiAgentConfig)
         assert config.agent.provider.name == ProviderName.OPENAI
 
-    def test_from_env_agent_provider_with_model_override(self, _both_bots_env):
+    def test_from_env_agent_provider_with_model_override(self, _reviewer_only_env):
         with patch.dict(
             os.environ,
             {"AGENT_PROVIDER": "anthropic", "AGENT_MODEL": "claude-opus-4-6"},
         ):
-            config = Config.from_env()
+            config = Config.from_env(require_webhook=True)
 
         assert isinstance(config.agent, ApiAgentConfig)
         assert config.agent.provider.model == "claude-opus-4-6"
 
-    def test_from_env_unknown_agent_provider_raises(self, _both_bots_env):
+    def test_from_env_unknown_agent_provider_raises(self, _reviewer_only_env):
         with patch.dict(os.environ, {"AGENT_PROVIDER": "unknown"}):
             with pytest.raises(ValueError, match="Unknown AGENT_PROVIDER"):
-                Config.from_env()
+                Config.from_env(require_webhook=True)
 
 
 class TestParseReviewerTriggers:
@@ -450,51 +368,50 @@ class TestLoadLanguageGuidelines:
 class TestConfigForCli:
     def test_config_for_cli_creates_valid_config(self, tmp_path):
         with patch.dict(os.environ, {"WORKSPACE_BASE_DIR": str(tmp_path)}, clear=True):
-            config = Config.for_cli()
+            config = load_config()
 
-        assert config.worker is None
         assert config.reviewer is not None
         assert config.reviewer.bot_username == ""
 
     def test_config_for_cli_applies_model_override(self, tmp_path):
         with patch.dict(os.environ, {"WORKSPACE_BASE_DIR": str(tmp_path)}, clear=True):
-            config = Config.for_cli(model="claude-opus-4-6")
+            config = load_config(model="claude-opus-4-6")
 
         assert config.agent.model == "claude-opus-4-6"
 
     def test_config_for_cli_applies_max_turns_override(self, tmp_path):
         with patch.dict(os.environ, {"WORKSPACE_BASE_DIR": str(tmp_path)}, clear=True):
-            config = Config.for_cli(max_turns=5)
+            config = load_config(max_turns=5)
 
         assert config.agent.max_turns == 5
 
     def test_config_for_cli_no_webhook_settings_required(self, tmp_path):
         with patch.dict(os.environ, {"WORKSPACE_BASE_DIR": str(tmp_path)}, clear=True):
-            config = Config.for_cli()
+            config = load_config()
 
         assert config.webhook is None
 
     def test_config_for_cli_title_tags_default_empty(self, tmp_path):
         with patch.dict(os.environ, {"WORKSPACE_BASE_DIR": str(tmp_path)}, clear=True):
-            config = Config.for_cli()
+            config = load_config()
 
         assert config.webhook is None
 
     def test_config_for_cli_allowed_repos_default_empty(self, tmp_path):
         with patch.dict(os.environ, {"WORKSPACE_BASE_DIR": str(tmp_path)}, clear=True):
-            config = Config.for_cli()
+            config = load_config()
 
         assert config.webhook is None
 
     def test_config_for_cli_default_agent_is_cli(self, tmp_path):
         with patch.dict(os.environ, {"WORKSPACE_BASE_DIR": str(tmp_path)}, clear=True):
-            config = Config.for_cli()
+            config = load_config()
 
         assert isinstance(config.agent, CliAgentConfig)
 
     def test_config_for_cli_provider_creates_api_config(self, tmp_path):
         with patch.dict(os.environ, {"WORKSPACE_BASE_DIR": str(tmp_path)}, clear=True):
-            config = Config.for_cli(provider=ProviderName.OPENAI)
+            config = load_config(provider=ProviderName.OPENAI)
 
         assert isinstance(config.agent, ApiAgentConfig)
         assert config.agent.provider.name == ProviderName.OPENAI
@@ -502,7 +419,7 @@ class TestConfigForCli:
 
     def test_config_for_cli_provider_with_model_override(self, tmp_path):
         with patch.dict(os.environ, {"WORKSPACE_BASE_DIR": str(tmp_path)}, clear=True):
-            config = Config.for_cli(provider=ProviderName.OPENAI, model="gpt-4o")
+            config = load_config(provider=ProviderName.OPENAI, model="gpt-4o")
 
         assert isinstance(config.agent, ApiAgentConfig)
         assert config.agent.provider.model == "gpt-4o"
@@ -513,7 +430,7 @@ class TestConfigForCli:
             {"WORKSPACE_BASE_DIR": str(tmp_path), "AGENT_PROVIDER": "anthropic"},
             clear=True,
         ):
-            config = Config.for_cli()
+            config = load_config()
 
         assert isinstance(config.agent, ApiAgentConfig)
         assert config.agent.provider.name == ProviderName.ANTHROPIC
@@ -562,7 +479,7 @@ class TestParseTitleTags:
 
 
 class TestFromEnvTitleTags:
-    def test_from_env_title_tags_parsed(self, _both_bots_env):
+    def test_from_env_title_tags_parsed(self, _reviewer_only_env):
         with patch.dict(
             os.environ,
             {
@@ -570,7 +487,7 @@ class TestFromEnvTitleTags:
                 "PR_TITLE_EXCLUDE_TAGS": "skip",
             },
         ):
-            config = Config.from_env()
+            config = Config.from_env(require_webhook=True)
 
         assert config.webhook is not None
         assert config.webhook.filtering.pr_title_include_tags == frozenset(
@@ -578,8 +495,8 @@ class TestFromEnvTitleTags:
         )
         assert config.webhook.filtering.pr_title_exclude_tags == frozenset({"skip"})
 
-    def test_from_env_title_tags_default_empty(self, _both_bots_env):
-        config = Config.from_env()
+    def test_from_env_title_tags_default_empty(self, _reviewer_only_env):
+        config = Config.from_env(require_webhook=True)
 
         assert config.webhook is not None
         assert config.webhook.filtering.pr_title_include_tags == frozenset()
