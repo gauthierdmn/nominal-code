@@ -55,7 +55,7 @@ nominal-code review owner/repo#42 [--dry-run] [--prompt "..."]
 _parse_pr_ref()                     ← validate owner/repo#N format
         │
         ▼
-_build_platform()                   ← construct platform from env token
+build_platform()                    ← construct platform from env token
         │
         ├─ fetch_pr_branch()       ← resolve HEAD branch via API
         │
@@ -223,13 +223,12 @@ Each incoming request is verified, parsed, and dispatched. The HTTP response is 
 - **`review.handler.review()`** — core review logic (clone, fetch diff + comments, run agent, parse JSON, filter findings). Returns a `ReviewResult` without posting. Used by webhook, CLI, and CI modes.
 - **`review.handler.run_and_post_review()`** — webhook/CI entry point. Calls `review()` then posts results to the platform.
 
-### CLI Module (`commands/cli.py`)
+### CLI Module (`commands/cli/main.py`)
 
 - **`_parse_pr_ref()`** — parses `owner/repo#42` into a repo name and PR number.
-- **`_build_platform()`** — constructs a platform client from environment tokens (no webhook secret needed).
-- **`_run_review()`** — orchestrates the CLI flow: resolve branch, call `review()`, print results, optionally post.
+- **`_run_review()`** — orchestrates the CLI flow: resolve branch, call `review()`, print results, optionally post. Uses `build_platform()` from `platforms/` to construct the platform client.
 
-### CI Module (`commands/ci.py`)
+### CI Module (`commands/ci/main.py`)
 
 - **`run_ci_review()`** — main entry point for CI-triggered reviews. Dispatches to the platform-specific CI module, runs the review, and posts results.
 
@@ -261,11 +260,11 @@ Wraps the Claude Code SDK to stream messages from the CLI subprocess. See [Claud
 
 Loads and composes the system prompt from multiple sources: the bot's base prompt, global coding guidelines, and per-repo/per-language overrides from the `.nominal/` directory. Language detection is based on file extensions in the PR diff.
 
-### Conversation Store and Job Queue (`conversation/memory.py`, `jobs/queue/asyncio.py`)
+### Conversation Store and Job Queue
 
-- **ConversationStore** — a unified in-memory store with two parallel dicts keyed by `(platform, repo, pr_number)`: lightweight conversation IDs and full message histories (API mode only). Used to resume conversations across multiple interactions on the same PR.
-- **AsyncioJobQueue** — per-PR async job queue for in-process mode (`commands/webhook/jobs/queue/asyncio.py`). Each PR key gets its own `asyncio.Queue` with a single consumer task, ensuring that agent invocations on the same PR run serially (no race conditions). The consumer and queue are cleaned up when drained.
-- **RedisJobQueue** — Redis-backed per-PR job queue for Kubernetes mode (`commands/webhook/jobs/queue/redis.py`). Uses Redis lists for serial execution and Redis pub/sub for event-driven job completion. Each PR key gets a consumer task that loops with `BRPOP`, creates K8s Jobs, and awaits completion signals — no K8s API polling required.
+- **ConversationStore** (`conversation/memory.py`) — a unified in-memory store with two parallel dicts keyed by `(platform, repo, pr_number)`: lightweight conversation IDs and full message histories (API mode only). Used to resume conversations across multiple interactions on the same PR.
+- **AsyncioJobQueue** (`commands/webhook/jobs/queue/asyncio.py`) — per-PR async job queue for in-process mode. Each PR key gets its own `asyncio.Queue` with a single consumer task, ensuring that agent invocations on the same PR run serially (no race conditions). The consumer and queue are cleaned up when drained.
+- **RedisJobQueue** (`commands/webhook/jobs/queue/redis.py`) — Redis-backed per-PR job queue for Kubernetes mode. Uses Redis lists for serial execution and Redis pub/sub for event-driven job completion. Each PR key gets a consumer task that loops with `BRPOP`, creates K8s Jobs, and awaits completion signals — no K8s API polling required.
 
 ### Cost Tracking (`llm/cost.py`)
 
@@ -335,17 +334,21 @@ nominal_code/
 │   └── kubernetes.py    # KubernetesConfig
 ├── models.py            # Shared enums (EventType, FileStatus) and dataclasses
 ├── commands/
-│   ├── cli.py           # One-shot review CLI (argparse, platform construction)
+│   ├── cli/             # One-shot review CLI (package)
+│   │   └── main.py      # argparse, platform construction, review orchestration
 │   ├── ci/              # CI mode
+│   │   ├── main.py      # CI review entry point (run_ci_review)
 │   │   ├── github.py    # CI mode: build event, platform, and workspace from GitHub Actions env vars
 │   │   └── gitlab.py    # CI mode: build event, platform, and workspace from GitLab CI env vars
 │   └── webhook/         # Webhook server and K8s job entrypoint
-│       ├── server.py    # aiohttp app with /health and /webhooks/{platform} routes
+│       ├── main.py      # aiohttp app with /health and /webhooks/{platform} routes
 │       ├── helpers.py   # Pre-flight checks (auth, reactions, logging), mention extraction
-│       ├── entrypoint.py # K8s job runner CLI command
-│       └── jobs/        # Job processing (moved from top-level jobs/)
-│           ├── payload.py       # ReviewJob serializable dataclass
-│           ├── execute.py       # Shared execution logic: prepares and runs jobs
+│       ├── result.py    # DispatchResult dataclass
+│       └── jobs/        # Job processing
+│           ├── main.py          # K8s pod entry point (run-job)
+│           ├── payload.py       # JobPayload serializable dataclass
+│           ├── dispatch.py      # Job dispatch logic (execute_job)
+│           ├── handler.py       # JobHandler protocol
 │           ├── runner/          # Job runner implementations
 │           │   ├── base.py      # JobRunner protocol + build_runner() factory
 │           │   ├── process.py   # ProcessRunner: job enqueueing and handler dispatch

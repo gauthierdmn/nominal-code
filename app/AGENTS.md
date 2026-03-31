@@ -24,7 +24,7 @@ AI-powered code review bot that monitors GitHub PRs and GitLab MRs. When a user 
 
 The call chain follows four conceptual layers:
 
-1. **Receive** — `commands/webhook/server.py` (webhooks), `commands/` (CLI/CI).
+1. **Receive** — `commands/webhook/main.py` (webhooks), `commands/` (CLI/CI).
 2. **Prepare** — `workspace/setup.py::prepare_job_event()` resolves clone URLs and branches; `commands/webhook/jobs/runner/process.py` wraps with error handling and queue management.
 3. **Orchestrate** — `review/handler.py` (business logic: diff fetching, prompt building, output parsing).
 4. **Invoke** — `agent/invoke.py` provides agent execution with explicit conversation lifecycle (`prepare_conversation`, `invoke_agent`, `save_conversation`).
@@ -88,12 +88,14 @@ nominal_code/
 │   └── kubernetes.py    # KubernetesConfig (frozen)
 ├── models.py            # Shared enums (EventType, FileStatus) and dataclasses (ReviewFinding, AgentReview, ChangedFile)
 ├── commands/
-│   ├── cli.py           # CLI review mode
+│   ├── cli/             # CLI review mode (package with main.py)
 │   ├── ci/              # CI mode: entry point + platform-specific event/workspace parsing
 │   └── webhook/         # Webhook server, helpers, mention extraction, K8s job runner
-│       ├── server.py    # aiohttp webhook server
-│       ├── job.py       # K8s pod entry point (run-job)
+│       ├── main.py      # aiohttp webhook server (run_webhook_server)
+│       ├── helpers.py   # Pre-flight checks, mention extraction
+│       ├── result.py    # DispatchResult dataclass
 │       └── jobs/        # Job payload, dispatch, handler, runner and queue subpackages
+│           ├── main.py  # K8s pod entry point (run-job)
 ├── llm/                 # LLM provider abstraction, cost tracking, canonical message types
 ├── agent/               # Agent invocation (invoke.py), dual runners, prompt composition, error handling
 ├── conversation/        # Conversation persistence (memory + Redis stores)

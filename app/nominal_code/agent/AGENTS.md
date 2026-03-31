@@ -6,7 +6,7 @@ Handles LLM agent invocation via two backends, prompt composition, and error han
 
 The call chain follows four conceptual layers:
 
-1. **Receive** — `commands/webhook/server.py` receives webhooks, `commands/` handles CLI/CI entry points.
+1. **Receive** — `commands/webhook/main.py` receives webhooks, `commands/` handles CLI/CI entry points.
 2. **Prepare** — `workspace/setup.py::prepare_job_event()` resolves clone URLs and branches. `jobs/runner/process.py` wraps execution with error handling and queue management.
 3. **Orchestrate** — `review/handler.py` contains business logic (diff fetching, prompt building, output parsing).
 4. **Invoke** — `agent/invoke.py` provides agent execution with explicit conversation lifecycle.
