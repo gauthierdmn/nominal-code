@@ -131,7 +131,7 @@ class GitWorkspace:
             if not git_dir_exists:
                 raise RuntimeError(
                     f"Read-only workspace at {self.repo_path} has no "
-                    f"{GIT_FOLDER_NAME} directory — was the init container skipped?",
+                    f"{GIT_FOLDER_NAME} directory — was the repository cloned?",
                 )
 
             logger.info(

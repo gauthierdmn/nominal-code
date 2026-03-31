@@ -24,13 +24,17 @@ _env: Env = Env()
 logger: logging.Logger = logging.getLogger(__name__)
 
 
-async def run_job_main() -> int:
+async def run_job_main(pre_cloned: bool = False) -> int:
     """
     Entry point for the ``run-job`` CLI subcommand.
 
     Reads the ``REVIEW_JOB_PAYLOAD`` environment variable, deserializes
     the job, constructs the platform client, runs the review using the
     LLM provider API, and posts results.
+
+    Args:
+        pre_cloned (bool): When True, the repository was pre-cloned by
+            an external process and clone URL resolution is skipped.
 
     Returns:
         int: Exit code (0 on success, 1 on failure).
@@ -74,6 +78,7 @@ async def run_job_main() -> int:
         platform=platform,
         handler=handler,
         conversation_store=conversation_store,
+        pre_cloned=pre_cloned,
     )
 
     _publish_completion(exit_code=exit_code, job=job, redis=redis)
@@ -87,6 +92,7 @@ async def _run_job(
     platform: Platform,
     handler: JobHandler,
     conversation_store: ConversationStore | None = None,
+    pre_cloned: bool = False,
 ) -> int:
     """
     Execute a job via the unified dispatch pipeline.
@@ -98,6 +104,7 @@ async def _run_job(
         handler (JobHandler): The job handler to delegate execution to.
         conversation_store (ConversationStore | None): Conversation store
             for conversation continuity.
+        pre_cloned (bool): When True, skip clone URL resolution.
 
     Returns:
         int: Exit code (0 on success, 1 on failure).
@@ -117,6 +124,7 @@ async def _run_job(
             handler=handler,
             config=config,
             conversation_store=conversation_store,
+            pre_cloned=pre_cloned,
         )
     except Exception:
         logger.exception(
