@@ -5,15 +5,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nominal_code.commands.cli import (
+from nominal_code.commands.cli.main import (
     _build_cli_parser,
     _parse_pr_ref,
     _print_review,
     _run_review,
     cli_main,
 )
-from nominal_code.handlers.review import ReviewResult
 from nominal_code.models import AgentReview, ReviewFinding
+from nominal_code.review.handler import ReviewResult
 
 
 class TestParsePrRef:
@@ -69,8 +69,8 @@ class TestBuildCliParser:
         assert args.pr_ref == "owner/repo#42"
         assert args.prompt == ""
         assert args.platform == "github"
-        assert args.model == ""
-        assert args.max_turns == 0
+        assert args.model is None
+        assert args.max_turns is None
         assert args.dry_run is False
 
     def test_parser_review_all_options(self):
@@ -241,11 +241,11 @@ class TestRunReview:
         )
 
         with patch(
-            "nominal_code.commands.cli._build_platform",
+            "nominal_code.commands.cli.main.build_platform",
             return_value=mock_platform,
         ):
             with patch(
-                "nominal_code.commands.cli.review",
+                "nominal_code.commands.cli.main.review",
                 new_callable=AsyncMock,
                 return_value=review_result,
             ):
@@ -289,11 +289,11 @@ class TestRunReview:
         )
 
         with patch(
-            "nominal_code.commands.cli._build_platform",
+            "nominal_code.commands.cli.main.build_platform",
             return_value=mock_platform,
         ):
             with patch(
-                "nominal_code.commands.cli.review",
+                "nominal_code.commands.cli.main.review",
                 new_callable=AsyncMock,
                 return_value=review_result,
             ):
@@ -319,7 +319,7 @@ class TestRunReview:
         mock_platform.authenticate = AsyncMock()
 
         with patch(
-            "nominal_code.commands.cli._build_platform",
+            "nominal_code.commands.cli.main.build_platform",
             return_value=mock_platform,
         ):
             exit_code = await _run_review(args)
@@ -353,11 +353,11 @@ class TestRunReview:
         )
 
         with patch(
-            "nominal_code.commands.cli._build_platform",
+            "nominal_code.commands.cli.main.build_platform",
             return_value=mock_platform,
         ):
             with patch(
-                "nominal_code.commands.cli.review",
+                "nominal_code.commands.cli.main.review",
                 new_callable=AsyncMock,
                 return_value=review_result,
             ):
@@ -371,7 +371,7 @@ class TestRunReview:
 class TestCliMain:
     def test_cli_main_exits_nonzero_with_no_args(self):
         with patch.object(sys, "argv", ["nominal-code"]):
-            with patch("nominal_code.commands.cli.setup_logging"):
+            with patch("nominal_code.commands.cli.main.setup_logging"):
                 with pytest.raises(SystemExit) as exc_info:
                     cli_main()
 
@@ -379,9 +379,9 @@ class TestCliMain:
 
     def test_cli_main_dispatches_review_command(self):
         with patch.object(sys, "argv", ["nominal-code", "review", "owner/repo#1"]):
-            with patch("nominal_code.commands.cli.setup_logging"):
+            with patch("nominal_code.commands.cli.main.setup_logging"):
                 with patch(
-                    "nominal_code.commands.cli._run_review",
+                    "nominal_code.commands.cli.main._run_review",
                     new=AsyncMock(return_value=0),
                 ):
                     with pytest.raises(SystemExit) as exc_info:
@@ -391,9 +391,9 @@ class TestCliMain:
 
     def test_cli_main_exits_with_review_return_code(self):
         with patch.object(sys, "argv", ["nominal-code", "review", "bad#ref"]):
-            with patch("nominal_code.commands.cli.setup_logging"):
+            with patch("nominal_code.commands.cli.main.setup_logging"):
                 with patch(
-                    "nominal_code.commands.cli._run_review",
+                    "nominal_code.commands.cli.main._run_review",
                     new=AsyncMock(return_value=1),
                 ):
                     with pytest.raises(SystemExit) as exc_info:

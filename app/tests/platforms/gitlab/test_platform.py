@@ -1,10 +1,10 @@
 # type: ignore
 import json
-import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from nominal_code.config.settings import GitLabConfig
 from nominal_code.models import DiffSide, EventType, FileStatus, ReviewFinding
 from nominal_code.platforms.base import (
     CommentEvent,
@@ -15,8 +15,8 @@ from nominal_code.platforms.base import (
 from nominal_code.platforms.gitlab import GitLabPlatform
 from nominal_code.platforms.gitlab.auth import GitLabPatAuth
 from nominal_code.platforms.gitlab.platform import (
-    _create_gitlab_platform,
     _format_suggestion_body,
+    create_gitlab_platform,
 )
 
 
@@ -36,17 +36,6 @@ def platform_no_secret():
     auth = GitLabPatAuth(token="glpat-test456")
 
     return GitLabPlatform(auth=auth)
-
-
-@pytest.fixture
-def platform_with_reviewer_token():
-    auth = GitLabPatAuth(token="glpat-test456", reviewer_token="glpat-readonly789")
-
-    return GitLabPlatform(
-        auth=auth,
-        webhook_secret="gl-secret",
-        base_url="https://gitlab.com",
-    )
 
 
 def _make_headers(headers=None):
@@ -318,22 +307,11 @@ class TestFetchPrBranch:
         assert result == ""
 
 
-class TestBuildCloneUrlReadOnly:
-    def test_build_clone_url_read_only_with_reviewer_token(
-        self,
-        platform_with_reviewer_token,
-    ):
-        url = platform_with_reviewer_token.build_clone_url(
-            "group/repo",
-            read_only=True,
-        )
+class TestBuildCloneUrl:
+    def test_build_clone_url(self, platform):
+        url = platform.build_clone_url("group/repo")
 
-        assert url == ("https://oauth2:glpat-readonly789@gitlab.com/group/repo.git")
-
-    def test_build_clone_url_read_only_falls_back_to_main_token(self, platform):
-        url = platform.build_clone_url("group/repo", read_only=True)
-
-        assert url == ("https://oauth2:glpat-test456@gitlab.com/group/repo.git")
+        assert url == "https://oauth2:glpat-test456@gitlab.com/group/repo.git"
 
 
 class TestPostReply:
@@ -940,14 +918,12 @@ class TestFormatSuggestionBody:
 
 class TestFactory:
     def test_factory_returns_platform_when_token_set(self):
-        env = {
-            "GITLAB_TOKEN": "glpat-test456",
-            "GITLAB_WEBHOOK_SECRET": "secret",
-            "GITLAB_API_BASE": "https://git.example.com",
-        }
-
-        with patch.dict(os.environ, env, clear=True):
-            result = _create_gitlab_platform()
+        config = GitLabConfig(
+            token="glpat-test456",
+            webhook_secret="secret",
+            api_base="https://git.example.com",
+        )
+        result = create_gitlab_platform(config)
 
         assert result is not None
         assert isinstance(result, GitLabPlatform)
@@ -956,31 +932,17 @@ class TestFactory:
         assert result.base_url == "https://git.example.com"
 
     def test_factory_returns_none_when_no_token(self):
-        with patch.dict(os.environ, {}, clear=True):
-            result = _create_gitlab_platform()
+        config = GitLabConfig()
+        result = create_gitlab_platform(config)
 
         assert result is None
 
     def test_factory_uses_default_base_url(self):
-        env = {"GITLAB_TOKEN": "glpat-test456"}
-
-        with patch.dict(os.environ, env, clear=True):
-            result = _create_gitlab_platform()
+        config = GitLabConfig(token="glpat-test456")
+        result = create_gitlab_platform(config)
 
         assert result is not None
         assert result.base_url == "https://gitlab.com"
-
-    def test_factory_reads_reviewer_token(self):
-        env = {
-            "GITLAB_TOKEN": "glpat-test456",
-            "GITLAB_REVIEWER_TOKEN": "glpat-readonly",
-        }
-
-        with patch.dict(os.environ, env, clear=True):
-            result = _create_gitlab_platform()
-
-        assert result is not None
-        assert result.auth.get_clone_token() == "glpat-readonly"
 
 
 class TestGitLabPlatformInit:
@@ -996,11 +958,11 @@ class TestGitLabPlatformInit:
 
         assert platform.webhook_secret == "gl-secret"
 
-    def test_init_webhook_secret_defaults_to_empty(self):
+    def test_init_webhook_secret_defaults_to_none(self):
         auth = GitLabPatAuth(token="glpat-abc")
         platform = GitLabPlatform(auth=auth)
 
-        assert platform.webhook_secret == ""
+        assert platform.webhook_secret is None
 
     def test_init_stores_base_url_stripped_of_trailing_slash(self):
         auth = GitLabPatAuth(token="tok")
@@ -1013,18 +975,6 @@ class TestGitLabPlatformInit:
         platform = GitLabPlatform(auth=auth)
 
         assert "gitlab.com" in platform.base_url
-
-    def test_init_reviewer_token_defaults_to_main_token(self):
-        auth = GitLabPatAuth(token="tok")
-        platform = GitLabPlatform(auth=auth)
-
-        assert platform.auth.get_clone_token() == "tok"
-
-    def test_init_stores_reviewer_token(self):
-        auth = GitLabPatAuth(token="tok", reviewer_token="readonly-tok")
-        platform = GitLabPlatform(auth=auth)
-
-        assert platform.auth.get_clone_token() == "readonly-tok"
 
 
 class TestGitLabHostProperty:

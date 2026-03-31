@@ -5,7 +5,7 @@ import pytest
 
 from nominal_code.commands.webhook.helpers import acknowledge_event
 from nominal_code.config.policies import FilteringPolicy
-from nominal_code.models import BotType, EventType
+from nominal_code.models import EventType
 from nominal_code.platforms.base import CommentEvent, LifecycleEvent, PlatformName
 
 
@@ -21,7 +21,7 @@ def _make_comment(
     repo="owner/repo",
     pr_number=42,
     branch="feature",
-    body="@claude-worker fix this",
+    body="@claude-reviewer review this",
     diff_hunk="",
     file_path="",
 ):
@@ -66,7 +66,6 @@ class TestRunPreFlight:
 
         result = await acknowledge_event(
             event=comment,
-            bot_type=BotType.WORKER,
             filtering=filtering,
             platform=platform,
         )
@@ -84,7 +83,6 @@ class TestRunPreFlight:
 
         result = await acknowledge_event(
             event=comment,
-            bot_type=BotType.WORKER,
             filtering=filtering,
             platform=platform,
         )
@@ -110,7 +108,6 @@ class TestRunPreFlight:
 
         result = await acknowledge_event(
             event=event,
-            bot_type=BotType.REVIEWER,
             filtering=filtering,
             platform=platform,
         )

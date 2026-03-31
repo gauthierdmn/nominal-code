@@ -6,19 +6,18 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from aiohttp import web
 
-from nominal_code.commands.webhook.server import create_app
+from nominal_code.commands.webhook.jobs.queue.asyncio import AsyncioJobQueue
+from nominal_code.commands.webhook.jobs.runner.process import ProcessRunner
+from nominal_code.commands.webhook.main import create_app
 from nominal_code.config import (
     CliAgentConfig,
     Config,
     ReviewerConfig,
     WebhookConfig,
-    WorkerConfig,
     WorkspaceConfig,
 )
 from nominal_code.config.policies import FilteringPolicy, RoutingPolicy
 from nominal_code.conversation.memory import MemoryConversationStore
-from nominal_code.jobs.queue.asyncio import AsyncioJobQueue
-from nominal_code.jobs.runner.process import ProcessRunner
 from nominal_code.models import EventType
 from nominal_code.platforms.gitlab import GitLabPlatform
 from nominal_code.platforms.gitlab.auth import GitLabPatAuth
@@ -51,7 +50,6 @@ pytestmark = [pytest.mark.integration_webhook_server]
 
 WEBHOOK_SECRET = "test-delivery-secret"
 REVIEWER_BOT = "test-reviewer"
-WORKER_BOT = "test-worker"
 ALLOWED_USER = "test-user"
 
 
@@ -62,10 +60,6 @@ async def test_webhook_server_posts_review(
     pipeline_id: str,
 ) -> None:
     config = Config(
-        worker=WorkerConfig(
-            bot_username=WORKER_BOT,
-            system_prompt="You are a test worker.",
-        ),
         reviewer=ReviewerConfig(
             bot_username=REVIEWER_BOT,
             system_prompt="You are a test reviewer.",
@@ -81,7 +75,6 @@ async def test_webhook_server_posts_review(
             ),
             routing=RoutingPolicy(
                 reviewer_triggers=frozenset({EventType.PR_OPENED}),
-                worker_bot_username=WORKER_BOT,
                 reviewer_bot_username=REVIEWER_BOT,
             ),
         ),

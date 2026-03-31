@@ -5,20 +5,19 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import pytest_asyncio
 
-from nominal_code.commands.webhook.server import create_app, should_process_event
+from nominal_code.commands.webhook.main import create_app, should_process_event
 from nominal_code.config.policies import FilteringPolicy, RoutingPolicy
 from nominal_code.config.settings import WebhookConfig
 from nominal_code.models import EventType
 from nominal_code.platforms.base import (
     CommentEvent,
     LifecycleEvent,
+    Platform,
     PlatformName,
-    ReviewerPlatform,
 )
 
 
 def _make_config(
-    worker=True,
     reviewer=True,
     reviewer_triggers=None,
     allowed_repos=None,
@@ -26,11 +25,6 @@ def _make_config(
     pr_title_exclude_tags=None,
 ):
     config = MagicMock()
-    config.worker = (
-        MagicMock(bot_username="claude-worker", system_prompt="Be concise.")
-        if worker
-        else None
-    )
     config.reviewer = (
         MagicMock(bot_username="claude-reviewer", system_prompt="Review code.")
         if reviewer
@@ -48,7 +42,6 @@ def _make_config(
 
     routing = RoutingPolicy(
         reviewer_triggers=frozenset(reviewer_triggers or []),
-        worker_bot_username="claude-worker" if worker else "",
         reviewer_bot_username="claude-reviewer" if reviewer else "",
     )
 
@@ -61,7 +54,7 @@ def _make_config(
 
 
 def _make_github_platform():
-    platform = MagicMock(spec=ReviewerPlatform)
+    platform = MagicMock(spec=Platform)
     platform.verify_webhook = MagicMock(return_value=True)
     platform.parse_event = MagicMock(return_value=None)
     platform.post_reaction = AsyncMock()
@@ -172,41 +165,6 @@ class TestGitHubWebhook:
         assert data["status"] == "no_mention"
 
     @pytest.mark.asyncio
-    async def test_github_webhook_worker_mention(self, client, app):
-        comment = CommentEvent(
-            platform=PlatformName.GITHUB,
-            repo_full_name="owner/repo",
-            pr_number=1,
-            pr_branch="main",
-            event_type=EventType.ISSUE_COMMENT,
-            comment_id=100,
-            author_username="alice",
-            body="@claude-worker fix the bug",
-        )
-        app["platforms"]["github"].parse_event.return_value = comment
-
-        with patch(
-            "nominal_code.commands.webhook.server.acknowledge_event",
-            new_callable=AsyncMock,
-            return_value=True,
-        ):
-            response = await client.post(
-                "/webhooks/github",
-                data=b"{}",
-                headers={"Content-Type": "application/json"},
-            )
-
-            assert response.status == 200
-
-            data = await response.json()
-
-            assert data["status"] == "accepted"
-            app["runner"].enqueue.assert_called_once()
-            job = app["runner"].enqueue.call_args.args[0]
-
-            assert job.bot_type == "worker"
-
-    @pytest.mark.asyncio
     async def test_github_webhook_reviewer_mention(self, client, app):
         comment = CommentEvent(
             platform=PlatformName.GITHUB,
@@ -221,7 +179,7 @@ class TestGitHubWebhook:
         app["platforms"]["github"].parse_event.return_value = comment
 
         with patch(
-            "nominal_code.commands.webhook.server.acknowledge_event",
+            "nominal_code.commands.webhook.main.acknowledge_event",
             new_callable=AsyncMock,
             return_value=True,
         ):
@@ -239,119 +197,7 @@ class TestGitHubWebhook:
             app["runner"].enqueue.assert_called_once()
             job = app["runner"].enqueue.call_args.args[0]
 
-            assert job.bot_type == "reviewer"
-
-    @pytest.mark.asyncio
-    async def test_github_webhook_worker_takes_precedence_over_reviewer(
-        self,
-        client,
-        app,
-    ):
-        comment = CommentEvent(
-            platform=PlatformName.GITHUB,
-            repo_full_name="owner/repo",
-            pr_number=1,
-            pr_branch="main",
-            event_type=EventType.ISSUE_COMMENT,
-            comment_id=100,
-            author_username="alice",
-            body="@claude-worker @claude-reviewer do stuff",
-        )
-        app["platforms"]["github"].parse_event.return_value = comment
-
-        with patch(
-            "nominal_code.commands.webhook.server.acknowledge_event",
-            new_callable=AsyncMock,
-            return_value=True,
-        ):
-            response = await client.post(
-                "/webhooks/github",
-                data=b"{}",
-                headers={"Content-Type": "application/json"},
-            )
-
-            assert response.status == 200
-            job = app["runner"].enqueue.call_args.args[0]
-
-            assert job.bot_type == "worker"
-
-
-class TestSingleBotConfig:
-    @pytest.mark.asyncio
-    async def test_reviewer_only_config_ignores_worker_mentions(self, aiohttp_client):
-        config = _make_config(worker=False, reviewer=True)
-        github_platform = _make_github_platform()
-        platforms = {"github": github_platform}
-        runner = _make_runner(config=config, platforms=platforms)
-
-        app = create_app(
-            config=config,
-            platforms=platforms,
-            runner=runner,
-        )
-        client = await aiohttp_client(app)
-
-        comment = CommentEvent(
-            platform=PlatformName.GITHUB,
-            repo_full_name="owner/repo",
-            pr_number=1,
-            pr_branch="main",
-            event_type=EventType.ISSUE_COMMENT,
-            comment_id=100,
-            author_username="alice",
-            body="@claude-worker fix the bug",
-        )
-        app["platforms"]["github"].parse_event.return_value = comment
-
-        response = await client.post(
-            "/webhooks/github",
-            data=b"{}",
-            headers={"Content-Type": "application/json"},
-        )
-
-        assert response.status == 200
-
-        data = await response.json()
-
-        assert data["status"] == "no_mention"
-
-    @pytest.mark.asyncio
-    async def test_worker_only_config_ignores_reviewer_mentions(self, aiohttp_client):
-        config = _make_config(worker=True, reviewer=False)
-        github_platform = _make_github_platform()
-        platforms = {"github": github_platform}
-        runner = _make_runner(config=config, platforms=platforms)
-
-        app = create_app(
-            config=config,
-            platforms=platforms,
-            runner=runner,
-        )
-        client = await aiohttp_client(app)
-
-        comment = CommentEvent(
-            platform=PlatformName.GITHUB,
-            repo_full_name="owner/repo",
-            pr_number=1,
-            pr_branch="main",
-            event_type=EventType.ISSUE_COMMENT,
-            comment_id=100,
-            author_username="alice",
-            body="@claude-reviewer review this PR",
-        )
-        app["platforms"]["github"].parse_event.return_value = comment
-
-        response = await client.post(
-            "/webhooks/github",
-            data=b"{}",
-            headers={"Content-Type": "application/json"},
-        )
-
-        assert response.status == 200
-
-        data = await response.json()
-
-        assert data["status"] == "no_mention"
+            assert job.event.platform == PlatformName.GITHUB
 
 
 class TestAutoTrigger:
@@ -384,7 +230,7 @@ class TestAutoTrigger:
         app["platforms"]["github"].parse_event.return_value = event
 
         with patch(
-            "nominal_code.commands.webhook.server.acknowledge_event",
+            "nominal_code.commands.webhook.main.acknowledge_event",
             new_callable=AsyncMock,
             return_value=True,
         ):
@@ -499,7 +345,7 @@ class TestHandleHealth:
 
 class TestMakeWebhookHandler:
     def test_make_webhook_handler_returns_callable(self, app):
-        from nominal_code.commands.webhook.server import _make_webhook_handler
+        from nominal_code.commands.webhook.main import _make_webhook_handler
 
         handler = _make_webhook_handler("github")
 
@@ -566,7 +412,7 @@ class TestHandleWebhook:
         assert data["status"] == "no_mention"
 
     @pytest.mark.asyncio
-    async def test_handle_webhook_worker_mention_returns_accepted(self, client, app):
+    async def test_handle_webhook_reviewer_mention_returns_accepted(self, client, app):
         event = CommentEvent(
             platform=PlatformName.GITHUB,
             repo_full_name="owner/repo",
@@ -575,13 +421,13 @@ class TestHandleWebhook:
             event_type=EventType.ISSUE_COMMENT,
             comment_id=1,
             author_username="alice",
-            body="@claude-worker please fix this",
+            body="@claude-reviewer please review this",
         )
         app["platforms"]["github"].verify_webhook.return_value = True
         app["platforms"]["github"].parse_event.return_value = event
 
         with patch(
-            "nominal_code.commands.webhook.server.acknowledge_event",
+            "nominal_code.commands.webhook.main.acknowledge_event",
             new=AsyncMock(return_value=True),
         ):
             response = await client.post("/webhooks/github", data=b"{}")
@@ -613,7 +459,6 @@ class TestAutoTriggerJob:
             filtering=app["config"].webhook.filtering,
             routing=RoutingPolicy(
                 reviewer_triggers=frozenset([EventType.PR_OPENED]),
-                worker_bot_username="claude-worker",
                 reviewer_bot_username="claude-reviewer",
             ),
         )
@@ -623,7 +468,7 @@ class TestAutoTriggerJob:
         app["platforms"]["github"].parse_event.return_value = event
 
         with patch(
-            "nominal_code.commands.webhook.server.acknowledge_event",
+            "nominal_code.commands.webhook.main.acknowledge_event",
             new=AsyncMock(return_value=True),
         ):
             response = await client.post("/webhooks/github", data=b"{}")
@@ -645,7 +490,6 @@ class TestAutoTriggerJob:
             filtering=app["config"].webhook.filtering,
             routing=RoutingPolicy(
                 reviewer_triggers=frozenset([EventType.PR_OPENED]),
-                worker_bot_username="claude-worker",
                 reviewer_bot_username="",
             ),
         )
@@ -785,7 +629,7 @@ class TestAllowedReposFilter:
             event_type=EventType.ISSUE_COMMENT,
             comment_id=100,
             author_username="alice",
-            body="@claude-worker fix this",
+            body="@claude-reviewer review this",
         )
         github_platform.parse_event.return_value = comment
 
@@ -797,7 +641,7 @@ class TestAllowedReposFilter:
         client = await aiohttp_client(app)
 
         with patch(
-            "nominal_code.commands.webhook.server.acknowledge_event",
+            "nominal_code.commands.webhook.main.acknowledge_event",
             new_callable=AsyncMock,
             return_value=True,
         ):
@@ -822,7 +666,7 @@ class TestAllowedReposFilter:
             event_type=EventType.ISSUE_COMMENT,
             comment_id=100,
             author_username="alice",
-            body="@claude-worker fix this",
+            body="@claude-reviewer review this",
         )
         github_platform.parse_event.return_value = comment
 
@@ -853,7 +697,7 @@ class TestAllowedReposFilter:
             event_type=EventType.ISSUE_COMMENT,
             comment_id=100,
             author_username="alice",
-            body="@claude-worker fix this",
+            body="@claude-reviewer review this",
         )
         github_platform.parse_event.return_value = comment
 
@@ -865,7 +709,7 @@ class TestAllowedReposFilter:
         client = await aiohttp_client(app)
 
         with patch(
-            "nominal_code.commands.webhook.server.acknowledge_event",
+            "nominal_code.commands.webhook.main.acknowledge_event",
             new_callable=AsyncMock,
             return_value=True,
         ):

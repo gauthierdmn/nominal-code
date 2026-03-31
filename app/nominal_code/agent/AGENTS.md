@@ -8,7 +8,7 @@ The call chain follows four conceptual layers:
 
 1. **Receive** — `commands/webhook/server.py` receives webhooks, `commands/` handles CLI/CI entry points.
 2. **Prepare** — `workspace/setup.py::prepare_job_event()` resolves clone URLs and branches. `jobs/runner/process.py` wraps execution with error handling and queue management.
-3. **Orchestrate** — `handlers/review.py` and `handlers/worker.py` contain business logic (diff fetching, prompt building, output parsing).
+3. **Orchestrate** — `review/handler.py` contains business logic (diff fetching, prompt building, output parsing).
 4. **Invoke** — `agent/invoke.py` provides agent execution with explicit conversation lifecycle.
 
 ## Agent invocation
@@ -19,7 +19,7 @@ The call chain follows four conceptual layers:
 - **`invoke_agent()`** — dispatches to the CLI or API runner. Routes based on `CliAgentConfig` vs `ApiAgentConfig`. Stateless — takes conversation ID and prior messages as explicit parameters.
 - **`save_conversation()`** — persists conversation state after agent execution. Called after `invoke_agent()`.
 
-Callers that don't need conversation persistence (e.g. `handlers/output.py` for JSON repair) call `invoke_agent()` directly without prepare/save.
+Callers that don't need conversation persistence (e.g. `review/output.py` for JSON repair) call `invoke_agent()` directly without prepare/save.
 
 Both runners:
 

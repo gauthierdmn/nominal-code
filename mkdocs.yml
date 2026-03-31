@@ -37,9 +37,7 @@ nav:
   - Platforms:
       - GitHub: platforms/github.md
       - GitLab: platforms/gitlab.md
-  - Bots:
-      - Reviewer: bots/reviewer.md
-      - Worker: bots/worker.md
+  - Review Process: review.md
   - Reference:
       - Configuration: reference/configuration.md
       - Environment Variables: reference/env-vars.md

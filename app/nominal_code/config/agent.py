@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from environs import Env
 from pydantic import BaseModel, ConfigDict
 
 from nominal_code.models import ProviderName
 
-_env: Env = Env()
 DEFAULT_AGENT_MAX_TURNS: int = 0
 
 
@@ -55,9 +53,9 @@ class CliAgentConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    model: str = ""
+    model: str | None = None
     max_turns: int = 0
-    cli_path: str = ""
+    cli_path: str | None = None
 
 
 class ApiAgentConfig(BaseModel):
@@ -80,67 +78,11 @@ class ApiAgentConfig(BaseModel):
 AgentConfig = CliAgentConfig | ApiAgentConfig
 
 
-def resolve_provider_config(default: str = "") -> ProviderConfig:
-    """
-    Resolve the LLM provider from ``AGENT_PROVIDER`` or a caller-supplied default.
-
-    Args:
-        default (str): Fallback provider name when ``AGENT_PROVIDER`` is unset.
-
-    Returns:
-        ProviderConfig: The resolved provider configuration.
-
-    Raises:
-        ValueError: If the provider name is not recognised.
-    """
-
-    from nominal_code.llm.registry import PROVIDERS
-
-    provider_env: str = _env.str("AGENT_PROVIDER", default)
-
-    try:
-        provider_name: ProviderName = ProviderName(provider_env)
-    except ValueError:
-        available: str = ", ".join(p.value for p in ProviderName)
-
-        raise ValueError(
-            f"Unknown AGENT_PROVIDER: {provider_env!r}. Available: {available}",
-        ) from None
-
-    return PROVIDERS[provider_name]
-
-
-def parse_provider_env() -> ProviderName | None:
-    """
-    Read ``AGENT_PROVIDER`` from the environment and convert to enum.
-
-    Returns:
-        ProviderName | None: The parsed provider, or ``None`` when unset.
-
-    Raises:
-        ValueError: If the value is not a recognised provider name.
-    """
-
-    provider: str = _env.str("AGENT_PROVIDER", "")
-
-    if not provider:
-        return None
-
-    try:
-        return ProviderName(provider)
-    except ValueError:
-        available: str = ", ".join(p.value for p in ProviderName)
-
-        raise ValueError(
-            f"Unknown AGENT_PROVIDER: {provider!r}. Available: {available}",
-        ) from None
-
-
 def resolve_agent_config(
     provider_name: ProviderName | None,
-    model: str,
+    model: str | None,
     max_turns: int,
-    cli_path: str = "",
+    cli_path: str | None = None,
 ) -> AgentConfig:
     """
     Build either a CLI or API agent config based on provider selection.
@@ -174,17 +116,3 @@ def resolve_agent_config(
         provider=provider_config,
         max_turns=max_turns,
     )
-
-
-def read_agent_env() -> tuple[str, int]:
-    """
-    Read agent model and max turns from environment variables.
-
-    Returns:
-        tuple[str, int]: A ``(model, max_turns)`` tuple.
-    """
-
-    model: str = _env.str("AGENT_MODEL", "")
-    max_turns: int = _env.int("AGENT_MAX_TURNS", 0)
-
-    return model, max_turns

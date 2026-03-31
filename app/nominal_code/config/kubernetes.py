@@ -26,13 +26,13 @@ class KubernetesConfig(BaseModel):
 
     image: str
     namespace: str = "default"
-    service_account: str = ""
-    image_pull_policy: str = ""
+    service_account: str | None = None
+    image_pull_policy: str | None = None
     backoff_limit: int = 0
     active_deadline_seconds: int = 600
     ttl_after_finished: int = 3600
     env_from_secrets: tuple[str, ...] = ()
-    resource_requests_cpu: str = ""
-    resource_requests_memory: str = ""
-    resource_limits_cpu: str = ""
-    resource_limits_memory: str = ""
+    resource_requests_cpu: str | None = None
+    resource_requests_memory: str | None = None
+    resource_limits_cpu: str | None = None
+    resource_limits_memory: str | None = None

@@ -9,7 +9,6 @@ from nominal_code.platforms.github import (
     CachedToken,
     GitHubAppAuth,
     GitHubPatAuth,
-    load_private_key,
 )
 
 
@@ -23,16 +22,6 @@ class TestGitHubPatAuth:
         auth = GitHubPatAuth(token="ghp_abc123")
 
         assert auth.get_api_token(12345) == "ghp_abc123"
-
-    def test_get_clone_token_returns_reviewer_when_set(self):
-        auth = GitHubPatAuth(token="ghp_main", reviewer_token="ghp_readonly")
-
-        assert auth.get_clone_token() == "ghp_readonly"
-
-    def test_get_clone_token_falls_back_to_main(self):
-        auth = GitHubPatAuth(token="ghp_main")
-
-        assert auth.get_clone_token() == "ghp_main"
 
     @pytest.mark.asyncio
     async def test_ensure_auth_is_noop(self):
@@ -213,74 +202,12 @@ class TestGitHubAppAuth:
         assert 100 not in auth._token_cache
         assert 200 in auth._token_cache
 
-    def test_get_clone_token_delegates_to_get_api_token(self):
-        auth = GitHubAppAuth(app_id="12345", private_key="fake-key")
-        auth._token_cache[100] = CachedToken(
-            token="ghs_token",
-            expires_at=time.monotonic() + 3600,
-        )
-
-        assert auth.get_clone_token(100) == "ghs_token"
-
-
-class TestLoadPrivateKey:
-    def test_load_private_key_inline(self):
-        pem_key = "-----BEGIN RSA PRIVATE KEY-----\nfake\n-----END RSA PRIVATE KEY-----"
-        env = {"GITHUB_APP_PRIVATE_KEY": pem_key}
-
-        with patch.dict("os.environ", env, clear=True):
-            result = load_private_key()
-
-        assert "BEGIN RSA PRIVATE KEY" in result
-
-    def test_load_private_key_from_file(self, tmp_path):
-        key_file = tmp_path / "private-key.pem"
-        pem_content = (
-            "-----BEGIN RSA PRIVATE KEY-----\nfile-key\n-----END RSA PRIVATE KEY-----"
-        )
-        key_file.write_text(pem_content)
-        env = {"GITHUB_APP_PRIVATE_KEY_PATH": str(key_file)}
-
-        with patch.dict("os.environ", env, clear=True):
-            result = load_private_key()
-
-        assert "file-key" in result
-
-    def test_load_private_key_prefers_inline_over_file(self, tmp_path):
-        key_file = tmp_path / "private-key.pem"
-        key_file.write_text("file-content")
-        env = {
-            "GITHUB_APP_PRIVATE_KEY": "inline-content",
-            "GITHUB_APP_PRIVATE_KEY_PATH": str(key_file),
-        }
-
-        with patch.dict("os.environ", env, clear=True):
-            result = load_private_key()
-
-        assert result == "inline-content"
-
-    def test_load_private_key_returns_empty_when_unset(self):
-        with patch.dict("os.environ", {}, clear=True):
-            result = load_private_key()
-
-        assert result == ""
-
 
 class TestGitHubPatAuthInit:
     def test_pat_auth_init_stores_token(self):
         auth = GitHubPatAuth(token="ghp_mytoken")
 
         assert auth.token == "ghp_mytoken"
-
-    def test_pat_auth_init_reviewer_token_defaults_to_empty(self):
-        auth = GitHubPatAuth(token="ghp_mytoken")
-
-        assert auth.reviewer_token == ""
-
-    def test_pat_auth_init_stores_reviewer_token(self):
-        auth = GitHubPatAuth(token="ghp_main", reviewer_token="ghp_readonly")
-
-        assert auth.reviewer_token == "ghp_readonly"
 
 
 class TestGitHubAppAuthInit:

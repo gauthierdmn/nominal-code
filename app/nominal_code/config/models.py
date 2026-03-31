@@ -2,7 +2,50 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from nominal_code.config.settings import DEFAULT_REDIS_KEY_TTL_SECONDS
+from nominal_code.config.settings import (
+    DEFAULT_GITHUB_API_BASE,
+    DEFAULT_REDIS_KEY_TTL_SECONDS,
+)
+
+
+class GitHubSettings(BaseModel):
+    """
+    GitHub platform settings.
+
+    Attributes:
+        token (str): Personal access token.
+        app_id (str): GitHub App numeric ID.
+        private_key (str): Inline PEM-encoded RSA private key.
+        private_key_path (str): File path to PEM-encoded RSA private key.
+        installation_id (int): Fixed installation ID for CLI/CI modes.
+        webhook_secret (str): Webhook HMAC verification secret.
+        api_base (str): GitHub API base URL.
+    """
+
+    token: str | None = None
+    app_id: str | None = None
+    private_key: str | None = None
+    private_key_path: str | None = None
+    installation_id: int = 0
+    webhook_secret: str | None = None
+    api_base: str = DEFAULT_GITHUB_API_BASE
+
+
+class GitLabSettings(BaseModel):
+    """
+    GitLab platform settings.
+
+    Attributes:
+        token (str): Personal access token.
+        webhook_secret (str): Webhook verification secret.
+        api_base (str): GitLab instance base URL.
+        ci_server_url (str): GitLab CI predefined variable for self-hosted instances.
+    """
+
+    token: str | None = None
+    webhook_secret: str | None = None
+    api_base: str | None = None
+    ci_server_url: str | None = None
 
 
 class WebhookSettings(BaseModel):
@@ -18,19 +61,6 @@ class WebhookSettings(BaseModel):
     port: int = 8080
 
 
-class WorkerSettings(BaseModel):
-    """
-    Worker bot settings.
-
-    Attributes:
-        bot_username (str): The @mention name for the worker bot.
-        system_prompt_path (str): Path to the system prompt file.
-    """
-
-    bot_username: str = ""
-    system_prompt_path: str = "prompts/system_prompt.md"
-
-
 class ReviewerSettings(BaseModel):
     """
     Reviewer bot settings.
@@ -41,7 +71,7 @@ class ReviewerSettings(BaseModel):
         triggers (list[str]): PR lifecycle events that auto-trigger the reviewer.
     """
 
-    bot_username: str = ""
+    bot_username: str | None = None
     system_prompt_path: str = "prompts/reviewer_prompt.md"
     triggers: list[str] = Field(default_factory=list)
 
@@ -57,10 +87,10 @@ class AgentSettings(BaseModel):
         cli_path (str): Path to the Claude Code CLI binary.
     """
 
-    provider: str = ""
-    model: str = ""
+    provider: str | None = None
+    model: str | None = None
     max_turns: int = 0
-    cli_path: str = ""
+    cli_path: str | None = None
 
 
 class AccessSettings(BaseModel):
@@ -88,7 +118,7 @@ class WorkspaceSettings(BaseModel):
         base_dir (str): Directory for cloning repositories.
     """
 
-    base_dir: str = ""
+    base_dir: str | None = None
 
 
 class PromptsSettings(BaseModel):
@@ -113,7 +143,7 @@ class RedisSettings(BaseModel):
         key_ttl_seconds (int): TTL for Redis keys in seconds.
     """
 
-    url: str = ""
+    url: str | None = None
     key_ttl_seconds: int = DEFAULT_REDIS_KEY_TTL_SECONDS
 
 
@@ -163,10 +193,10 @@ class KubernetesSettings(BaseModel):
         resources (KubernetesResourcesSettings): Resource requests and limits.
     """
 
-    image: str = ""
+    image: str | None = None
     namespace: str = "default"
-    service_account: str = ""
-    image_pull_policy: str = ""
+    service_account: str | None = None
+    image_pull_policy: str | None = None
     backoff_limit: int = 0
     active_deadline_seconds: int = 600
     ttl_after_finished: int = 3600
@@ -183,8 +213,9 @@ class AppSettings(BaseModel):
     Priority order (last wins): model defaults, YAML file, environment variables.
 
     Attributes:
+        github (GitHubSettings): GitHub platform settings.
+        gitlab (GitLabSettings): GitLab platform settings.
         webhook (WebhookSettings): Webhook server settings.
-        worker (WorkerSettings): Worker bot settings.
         reviewer (ReviewerSettings): Reviewer bot settings.
         agent (AgentSettings): Agent runner settings.
         access (AccessSettings): Access control settings.
@@ -194,8 +225,9 @@ class AppSettings(BaseModel):
         kubernetes (KubernetesSettings): Kubernetes job runner settings.
     """
 
+    github: GitHubSettings = Field(default_factory=GitHubSettings)
+    gitlab: GitLabSettings = Field(default_factory=GitLabSettings)
     webhook: WebhookSettings = Field(default_factory=WebhookSettings)
-    worker: WorkerSettings = Field(default_factory=WorkerSettings)
     reviewer: ReviewerSettings = Field(default_factory=ReviewerSettings)
     agent: AgentSettings = Field(default_factory=AgentSettings)
     access: AccessSettings = Field(default_factory=AccessSettings)

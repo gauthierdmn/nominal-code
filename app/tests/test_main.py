@@ -67,7 +67,7 @@ class TestMain:
         with patch.object(sys, "argv", ["nominal-code", "serve"]):
             with patch("nominal_code.main.setup_logging"):
                 with patch(
-                    "nominal_code.commands.webhook.server.run_webhook_server",
+                    "nominal_code.commands.webhook.main.run_webhook_server",
                     new=MagicMock(),
                 ):
                     with patch("nominal_code.main.asyncio.run") as mock_run:
@@ -79,7 +79,7 @@ class TestMain:
         with patch.object(sys, "argv", ["nominal-code", "serve"]):
             with patch("nominal_code.main.setup_logging"):
                 with patch(
-                    "nominal_code.commands.webhook.server.run_webhook_server",
+                    "nominal_code.commands.webhook.main.run_webhook_server",
                     new=MagicMock(),
                 ):
                     with patch(
@@ -97,7 +97,7 @@ class TestMain:
                 side_effect=lambda: call_order.append("setup_logging"),
             ):
                 with patch(
-                    "nominal_code.commands.webhook.server.run_webhook_server",
+                    "nominal_code.commands.webhook.main.run_webhook_server",
                     new=MagicMock(),
                 ):
                     with patch(
@@ -134,11 +134,11 @@ class TestRunWebhookServer:
     @pytest.mark.asyncio
     async def test_run_webhook_server_exits_on_config_error(self):
         with patch(
-            "nominal_code.commands.webhook.server.load_config",
+            "nominal_code.commands.webhook.main.load_config",
             side_effect=ValueError("bad config"),
         ):
             with pytest.raises(SystemExit) as exc_info:
-                from nominal_code.commands.webhook.server import run_webhook_server
+                from nominal_code.commands.webhook.main import run_webhook_server
 
                 await run_webhook_server()
 
@@ -154,15 +154,15 @@ class TestRunWebhookServer:
         mock_config.webhook.port = 8080
 
         with patch(
-            "nominal_code.commands.webhook.server.load_config",
+            "nominal_code.commands.webhook.main.load_config",
             return_value=mock_config,
         ):
             with patch(
-                "nominal_code.commands.webhook.server.build_platforms",
+                "nominal_code.commands.webhook.main.build_platforms",
                 return_value={},
             ):
                 with pytest.raises(SystemExit) as exc_info:
-                    from nominal_code.commands.webhook.server import run_webhook_server
+                    from nominal_code.commands.webhook.main import run_webhook_server
 
                     await run_webhook_server()
 

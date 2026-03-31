@@ -16,7 +16,6 @@ from nominal_code.llm.messages import (
     ToolResultBlock,
     ToolUseBlock,
 )
-from nominal_code.models import BotType
 from nominal_code.platforms.base import PlatformName
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -66,7 +65,6 @@ class RedisConversationStore:
         platform: PlatformName,
         repo: str,
         pr_number: int,
-        bot_type: BotType,
         namespace: str = "",
     ) -> str | None:
         """
@@ -76,7 +74,6 @@ class RedisConversationStore:
             platform (PlatformName): The platform name.
             repo (str): The full repository name.
             pr_number (int): The pull/merge request number.
-            bot_type (BotType): The type of bot.
             namespace (str): Logical namespace for key isolation.
 
         Returns:
@@ -89,7 +86,6 @@ class RedisConversationStore:
             platform=platform,
             repo=repo,
             pr_number=pr_number,
-            bot_type=bot_type,
             namespace=namespace,
         )
 
@@ -110,7 +106,6 @@ class RedisConversationStore:
         platform: PlatformName,
         repo: str,
         pr_number: int,
-        bot_type: BotType,
         value: str,
         namespace: str = "",
     ) -> None:
@@ -121,7 +116,6 @@ class RedisConversationStore:
             platform (PlatformName): The platform name.
             repo (str): The full repository name.
             pr_number (int): The pull/merge request number.
-            bot_type (BotType): The type of bot.
             value (str): The conversation ID to store.
             namespace (str): Logical namespace for key isolation.
         """
@@ -131,7 +125,6 @@ class RedisConversationStore:
             platform=platform,
             repo=repo,
             pr_number=pr_number,
-            bot_type=bot_type,
             namespace=namespace,
         )
 
@@ -149,7 +142,6 @@ class RedisConversationStore:
         platform: PlatformName,
         repo: str,
         pr_number: int,
-        bot_type: BotType,
         namespace: str = "",
     ) -> list[Message] | None:
         """
@@ -159,7 +151,6 @@ class RedisConversationStore:
             platform (PlatformName): The platform name.
             repo (str): The full repository name.
             pr_number (int): The pull/merge request number.
-            bot_type (BotType): The type of bot.
             namespace (str): Logical namespace for key isolation.
 
         Returns:
@@ -172,7 +163,6 @@ class RedisConversationStore:
             platform=platform,
             repo=repo,
             pr_number=pr_number,
-            bot_type=bot_type,
             namespace=namespace,
         )
 
@@ -198,7 +188,6 @@ class RedisConversationStore:
         platform: PlatformName,
         repo: str,
         pr_number: int,
-        bot_type: BotType,
         value: list[Message],
         namespace: str = "",
     ) -> None:
@@ -209,7 +198,6 @@ class RedisConversationStore:
             platform (PlatformName): The platform name.
             repo (str): The full repository name.
             pr_number (int): The pull/merge request number.
-            bot_type (BotType): The type of bot.
             value (list[Message]): The messages to store.
             namespace (str): Logical namespace for key isolation.
         """
@@ -219,7 +207,6 @@ class RedisConversationStore:
             platform=platform,
             repo=repo,
             pr_number=pr_number,
-            bot_type=bot_type,
             namespace=namespace,
         )
 
@@ -239,7 +226,6 @@ def _build_key(
     platform: PlatformName,
     repo: str,
     pr_number: int,
-    bot_type: BotType,
     namespace: str = "",
 ) -> str:
     """
@@ -250,7 +236,6 @@ def _build_key(
         platform (PlatformName): The platform name.
         repo (str): The full repository name.
         pr_number (int): The pull/merge request number.
-        bot_type (BotType): The type of bot.
         namespace (str): Logical namespace inserted after ``nc:``.
 
     Returns:
@@ -258,12 +243,9 @@ def _build_key(
     """
 
     if namespace:
-        return (
-            f"nc:{namespace}:{prefix}:"
-            f"{platform.value}:{repo}:{pr_number}:{bot_type.value}"
-        )
+        return f"nc:{namespace}:{prefix}:{platform.value}:{repo}:{pr_number}"
 
-    return f"nc:{prefix}:{platform.value}:{repo}:{pr_number}:{bot_type.value}"
+    return f"nc:{prefix}:{platform.value}:{repo}:{pr_number}"
 
 
 def _serialize_messages(messages: list[Message]) -> str:

@@ -2,11 +2,11 @@
 import hashlib
 import hmac
 import json
-import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from nominal_code.config.settings import GitHubConfig
 from nominal_code.models import EventType, FileStatus, ReviewFinding
 from nominal_code.platforms.base import (
     CommentEvent,
@@ -19,8 +19,8 @@ from nominal_code.platforms.github import (
     GitHubPlatform,
 )
 from nominal_code.platforms.github.platform import (
-    _create_github_platform,
     _format_suggestion_body,
+    create_github_platform,
 )
 
 EXPECTED_AUTH_HEADERS = {
@@ -41,13 +41,6 @@ def platform_no_secret():
     auth = GitHubPatAuth(token="ghp_test123")
 
     return GitHubPlatform(auth=auth)
-
-
-@pytest.fixture
-def platform_with_reviewer_token():
-    auth = GitHubPatAuth(token="ghp_test123", reviewer_token="ghp_readonly456")
-
-    return GitHubPlatform(auth=auth, webhook_secret="test-secret")
 
 
 def _make_headers(headers=None):
@@ -377,26 +370,6 @@ class TestBuildCloneUrl:
         url = platform.build_clone_url("owner/repo")
 
         assert url == "https://x-access-token:ghp_test123@github.com/owner/repo.git"
-
-
-class TestBuildCloneUrlReadOnly:
-    def test_build_clone_url_read_only_with_reviewer_token(
-        self,
-        platform_with_reviewer_token,
-    ):
-        url = platform_with_reviewer_token.build_clone_url(
-            "owner/repo",
-            read_only=True,
-        )
-
-        assert url == (
-            "https://x-access-token:ghp_readonly456@github.com/owner/repo.git"
-        )
-
-    def test_build_clone_url_read_only_falls_back_to_main_token(self, platform):
-        url = platform.build_clone_url("owner/repo", read_only=True)
-
-        assert url == ("https://x-access-token:ghp_test123@github.com/owner/repo.git")
 
 
 class TestPostReply:
@@ -932,13 +905,8 @@ class TestFetchPrComments:
 
 class TestFactory:
     def test_factory_returns_platform_when_token_set(self):
-        env = {
-            "GITHUB_TOKEN": "ghp_test123",
-            "GITHUB_WEBHOOK_SECRET": "secret",
-        }
-
-        with patch.dict(os.environ, env, clear=True):
-            result = _create_github_platform()
+        config = GitHubConfig(token="ghp_test123", webhook_secret="secret")
+        result = create_github_platform(config)
 
         assert result is not None
         assert isinstance(result, GitHubPlatform)
@@ -947,36 +915,21 @@ class TestFactory:
         assert result.webhook_secret == "secret"
 
     def test_factory_returns_none_when_no_token(self):
-        with patch.dict(os.environ, {}, clear=True):
-            result = _create_github_platform()
+        config = GitHubConfig()
+        result = create_github_platform(config)
 
         assert result is None
-
-    def test_factory_reads_reviewer_token(self):
-        env = {
-            "GITHUB_TOKEN": "ghp_test123",
-            "GITHUB_REVIEWER_TOKEN": "ghp_readonly",
-        }
-
-        with patch.dict(os.environ, env, clear=True):
-            result = _create_github_platform()
-
-        assert result is not None
-        assert isinstance(result.auth, GitHubPatAuth)
-        assert result.auth.get_clone_token() == "ghp_readonly"
 
     def test_factory_returns_app_auth_when_app_id_and_key_set(self):
         from nominal_code.platforms.github import GitHubAppAuth
 
-        env = {
-            "GITHUB_APP_ID": "12345",
-            "GITHUB_APP_PRIVATE_KEY": "fake-pem-key",
-            "GITHUB_INSTALLATION_ID": "67890",
-            "GITHUB_WEBHOOK_SECRET": "secret",
-        }
-
-        with patch.dict(os.environ, env, clear=True):
-            result = _create_github_platform()
+        config = GitHubConfig(
+            app_id="12345",
+            private_key="fake-pem-key",
+            installation_id=67890,
+            webhook_secret="secret",
+        )
+        result = create_github_platform(config)
 
         assert result is not None
         assert isinstance(result.auth, GitHubAppAuth)
@@ -987,14 +940,12 @@ class TestFactory:
     def test_factory_prefers_app_auth_over_pat(self):
         from nominal_code.platforms.github import GitHubAppAuth
 
-        env = {
-            "GITHUB_APP_ID": "12345",
-            "GITHUB_APP_PRIVATE_KEY": "fake-pem-key",
-            "GITHUB_TOKEN": "ghp_test123",
-        }
-
-        with patch.dict(os.environ, env, clear=True):
-            result = _create_github_platform()
+        config = GitHubConfig(
+            app_id="12345",
+            private_key="fake-pem-key",
+            token="ghp_test123",
+        )
+        result = create_github_platform(config)
 
         assert result is not None
         assert isinstance(result.auth, GitHubAppAuth)
@@ -1013,11 +964,11 @@ class TestGitHubPlatformInit:
 
         assert platform.webhook_secret == "my-secret"
 
-    def test_init_webhook_secret_defaults_to_empty(self):
+    def test_init_webhook_secret_defaults_to_none(self):
         auth = GitHubPatAuth(token="ghp_test")
         platform = GitHubPlatform(auth=auth)
 
-        assert platform.webhook_secret == ""
+        assert platform.webhook_secret is None
 
     def test_init_creates_http_client(self):
         auth = GitHubPatAuth(token="ghp_test")

@@ -48,7 +48,7 @@ def main() -> None:
         setup_logging()
 
         try:
-            from nominal_code.commands.webhook.server import run_webhook_server
+            from nominal_code.commands.webhook.main import run_webhook_server
 
             asyncio.run(run_webhook_server())
 
@@ -78,7 +78,7 @@ def main() -> None:
         sys.exit(exit_code)
 
     if command == "run-job":
-        from nominal_code.commands.webhook.job import run_job_main
+        from nominal_code.commands.webhook.jobs.main import run_job_main
 
         setup_logging()
         exit_code = asyncio.run(run_job_main())

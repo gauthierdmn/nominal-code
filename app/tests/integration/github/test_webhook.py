@@ -10,25 +10,23 @@ import pytest
 from aiohttp import web
 from aiohttp.pytest_plugin import AiohttpClient
 
-from nominal_code.commands.webhook.server import create_app
+from nominal_code.commands.webhook.jobs.queue.asyncio import AsyncioJobQueue
+from nominal_code.commands.webhook.jobs.runner.process import ProcessRunner
+from nominal_code.commands.webhook.main import create_app
 from nominal_code.config import (
     CliAgentConfig,
     Config,
     ReviewerConfig,
     WebhookConfig,
-    WorkerConfig,
     WorkspaceConfig,
 )
 from nominal_code.config.policies import FilteringPolicy, RoutingPolicy
 from nominal_code.conversation.memory import MemoryConversationStore
-from nominal_code.jobs.queue.asyncio import AsyncioJobQueue
-from nominal_code.jobs.runner.process import ProcessRunner
 from nominal_code.models import EventType
 from nominal_code.platforms.github import GitHubPlatform
 from nominal_code.platforms.github.auth import GitHubPatAuth
 from tests.integration.conftest import PrInfo, wait_for_queue_drain
 from tests.integration.github.api import (
-    fetch_pr_comments,
     fetch_pr_reviews,
 )
 from tests.integration.helpers.fixtures import (
@@ -40,7 +38,6 @@ pytestmark = [pytest.mark.integration]
 
 WEBHOOK_SECRET = "test-webhook-secret"
 REVIEWER_BOT = "test-reviewer"
-WORKER_BOT = "test-worker"
 ALLOWED_USER = "test-user"
 
 
@@ -58,10 +55,6 @@ def _build_webhook_config(
     reviewer_triggers: frozenset[EventType] | None = None,
 ) -> Config:
     return Config(
-        worker=WorkerConfig(
-            bot_username=WORKER_BOT,
-            system_prompt="You are a test worker.",
-        ),
         reviewer=ReviewerConfig(
             bot_username=REVIEWER_BOT,
             system_prompt="You are a test reviewer.",
@@ -74,7 +67,6 @@ def _build_webhook_config(
             filtering=FilteringPolicy(allowed_users=frozenset({ALLOWED_USER})),
             routing=RoutingPolicy(
                 reviewer_triggers=reviewer_triggers or frozenset(),
-                worker_bot_username=WORKER_BOT,
                 reviewer_bot_username=REVIEWER_BOT,
             ),
         ),
@@ -193,63 +185,6 @@ async def test_webhook_reviewer_mention_posts_review(
     )
     assert len(reviews) >= 1
     assert "Found issues" in reviews[-1]["body"]
-
-
-@pytest.mark.asyncio
-async def test_webhook_worker_mention_posts_reply(
-    github_token: str,
-    buggy_pr: PrInfo,
-    aiohttp_client: AiohttpClient,
-) -> None:
-    config = _build_webhook_config()
-    app, conversation_store, job_queue = _create_test_app(
-        token=github_token, config=config
-    )
-    client = await aiohttp_client(app)
-
-    worker_result = BUGGY_AGENT_RESULT
-
-    payload = _build_issue_comment_payload(
-        pr_number=buggy_pr.number,
-        body=f"@{WORKER_BOT} fix this",
-    )
-    payload_bytes = json.dumps(payload).encode()
-    signature = _sign_payload(payload_bytes)
-
-    with (
-        patch(
-            "nominal_code.agent.invoke.run_cli_agent",
-            new_callable=AsyncMock,
-            return_value=worker_result,
-        ),
-        patch(
-            "nominal_code.handlers.worker.review_and_fix",
-            new_callable=AsyncMock,
-        ) as mock_review_and_fix,
-    ):
-        response = await client.post(
-            "/webhooks/github",
-            data=payload_bytes,
-            headers={
-                "X-GitHub-Event": "issue_comment",
-                "X-Hub-Signature-256": signature,
-                "Content-Type": "application/json",
-            },
-        )
-        assert response.status == 200
-        data = await response.json()
-        assert data["status"] == "accepted"
-
-        await wait_for_queue_drain(job_queue)
-
-    comments = await fetch_pr_comments(
-        token=github_token,
-        repo=GITHUB_TEST_REPO,
-        pr_number=buggy_pr.number,
-    )
-    # The worker handler is mocked, so we just assert the job was dispatched.
-    # The "eyes" reaction is posted by enqueue_job before the worker runs.
-    assert mock_review_and_fix.called or len(comments) >= 0
 
 
 @pytest.mark.asyncio

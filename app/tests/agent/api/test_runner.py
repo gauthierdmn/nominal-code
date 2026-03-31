@@ -22,7 +22,7 @@ from nominal_code.llm.messages import (
     TokenUsage,
     ToolUseBlock,
 )
-from nominal_code.models import BotType, EventType, ProviderName
+from nominal_code.models import EventType, ProviderName
 from nominal_code.platforms.base import CommentEvent, PlatformName
 
 
@@ -409,7 +409,6 @@ class TestConversationLifecycle:
             platform=PlatformName.GITHUB,
             repo="owner/repo",
             pr_number=42,
-            bot_type=BotType.WORKER,
             value=[prior_msg],
         )
         captured = {}
@@ -433,7 +432,6 @@ class TestConversationLifecycle:
 
         conversation_id, prior_messages = prepare_conversation(
             event=event,
-            bot_type=BotType.WORKER,
             agent_config=config.agent,
             conversation_store=store,
         )
@@ -480,7 +478,6 @@ class TestConversationLifecycle:
 
         save_conversation(
             event=event,
-            bot_type=BotType.WORKER,
             result=agent_result,
             agent_config=config.agent,
             conversation_store=store,
@@ -490,7 +487,6 @@ class TestConversationLifecycle:
             platform=PlatformName.GITHUB,
             repo="owner/repo",
             pr_number=42,
-            bot_type=BotType.WORKER,
         )
 
         assert stored_msgs is not None
@@ -500,7 +496,6 @@ class TestConversationLifecycle:
             platform=PlatformName.GITHUB,
             repo="owner/repo",
             pr_number=42,
-            bot_type=BotType.WORKER,
         )
 
         assert stored_id == "resp-42"
@@ -520,7 +515,6 @@ class TestConversationLifecycle:
 
         save_conversation(
             event=event,
-            bot_type=BotType.WORKER,
             result=agent_result,
             agent_config=config.agent,
             conversation_store=store,
@@ -530,7 +524,6 @@ class TestConversationLifecycle:
             platform=PlatformName.GITHUB,
             repo="owner/repo",
             pr_number=42,
-            bot_type=BotType.WORKER,
         )
 
         assert stored is None
@@ -554,7 +547,6 @@ class TestConversationLifecycle:
 
         conversation_id, prior_messages = prepare_conversation(
             event=event,
-            bot_type=BotType.WORKER,
             agent_config=config.agent,
             conversation_store=None,
         )
@@ -596,7 +588,6 @@ class TestConversationLifecycle:
 
         save_conversation(
             event=event,
-            bot_type=BotType.WORKER,
             result=agent_result,
             agent_config=config.agent,
             conversation_store=store,
@@ -606,7 +597,6 @@ class TestConversationLifecycle:
             platform=PlatformName.GITHUB,
             repo="owner/repo",
             pr_number=42,
-            bot_type=BotType.WORKER,
         )
 
         assert stored_id == "api-sess"

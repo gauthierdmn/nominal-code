@@ -6,11 +6,14 @@ import json
 import logging
 from collections.abc import Mapping
 from contextvars import ContextVar
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from nominal_code.config.settings import GitHubConfig
 
 import httpx
-from environs import Env
 
+from nominal_code.config.settings import DEFAULT_GITHUB_API_BASE
 from nominal_code.models import ChangedFile, EventType, FileStatus, ReviewFinding
 from nominal_code.platforms.base import (
     CommentEvent,
@@ -25,13 +28,9 @@ from nominal_code.platforms.github.auth import (
     NO_INSTALLATION,
     GitHubAppAuth,
     GitHubPatAuth,
-    load_private_key,
 )
 from nominal_code.platforms.http import request_with_retry
-from nominal_code.platforms.registry import register_platform
 
-_env: Env = Env()
-GITHUB_API_BASE: str = _env.str("GITHUB_API_BASE", "https://api.github.com")
 FILES_PER_PAGE: int = 100
 
 PR_ACTION_TO_EVENT_TYPE: dict[str, EventType] = {
@@ -83,7 +82,7 @@ class GitHubPlatform:
     def __init__(
         self,
         auth: PlatformAuth,
-        webhook_secret: str = "",
+        webhook_secret: str | None = None,
         fixed_installation_id: int = NO_INSTALLATION,
         base_url: str = "",
     ) -> None:
@@ -92,20 +91,20 @@ class GitHubPlatform:
 
         Args:
             auth (PlatformAuth): Authentication provider for API tokens.
-            webhook_secret (str): HMAC secret for webhook verification.
+            webhook_secret (str | None): HMAC secret for webhook verification.
+                None to skip verification.
             fixed_installation_id (int): Installation ID for CLI/CI modes
                 where no webhook payload provides one.
             base_url (str): Override for the GitHub API base URL.
-                Defaults to ``GITHUB_API_BASE`` env var or
-                ``https://api.github.com``.
+                Defaults to ``DEFAULT_GITHUB_API_BASE``.
         """
 
         self.auth: PlatformAuth = auth
-        self.webhook_secret: str = webhook_secret
+        self.webhook_secret: str | None = webhook_secret
         self._fixed_installation_id: int = fixed_installation_id
 
         self._client: httpx.AsyncClient = httpx.AsyncClient(
-            base_url=base_url or GITHUB_API_BASE,
+            base_url=base_url or DEFAULT_GITHUB_API_BASE,
             timeout=30.0,
         )
 
@@ -244,7 +243,7 @@ class GitHubPlatform:
             bool: True if the signature is valid or no secret is configured.
         """
 
-        if not self.webhook_secret:
+        if self.webhook_secret is None:
             return True
 
         signature: str | None = headers.get("X-Hub-Signature-256")
@@ -909,69 +908,60 @@ class GitHubPlatform:
     def build_clone_url(
         self,
         repo_full_name: str,
-        *,
-        read_only: bool = False,
     ) -> str:
         """
         Build an authenticated clone URL for a GitHub repository.
 
         Args:
             repo_full_name (str): Full repository name (e.g. ``owner/repo``).
-            read_only (bool): If True, use the read-only clone token.
 
         Returns:
             str: The authenticated HTTPS clone URL.
         """
 
         active_id: int = self._active_installation_id()
-
-        if read_only:
-            token: str = self.auth.get_clone_token(active_id)
-        else:
-            token = self.auth.get_api_token(active_id)
+        token: str = self.auth.get_api_token(active_id)
 
         return f"https://x-access-token:{token}@github.com/{repo_full_name}.git"
 
 
-def _create_github_platform() -> GitHubPlatform | None:
+def create_github_platform(config: GitHubConfig) -> GitHubPlatform | None:
     """
-    Factory that builds a GitHubPlatform from environment variables.
+    Build a GitHubPlatform from configuration.
 
-    Detects auth mode: if ``GITHUB_APP_ID`` and a private key are set,
+    Detects auth mode: if ``app_id`` and ``private_key`` are set,
     uses GitHub App authentication. Otherwise falls back to PAT via
-    ``GITHUB_TOKEN``. Returns None if neither is configured.
+    ``token``. Returns None if neither is configured.
+
+    Args:
+        config (GitHubConfig): The frozen GitHub configuration.
 
     Returns:
         GitHubPlatform | None: A configured client, or None.
     """
 
-    webhook_secret: str = _env.str("GITHUB_WEBHOOK_SECRET", "")
-
-    app_id: str = _env.str("GITHUB_APP_ID", "")
-    private_key: str = load_private_key()
-
-    if app_id and private_key:
-        cli_installation_id: int = _env.int("GITHUB_INSTALLATION_ID", 0)
+    if config.app_id and config.private_key:
         auth: PlatformAuth = GitHubAppAuth(
-            app_id=app_id,
-            private_key=private_key,
+            app_id=config.app_id,
+            private_key=config.private_key,
         )
 
         return GitHubPlatform(
             auth=auth,
-            webhook_secret=webhook_secret,
-            fixed_installation_id=cli_installation_id,
+            webhook_secret=config.webhook_secret,
+            fixed_installation_id=config.installation_id,
+            base_url=config.api_base,
         )
 
-    token: str = _env.str("GITHUB_TOKEN", "")
-
-    if not token:
+    if not config.token:
         return None
 
-    reviewer_token: str = _env.str("GITHUB_REVIEWER_TOKEN", "")
-    auth = GitHubPatAuth(token=token, reviewer_token=reviewer_token)
+    auth = GitHubPatAuth(
+        token=config.token,
+    )
 
-    return GitHubPlatform(auth=auth, webhook_secret=webhook_secret)
-
-
-register_platform("github", _create_github_platform)
+    return GitHubPlatform(
+        auth=auth,
+        webhook_secret=config.webhook_secret,
+        base_url=config.api_base,
+    )

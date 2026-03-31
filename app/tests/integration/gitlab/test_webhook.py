@@ -8,19 +8,18 @@ import pytest
 from aiohttp import web
 from aiohttp.pytest_plugin import AiohttpClient
 
-from nominal_code.commands.webhook.server import create_app
+from nominal_code.commands.webhook.jobs.queue.asyncio import AsyncioJobQueue
+from nominal_code.commands.webhook.jobs.runner.process import ProcessRunner
+from nominal_code.commands.webhook.main import create_app
 from nominal_code.config import (
     CliAgentConfig,
     Config,
     ReviewerConfig,
     WebhookConfig,
-    WorkerConfig,
     WorkspaceConfig,
 )
 from nominal_code.config.policies import FilteringPolicy, RoutingPolicy
 from nominal_code.conversation.memory import MemoryConversationStore
-from nominal_code.jobs.queue.asyncio import AsyncioJobQueue
-from nominal_code.jobs.runner.process import ProcessRunner
 from nominal_code.models import EventType
 from nominal_code.platforms.gitlab import GitLabPlatform
 from nominal_code.platforms.gitlab.auth import GitLabPatAuth
@@ -37,7 +36,6 @@ pytestmark = [pytest.mark.integration]
 
 WEBHOOK_SECRET = "test-webhook-secret"
 REVIEWER_BOT = "test-reviewer"
-WORKER_BOT = "test-worker"
 ALLOWED_USER = "test-user"
 
 
@@ -45,10 +43,6 @@ def _build_webhook_config(
     reviewer_triggers: frozenset[EventType] | None = None,
 ) -> Config:
     return Config(
-        worker=WorkerConfig(
-            bot_username=WORKER_BOT,
-            system_prompt="You are a test worker.",
-        ),
         reviewer=ReviewerConfig(
             bot_username=REVIEWER_BOT,
             system_prompt="You are a test reviewer.",
@@ -61,7 +55,6 @@ def _build_webhook_config(
             filtering=FilteringPolicy(allowed_users=frozenset({ALLOWED_USER})),
             routing=RoutingPolicy(
                 reviewer_triggers=reviewer_triggers or frozenset(),
-                worker_bot_username=WORKER_BOT,
                 reviewer_bot_username=REVIEWER_BOT,
             ),
         ),
@@ -182,59 +175,6 @@ async def test_webhook_reviewer_mention_posts_review(
     )
     note_bodies = [note["body"] for note in notes]
     assert any("Found issues" in body for body in note_bodies)
-
-
-@pytest.mark.asyncio
-async def test_webhook_worker_mention_posts_reply(
-    gitlab_token: str,
-    buggy_mr: PrInfo,
-    aiohttp_client: AiohttpClient,
-) -> None:
-    config = _build_webhook_config()
-    app, conversation_store, job_queue = _create_test_app(
-        token=gitlab_token, config=config
-    )
-    client = await aiohttp_client(app)
-
-    payload = _build_note_hook_payload(
-        mr_iid=buggy_mr.number,
-        body=f"@{WORKER_BOT} fix this",
-        source_branch=buggy_mr.head_branch,
-    )
-    payload_bytes = json.dumps(payload).encode()
-
-    with (
-        patch(
-            "nominal_code.agent.invoke.run_cli_agent",
-            new_callable=AsyncMock,
-            return_value=BUGGY_AGENT_RESULT,
-        ),
-        patch(
-            "nominal_code.handlers.worker.review_and_fix",
-            new_callable=AsyncMock,
-        ) as mock_review_and_fix,
-    ):
-        response = await client.post(
-            "/webhooks/gitlab",
-            data=payload_bytes,
-            headers={
-                "X-Gitlab-Event": "Note Hook",
-                "X-Gitlab-Token": WEBHOOK_SECRET,
-                "Content-Type": "application/json",
-            },
-        )
-        assert response.status == 200
-        data = await response.json()
-        assert data["status"] == "accepted"
-
-        await wait_for_queue_drain(job_queue)
-
-    notes = await fetch_mr_notes(
-        token=gitlab_token,
-        repo=GITLAB_TEST_REPO,
-        mr_iid=buggy_mr.number,
-    )
-    assert mock_review_and_fix.called or len(notes) >= 0
 
 
 @pytest.mark.asyncio

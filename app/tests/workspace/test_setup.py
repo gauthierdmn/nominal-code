@@ -3,10 +3,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from nominal_code.models import BotType, EventType
+from nominal_code.models import EventType
 from nominal_code.platforms.base import (
     CommentEvent,
-    LifecycleEvent,
     Platform,
     PlatformName,
 )
@@ -182,11 +181,7 @@ def _make_job_platform():
     platform.fetch_pr_branch = AsyncMock(return_value="feature")
     platform.post_reply = AsyncMock()
     platform.build_clone_url = MagicMock(
-        side_effect=lambda repo_full_name, read_only=False: (
-            "https://ro-token@github.com/owner/repo.git"
-            if read_only
-            else "https://token@github.com/owner/repo.git"
-        ),
+        return_value="https://token@github.com/owner/repo.git",
     )
 
     return platform
@@ -194,58 +189,19 @@ def _make_job_platform():
 
 class TestPrepareJobEvent:
     @pytest.mark.asyncio
-    async def test_reviewer_sets_read_only_clone_url(self):
+    async def test_sets_clone_url(self):
         event = _make_event(branch="feature")
         platform = _make_job_platform()
 
         result = await prepare_job_event(
             event=event,
-            bot_type=BotType.REVIEWER,
-            platform=platform,
-        )
-
-        assert result.clone_url == "https://ro-token@github.com/owner/repo.git"
-        platform.build_clone_url.assert_called_once_with(
-            repo_full_name="owner/repo",
-            read_only=True,
-        )
-
-    @pytest.mark.asyncio
-    async def test_worker_sets_rw_clone_url(self):
-        event = _make_event(branch="feature")
-        platform = _make_job_platform()
-
-        result = await prepare_job_event(
-            event=event,
-            bot_type=BotType.WORKER,
             platform=platform,
         )
 
         assert result.clone_url == "https://token@github.com/owner/repo.git"
         platform.build_clone_url.assert_called_once_with(
             repo_full_name="owner/repo",
-            read_only=False,
         )
-
-    @pytest.mark.asyncio
-    async def test_worker_raises_for_lifecycle_event(self):
-        event = LifecycleEvent(
-            platform=PlatformName.GITHUB,
-            repo_full_name="owner/repo",
-            pr_number=42,
-            pr_branch="feature",
-            pr_title="New feature",
-            event_type=EventType.PR_OPENED,
-            pr_author="alice",
-        )
-        platform = _make_job_platform()
-
-        with pytest.raises(RuntimeError, match="Worker job requires a comment event"):
-            await prepare_job_event(
-                event=event,
-                bot_type=BotType.WORKER,
-                platform=platform,
-            )
 
     @pytest.mark.asyncio
     async def test_pre_cloned_skips_clone_url_resolution(self):
@@ -254,7 +210,6 @@ class TestPrepareJobEvent:
 
         result = await prepare_job_event(
             event=event,
-            bot_type=BotType.REVIEWER,
             platform=platform,
             pre_cloned=True,
         )
@@ -271,6 +226,5 @@ class TestPrepareJobEvent:
         with pytest.raises(RuntimeError, match="Cannot resolve branch"):
             await prepare_job_event(
                 event=event,
-                bot_type=BotType.REVIEWER,
                 platform=platform,
             )

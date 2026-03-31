@@ -10,7 +10,6 @@ from nominal_code.agent.result import AgentResult
 from nominal_code.config import AgentConfig, ApiAgentConfig, CliAgentConfig
 from nominal_code.llm.messages import Message
 from nominal_code.llm.registry import create_provider
-from nominal_code.models import BotType
 from nominal_code.platforms.base import PullRequestEvent
 
 if TYPE_CHECKING:
@@ -21,7 +20,6 @@ logger: logging.Logger = logging.getLogger(__name__)
 
 def prepare_conversation(
     event: PullRequestEvent,
-    bot_type: BotType,
     agent_config: AgentConfig,
     conversation_store: ConversationStore | None,
     conversation_id_override: str | None = None,
@@ -35,7 +33,6 @@ def prepare_conversation(
 
     Args:
         event (PullRequestEvent): The event with platform/repo/PR context.
-        bot_type (BotType): Which bot personality is running.
         agent_config (AgentConfig): The agent configuration.
         conversation_store (ConversationStore | None): Conversation store.
         conversation_id_override (str | None): Override conversation ID
@@ -58,7 +55,6 @@ def prepare_conversation(
                 platform=event.platform,
                 repo=event.repo_full_name,
                 pr_number=event.pr_number,
-                bot_type=bot_type,
                 namespace=namespace,
             )
     elif isinstance(agent_config, ApiAgentConfig) and conversation_store is not None:
@@ -66,7 +62,6 @@ def prepare_conversation(
             platform=event.platform,
             repo=event.repo_full_name,
             pr_number=event.pr_number,
-            bot_type=bot_type,
             namespace=namespace,
         )
 
@@ -141,7 +136,6 @@ async def invoke_agent(
 
 def save_conversation(
     event: PullRequestEvent,
-    bot_type: BotType,
     result: AgentResult,
     agent_config: AgentConfig,
     conversation_store: ConversationStore | None,
@@ -155,7 +149,6 @@ def save_conversation(
 
     Args:
         event (PullRequestEvent): The event with platform/repo/PR context.
-        bot_type (BotType): Which bot personality is running.
         result (AgentResult): The agent execution result.
         agent_config (AgentConfig): The agent configuration.
         conversation_store (ConversationStore | None): Conversation store.
@@ -170,7 +163,6 @@ def save_conversation(
             platform=event.platform,
             repo=event.repo_full_name,
             pr_number=event.pr_number,
-            bot_type=bot_type,
             value=result.conversation_id,
             namespace=namespace,
         )
@@ -184,7 +176,6 @@ def save_conversation(
             platform=event.platform,
             repo=event.repo_full_name,
             pr_number=event.pr_number,
-            bot_type=bot_type,
             value=list(result.messages),
             namespace=namespace,
         )

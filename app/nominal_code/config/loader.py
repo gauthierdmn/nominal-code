@@ -11,15 +11,17 @@ from nominal_code.config.agent import (
 )
 from nominal_code.config.env import load_app_settings
 from nominal_code.config.kubernetes import KubernetesConfig
-from nominal_code.config.models import AppSettings
+from nominal_code.config.models import AppSettings, GitHubSettings, GitLabSettings
 from nominal_code.config.policies import FilteringPolicy, RoutingPolicy
 from nominal_code.config.settings import (
+    DEFAULT_GITLAB_API_BASE,
     Config,
+    GitHubConfig,
+    GitLabConfig,
     PromptsConfig,
     RedisConfig,
     ReviewerConfig,
     WebhookConfig,
-    WorkerConfig,
     WorkspaceConfig,
     load_file_content,
     load_language_guidelines,
@@ -31,58 +33,63 @@ from nominal_code.models import EventType, ProviderName
 logger: logging.Logger = logging.getLogger(__name__)
 
 
-def load_config(config_path: str = "") -> Config:
+def load_config(
+    *,
+    require_webhook: bool = False,
+    default_provider: str | None = None,
+    model: str | None = None,
+    max_turns: int | None = None,
+    provider: ProviderName | None = None,
+    guidelines_path: Path | None = None,
+) -> Config:
     """
-    Load a full Config for webhook server mode.
+    Load application configuration from YAML and environment variables.
 
-    Reads from YAML file and environment variable overrides. At least one of
-    worker or reviewer bot must be configured. ``ALLOWED_USERS`` is required.
+    Supports all operating modes via keyword arguments:
+
+    - **Webhook mode**: pass ``require_webhook=True`` to enforce
+      ``REVIEWER_BOT_USERNAME`` and ``ALLOWED_USERS``.
+    - **CLI mode**: pass ``model``, ``max_turns``, and/or ``provider``
+      to override settings. Agent type is determined by ``provider``.
+    - **CI / job mode**: pass ``default_provider`` to force API agent
+      mode with a fallback provider when ``AGENT_PROVIDER`` is unset.
 
     Args:
-        config_path (str): Optional path to YAML config file. When empty,
-            uses ``CONFIG_PATH`` env var or ``config.yaml`` in CWD.
+        require_webhook (bool): When True, require ``REVIEWER_BOT_USERNAME``
+            and ``ALLOWED_USERS``, and populate the ``webhook`` field.
+        default_provider (str | None): Fallback provider name for API agent
+            mode. When set, the agent is always ``ApiAgentConfig``.
+        model (str | None): Agent model override. None to use settings.
+        max_turns (int | None): Agent max turns override. None to use settings.
+        provider (ProviderName | None): LLM provider override. None to use
+            settings.
+        guidelines_path (Path | None): Custom coding guidelines file that
+            overrides the default.
 
     Returns:
-        Config: A fully populated configuration instance.
+        Config: The resolved application configuration.
 
     Raises:
-        ValueError: If no bot is configured, ALLOWED_USERS is empty, or an
-            environment variable has an invalid value.
+        ValueError: If required settings are missing or invalid.
     """
 
     settings: AppSettings = load_app_settings()
 
-    worker: WorkerConfig | None = None
+    reviewer: ReviewerConfig | None = _build_reviewer(
+        settings=settings,
+        require_webhook=require_webhook,
+    )
+    webhook: WebhookConfig | None = (
+        _build_webhook(settings) if require_webhook else None
+    )
 
-    if settings.worker.bot_username:
-        worker_system_prompt: str = load_file_content(
-            Path(settings.worker.system_prompt_path),
-        )
-        worker = WorkerConfig(
-            bot_username=settings.worker.bot_username,
-            system_prompt=worker_system_prompt,
-        )
-
-    reviewer: ReviewerConfig | None = None
-
-    if settings.reviewer.bot_username:
-        reviewer_system_prompt: str = load_file_content(
-            Path(settings.reviewer.system_prompt_path),
-        )
-        reviewer = ReviewerConfig(
-            bot_username=settings.reviewer.bot_username,
-            system_prompt=reviewer_system_prompt,
-        )
-
-    if worker is None and reviewer is None:
-        raise ValueError(
-            "At least one of WORKER_BOT_USERNAME or REVIEWER_BOT_USERNAME must be set",
-        )
-
-    allowed_users: frozenset[str] = frozenset(settings.access.allowed_users)
-
-    if not allowed_users:
-        raise ValueError("ALLOWED_USERS must contain at least one username")
+    agent_config: AgentConfig = _build_agent(
+        settings=settings,
+        default_provider=default_provider,
+        model=model,
+        max_turns=max_turns,
+        provider=provider,
+    )
 
     workspace_base_dir: Path = (
         Path(settings.workspace.base_dir)
@@ -93,9 +100,92 @@ def load_config(config_path: str = "") -> Config:
     coding_guidelines: str = load_file_content(
         Path(settings.prompts.coding_guidelines_path),
     )
+
+    if guidelines_path is not None:
+        custom_coding: str = load_file_content(guidelines_path)
+
+        if custom_coding:
+            coding_guidelines = custom_coding
+
     language_guidelines: dict[str, str] = load_language_guidelines(
         Path(settings.prompts.language_guidelines_dir),
     )
+
+    return Config(
+        github=_build_github_config(settings.github),
+        gitlab=_build_gitlab_config(settings.gitlab),
+        reviewer=reviewer,
+        agent=agent_config,
+        workspace=WorkspaceConfig(base_dir=workspace_base_dir),
+        prompts=PromptsConfig(
+            coding_guidelines=coding_guidelines,
+            language_guidelines=language_guidelines,
+        ),
+        webhook=webhook,
+    )
+
+
+def _build_reviewer(
+    settings: AppSettings,
+    require_webhook: bool,
+) -> ReviewerConfig | None:
+    """
+    Build the reviewer configuration from settings.
+
+    In webhook mode, ``REVIEWER_BOT_USERNAME`` is required. In CLI/CI
+    modes, the reviewer is always enabled with an empty bot username.
+
+    Args:
+        settings (AppSettings): The application settings.
+        require_webhook (bool): Whether webhook-mode validation applies.
+
+    Returns:
+        ReviewerConfig | None: The reviewer config.
+
+    Raises:
+        ValueError: If ``require_webhook`` is True and no bot username is set.
+    """
+
+    reviewer_system_prompt: str = load_file_content(
+        Path(settings.reviewer.system_prompt_path),
+    )
+
+    if require_webhook:
+        if not settings.reviewer.bot_username:
+            raise ValueError("REVIEWER_BOT_USERNAME must be set")
+
+        return ReviewerConfig(
+            bot_username=settings.reviewer.bot_username,
+            system_prompt=reviewer_system_prompt,
+        )
+
+    return ReviewerConfig(
+        bot_username="",
+        system_prompt=reviewer_system_prompt,
+    )
+
+
+def _build_webhook(settings: AppSettings) -> WebhookConfig:
+    """
+    Build the webhook configuration from settings.
+
+    Validates that ``ALLOWED_USERS`` is set and resolves filtering,
+    routing, Kubernetes, and Redis sub-configs.
+
+    Args:
+        settings (AppSettings): The application settings.
+
+    Returns:
+        WebhookConfig: The webhook configuration.
+
+    Raises:
+        ValueError: If ``ALLOWED_USERS`` is empty.
+    """
+
+    allowed_users: frozenset[str] = frozenset(settings.access.allowed_users)
+
+    if not allowed_users:
+        raise ValueError("ALLOWED_USERS must contain at least one username")
 
     reviewer_triggers: frozenset[EventType] = parse_reviewer_triggers(
         ",".join(settings.reviewer.triggers),
@@ -110,9 +200,82 @@ def load_config(config_path: str = "") -> Config:
         ",".join(settings.access.pr_title_exclude_tags),
     )
 
-    provider_name: ProviderName | None = None
+    filtering: FilteringPolicy = FilteringPolicy(
+        allowed_users=allowed_users,
+        allowed_repos=allowed_repos,
+        pr_title_include_tags=pr_title_include_tags,
+        pr_title_exclude_tags=pr_title_exclude_tags,
+    )
 
-    if settings.agent.provider:
+    routing: RoutingPolicy = RoutingPolicy(
+        reviewer_triggers=reviewer_triggers,
+        reviewer_bot_username=settings.reviewer.bot_username,
+    )
+
+    kubernetes_config: KubernetesConfig | None = _resolve_kubernetes(settings)
+
+    redis_config: RedisConfig | None = None
+
+    if settings.redis.url:
+        redis_config = RedisConfig(
+            url=settings.redis.url,
+            key_ttl_seconds=settings.redis.key_ttl_seconds,
+        )
+
+    return WebhookConfig(
+        host=settings.webhook.host,
+        port=settings.webhook.port,
+        filtering=filtering,
+        routing=routing,
+        kubernetes=kubernetes_config,
+        redis=redis_config,
+    )
+
+
+def _build_agent(
+    settings: AppSettings,
+    default_provider: str | None,
+    model: str | None,
+    max_turns: int | None,
+    provider: ProviderName | None,
+) -> AgentConfig:
+    """
+    Build the agent configuration from settings and overrides.
+
+    When ``default_provider`` is set, forces ``ApiAgentConfig`` with
+    that provider as fallback. Otherwise, uses ``resolve_agent_config``
+    which returns ``CliAgentConfig`` when no provider is specified.
+
+    Args:
+        settings (AppSettings): The application settings.
+        default_provider (str | None): Fallback provider for API mode.
+        model (str | None): Model override. None to use settings.
+        max_turns (int | None): Max turns override. None to use settings.
+        provider (ProviderName | None): Provider override. None to use settings.
+
+    Returns:
+        AgentConfig: The resolved agent configuration.
+
+    Raises:
+        ValueError: If the provider name is not recognised.
+    """
+
+    effective_model: str | None = model if model is not None else settings.agent.model
+    effective_max_turns: int = (
+        max_turns if max_turns is not None else settings.agent.max_turns
+    )
+
+    if default_provider is not None:
+        return _build_api_agent(
+            settings=settings,
+            default_provider=default_provider,
+            model=effective_model,
+            max_turns=effective_max_turns,
+        )
+
+    provider_name: ProviderName | None = provider
+
+    if provider_name is None and settings.agent.provider:
         try:
             provider_name = ProviderName(settings.agent.provider)
         except ValueError:
@@ -123,200 +286,59 @@ def load_config(config_path: str = "") -> Config:
                 f"Available: {available}",
             ) from None
 
-    agent_config: AgentConfig = resolve_agent_config(
-        provider_name=provider_name,
-        model=settings.agent.model,
-        max_turns=settings.agent.max_turns,
-        cli_path=settings.agent.cli_path,
-    )
-
-    kubernetes_config: KubernetesConfig | None = _resolve_kubernetes(settings)
-
-    worker_bot_username: str = worker.bot_username if worker is not None else ""
-    reviewer_bot_username: str = reviewer.bot_username if reviewer is not None else ""
-
-    filtering: FilteringPolicy = FilteringPolicy(
-        allowed_users=allowed_users,
-        allowed_repos=allowed_repos,
-        pr_title_include_tags=pr_title_include_tags,
-        pr_title_exclude_tags=pr_title_exclude_tags,
-    )
-
-    routing: RoutingPolicy = RoutingPolicy(
-        reviewer_triggers=reviewer_triggers,
-        worker_bot_username=worker_bot_username,
-        reviewer_bot_username=reviewer_bot_username,
-    )
-
-    redis_config: RedisConfig | None = None
-
-    if settings.redis.url:
-        redis_config = RedisConfig(
-            url=settings.redis.url,
-            key_ttl_seconds=settings.redis.key_ttl_seconds,
-        )
-
-    webhook: WebhookConfig = WebhookConfig(
-        host=settings.webhook.host,
-        port=settings.webhook.port,
-        filtering=filtering,
-        routing=routing,
-        kubernetes=kubernetes_config,
-        redis=redis_config,
-    )
-
-    return Config(
-        worker=worker,
-        reviewer=reviewer,
-        agent=agent_config,
-        workspace=WorkspaceConfig(base_dir=workspace_base_dir),
-        prompts=PromptsConfig(
-            coding_guidelines=coding_guidelines,
-            language_guidelines=language_guidelines,
-        ),
-        webhook=webhook,
-    )
-
-
-def load_config_for_cli(
-    model: str = "",
-    max_turns: int = 0,
-    provider: ProviderName | None = None,
-) -> Config:
-    """
-    Build a Config for CLI mode without requiring webhook-only settings.
-
-    Reviewer is always enabled with the default system prompt. Settings
-    like ``ALLOWED_USERS`` and bot usernames are not required.
-
-    Args:
-        model (str): Optional agent model override.
-        max_turns (int): Optional agent max turns override.
-        provider (ProviderName | None): Optional LLM provider.
-
-    Returns:
-        Config: A configuration suitable for one-off CLI reviews.
-    """
-
-    settings: AppSettings = load_app_settings()
-
-    reviewer_system_prompt: str = load_file_content(
-        Path(settings.reviewer.system_prompt_path),
-    )
-
-    workspace_base_dir: Path = (
-        Path(settings.workspace.base_dir)
-        if settings.workspace.base_dir
-        else WorkspaceConfig().base_dir
-    )
-
-    coding_guidelines: str = load_file_content(
-        Path(settings.prompts.coding_guidelines_path),
-    )
-    language_guidelines: dict[str, str] = load_language_guidelines(
-        Path(settings.prompts.language_guidelines_dir),
-    )
-
-    provider_name: ProviderName | None = provider
-
-    if not provider_name and settings.agent.provider:
-        provider_name = ProviderName(settings.agent.provider)
-
-    effective_model: str = model or settings.agent.model
-    effective_max_turns: int = max_turns or settings.agent.max_turns
-
-    agent_config: AgentConfig = resolve_agent_config(
+    return resolve_agent_config(
         provider_name=provider_name,
         model=effective_model,
         max_turns=effective_max_turns,
         cli_path=settings.agent.cli_path,
     )
 
-    return Config(
-        worker=None,
-        reviewer=ReviewerConfig(
-            bot_username="",
-            system_prompt=reviewer_system_prompt,
-        ),
-        agent=agent_config,
-        workspace=WorkspaceConfig(base_dir=workspace_base_dir),
-        prompts=PromptsConfig(
-            coding_guidelines=coding_guidelines,
-            language_guidelines=language_guidelines,
-        ),
-    )
 
-
-def load_config_for_ci(
-    provider: ProviderConfig,
-    model: str = "",
-    max_turns: int = 0,
-    guidelines_path: Path = Path(),
-) -> Config:
+def _build_api_agent(
+    settings: AppSettings,
+    default_provider: str,
+    model: str | None,
+    max_turns: int,
+) -> ApiAgentConfig:
     """
-    Build a Config for CI mode (GitHub Actions / GitLab CI).
-
-    Calls the LLM provider API directly and optionally accepts a custom
-    coding guidelines path.
+    Build an API agent configuration with provider fallback.
 
     Args:
-        provider (ProviderConfig): The resolved provider configuration.
-        model (str): Optional model override.
-        max_turns (int): Optional agent max turns override.
-        guidelines_path (Path): Optional path to a coding guidelines file.
+        settings (AppSettings): The application settings.
+        default_provider (str): Fallback provider name.
+        model (str | None): Model override.
+        max_turns (int): Max turns.
 
     Returns:
-        Config: A configuration suitable for CI-triggered reviews.
+        ApiAgentConfig: The resolved API agent configuration.
+
+    Raises:
+        ValueError: If the provider name is not recognised.
     """
 
-    settings: AppSettings = load_app_settings()
+    from nominal_code.llm.registry import PROVIDERS
 
-    model_override: str = model or settings.agent.model
+    provider_name_str: str = settings.agent.provider or default_provider
 
-    if model_override:
-        provider = provider.model_copy(update={"model": model_override})
+    try:
+        provider_name: ProviderName = ProviderName(provider_name_str)
+    except ValueError:
+        available: str = ", ".join(p.value for p in ProviderName)
 
-    reviewer_system_prompt: str = load_file_content(
-        Path(settings.reviewer.system_prompt_path),
-    )
+        raise ValueError(
+            f"Unknown AGENT_PROVIDER: {provider_name_str!r}. Available: {available}",
+        ) from None
 
-    workspace_base_dir: Path = (
-        Path(settings.workspace.base_dir)
-        if settings.workspace.base_dir
-        else WorkspaceConfig().base_dir
-    )
+    provider_config: ProviderConfig = PROVIDERS[provider_name]
 
-    coding_guidelines: str = load_file_content(
-        Path(settings.prompts.coding_guidelines_path),
-    )
+    if model:
+        provider_config = provider_config.model_copy(
+            update={"model": model},
+        )
 
-    if guidelines_path != Path():
-        custom_coding: str = load_file_content(guidelines_path)
-
-        if custom_coding:
-            coding_guidelines = custom_coding
-
-    language_guidelines: dict[str, str] = load_language_guidelines(
-        Path(settings.prompts.language_guidelines_dir),
-    )
-
-    effective_max_turns: int = max_turns or settings.agent.max_turns
-
-    return Config(
-        worker=None,
-        reviewer=ReviewerConfig(
-            bot_username="",
-            system_prompt=reviewer_system_prompt,
-        ),
-        agent=ApiAgentConfig(
-            provider=provider,
-            max_turns=effective_max_turns,
-        ),
-        workspace=WorkspaceConfig(base_dir=workspace_base_dir),
-        prompts=PromptsConfig(
-            coding_guidelines=coding_guidelines,
-            language_guidelines=language_guidelines,
-        ),
+    return ApiAgentConfig(
+        provider=provider_config,
+        max_turns=max_turns,
     )
 
 
@@ -353,4 +375,69 @@ def _resolve_kubernetes(
         resource_requests_memory=settings.kubernetes.resources.requests.memory,
         resource_limits_cpu=settings.kubernetes.resources.limits.cpu,
         resource_limits_memory=settings.kubernetes.resources.limits.memory,
+    )
+
+
+def _build_github_config(settings: GitHubSettings) -> GitHubConfig:
+    """
+    Build a GitHubConfig from mutable settings.
+
+    Resolves the private key from inline value or file path.
+
+    Args:
+        settings (GitHubSettings): The mutable GitHub settings.
+
+    Returns:
+        GitHubConfig: The frozen GitHub configuration.
+    """
+
+    private_key: str | None = settings.private_key
+
+    if not private_key and settings.private_key_path:
+        try:
+            private_key = (
+                Path(settings.private_key_path)
+                .read_text(
+                    encoding="utf-8",
+                )
+                .strip()
+            )
+        except OSError:
+            logger.warning(
+                "Could not read private key from %s",
+                settings.private_key_path,
+            )
+
+    return GitHubConfig(
+        token=settings.token,
+        app_id=settings.app_id,
+        private_key=private_key,
+        installation_id=settings.installation_id,
+        webhook_secret=settings.webhook_secret,
+        api_base=settings.api_base,
+    )
+
+
+def _build_gitlab_config(settings: GitLabSettings) -> GitLabConfig:
+    """
+    Build a GitLabConfig from mutable settings.
+
+    Resolves the API base URL from ``api_base``, ``ci_server_url``,
+    or the default ``DEFAULT_GITLAB_API_BASE``.
+
+    Args:
+        settings (GitLabSettings): The mutable GitLab settings.
+
+    Returns:
+        GitLabConfig: The frozen GitLab configuration.
+    """
+
+    api_base: str = (
+        settings.api_base or settings.ci_server_url or DEFAULT_GITLAB_API_BASE
+    )
+
+    return GitLabConfig(
+        token=settings.token,
+        webhook_secret=settings.webhook_secret,
+        api_base=api_base,
     )

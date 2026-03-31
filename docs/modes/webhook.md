@@ -5,7 +5,7 @@ The webhook server provides real-time, interactive code reviews. Mention the bot
 ## What It Does
 
 - Listens for GitHub/GitLab webhook events on PR comments and lifecycle events
-- Runs the reviewer or worker bot in response to `@mentions`
+- Runs the reviewer bot in response to `@mentions`
 - Supports multi-turn conversations within the same PR (conversation continuity)
 - Auto-triggers reviews on PR open, push, reopen, or ready-for-review events
 
@@ -154,9 +154,6 @@ To handle both GitHub and GitLab simultaneously, configure tokens for both platf
     reviewer:
       bot_username: "my-reviewer"
 
-    worker:
-      bot_username: "my-worker"   # optional, beta
-
     access:
       allowed_users:
         - alice
@@ -179,7 +176,6 @@ To handle both GitHub and GitLab simultaneously, configure tokens for both platf
     ```bash
     # Bot config
     REVIEWER_BOT_USERNAME=my-reviewer
-    WORKER_BOT_USERNAME=my-worker        # optional, beta
     ALLOWED_USERS=alice,bob
 
     # GitHub

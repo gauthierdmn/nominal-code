@@ -3,10 +3,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nominal_code.commands.webhook.job import run_job_main
-from nominal_code.jobs.dispatch import JobResult
-from nominal_code.jobs.payload import JobPayload
-from nominal_code.models import BotType, EventType
+from nominal_code.commands.webhook.jobs.dispatch import JobResult
+from nominal_code.commands.webhook.jobs.main import run_job_main
+from nominal_code.commands.webhook.jobs.payload import JobPayload
+from nominal_code.models import EventType
 from nominal_code.platforms.base import CommentEvent, PlatformName
 
 
@@ -26,7 +26,6 @@ def _make_reviewer_job():
 
     return JobPayload(
         event=event,
-        bot_type="reviewer",
     )
 
 
@@ -36,7 +35,6 @@ def _make_review_result():
     mock_result.cost = None
 
     return JobResult(
-        bot_type=BotType.REVIEWER,
         review_result=mock_result,
     )
 
@@ -70,11 +68,11 @@ class TestRunJobMain:
 
         with (
             patch(
-                "nominal_code.commands.webhook.job._build_platform",
+                "nominal_code.commands.webhook.jobs.main.build_platform",
                 return_value=mock_platform,
             ),
             patch(
-                "nominal_code.commands.webhook.job.execute_job",
+                "nominal_code.commands.webhook.jobs.main.execute_job",
                 new_callable=AsyncMock,
                 return_value=_make_review_result(),
             ) as mock_execute,
@@ -96,11 +94,11 @@ class TestRunJobMain:
 
         with (
             patch(
-                "nominal_code.commands.webhook.job._build_platform",
+                "nominal_code.commands.webhook.jobs.main.build_platform",
                 return_value=mock_platform,
             ),
             patch(
-                "nominal_code.commands.webhook.job.execute_job",
+                "nominal_code.commands.webhook.jobs.main.execute_job",
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("Agent failed"),
             ),
@@ -124,20 +122,20 @@ class TestPublishCompletion:
 
         with (
             patch(
-                "nominal_code.commands.webhook.job._build_platform",
+                "nominal_code.commands.webhook.jobs.main.build_platform",
                 return_value=mock_platform,
             ),
             patch(
-                "nominal_code.commands.webhook.job.build_conversation_store",
+                "nominal_code.commands.webhook.jobs.main.build_conversation_store",
                 return_value=MagicMock(),
             ),
             patch(
-                "nominal_code.commands.webhook.job.execute_job",
+                "nominal_code.commands.webhook.jobs.main.execute_job",
                 new_callable=AsyncMock,
                 return_value=_make_review_result(),
             ),
             patch(
-                "nominal_code.commands.webhook.job.publish_job_completion",
+                "nominal_code.commands.webhook.jobs.main.publish_job_completion",
             ) as mock_publish,
         ):
             result = await run_job_main()
@@ -145,7 +143,7 @@ class TestPublishCompletion:
         assert result == 0
         mock_publish.assert_called_once_with(
             redis_url="redis://localhost:6379",
-            channel_key="nc:job:github:owner/repo:42:reviewer",
+            channel_key="nc:job:github:owner/repo:42",
             status="succeeded",
         )
 
@@ -162,20 +160,20 @@ class TestPublishCompletion:
 
         with (
             patch(
-                "nominal_code.commands.webhook.job._build_platform",
+                "nominal_code.commands.webhook.jobs.main.build_platform",
                 return_value=mock_platform,
             ),
             patch(
-                "nominal_code.commands.webhook.job.build_conversation_store",
+                "nominal_code.commands.webhook.jobs.main.build_conversation_store",
                 return_value=MagicMock(),
             ),
             patch(
-                "nominal_code.commands.webhook.job.execute_job",
+                "nominal_code.commands.webhook.jobs.main.execute_job",
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("Agent failed"),
             ),
             patch(
-                "nominal_code.commands.webhook.job.publish_job_completion",
+                "nominal_code.commands.webhook.jobs.main.publish_job_completion",
             ) as mock_publish,
         ):
             result = await run_job_main()
@@ -183,7 +181,7 @@ class TestPublishCompletion:
         assert result == 1
         mock_publish.assert_called_once_with(
             redis_url="redis://localhost:6379",
-            channel_key="nc:job:github:owner/repo:42:reviewer",
+            channel_key="nc:job:github:owner/repo:42",
             status="failed",
         )
 
@@ -200,16 +198,16 @@ class TestPublishCompletion:
 
         with (
             patch(
-                "nominal_code.commands.webhook.job._build_platform",
+                "nominal_code.commands.webhook.jobs.main.build_platform",
                 return_value=mock_platform,
             ),
             patch(
-                "nominal_code.commands.webhook.job.execute_job",
+                "nominal_code.commands.webhook.jobs.main.execute_job",
                 new_callable=AsyncMock,
                 return_value=_make_review_result(),
             ),
             patch(
-                "nominal_code.commands.webhook.job.publish_job_completion",
+                "nominal_code.commands.webhook.jobs.main.publish_job_completion",
             ) as mock_publish,
         ):
             result = await run_job_main()

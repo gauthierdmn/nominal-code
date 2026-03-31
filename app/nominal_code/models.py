@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 
-PRKey = tuple[str, str, int, str, str]
+PRKey = tuple[str, str, int, str]
 
 
 class EventType(StrEnum):
@@ -46,15 +46,6 @@ class ProviderName(StrEnum):
     GROQ = "groq"
     TOGETHER = "together"
     FIREWORKS = "fireworks"
-
-
-class BotType(StrEnum):
-    """
-    Identifiers for the two bot personalities.
-    """
-
-    WORKER = "worker"
-    REVIEWER = "reviewer"
 
 
 class DiffSide(StrEnum):

@@ -10,19 +10,18 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from aiohttp.pytest_plugin import AiohttpClient
 
-from nominal_code.commands.webhook.server import create_app
+from nominal_code.commands.webhook.jobs.queue.asyncio import AsyncioJobQueue
+from nominal_code.commands.webhook.jobs.runner.process import ProcessRunner
+from nominal_code.commands.webhook.main import create_app
 from nominal_code.config import (
     CliAgentConfig,
     Config,
     ReviewerConfig,
     WebhookConfig,
-    WorkerConfig,
     WorkspaceConfig,
 )
 from nominal_code.config.policies import FilteringPolicy, RoutingPolicy
 from nominal_code.conversation.memory import MemoryConversationStore
-from nominal_code.jobs.queue.asyncio import AsyncioJobQueue
-from nominal_code.jobs.runner.process import ProcessRunner
 from nominal_code.models import EventType
 from nominal_code.platforms.github import GitHubPlatform
 from nominal_code.platforms.github.auth import GitHubAppAuth
@@ -85,10 +84,6 @@ def _build_webhook_config(
     reviewer_triggers: frozenset[EventType] | None = None,
 ) -> Config:
     return Config(
-        worker=WorkerConfig(
-            bot_username="test-app-worker",
-            system_prompt="You are a test worker.",
-        ),
         reviewer=ReviewerConfig(
             bot_username=REVIEWER_BOT,
             system_prompt="You are a test reviewer.",
@@ -101,7 +96,6 @@ def _build_webhook_config(
             filtering=FilteringPolicy(allowed_users=frozenset({ALLOWED_USER})),
             routing=RoutingPolicy(
                 reviewer_triggers=reviewer_triggers or frozenset(),
-                worker_bot_username="test-app-worker",
                 reviewer_bot_username=REVIEWER_BOT,
             ),
         ),

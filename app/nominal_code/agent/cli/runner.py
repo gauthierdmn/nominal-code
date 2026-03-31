@@ -75,9 +75,9 @@ _sdk_client.parse_message = _patched_parse_message  # type: ignore[attr-defined]
 async def run_cli_agent(
     prompt: str,
     cwd: Path,
-    model: str = "",
+    model: str | None = None,
     max_turns: int = 0,
-    cli_path: str = "",
+    cli_path: str | None = None,
     conversation_id: str | None = None,
     system_prompt: str = "",
     permission_mode: Literal[
@@ -111,9 +111,9 @@ async def run_cli_agent(
         permission_mode=permission_mode,
         allowed_tools=allowed_tools or [],
         cwd=cwd,
-        model=model or None,
+        model=model,
         max_turns=max_turns if max_turns > 0 else None,
-        cli_path=cli_path or None,
+        cli_path=cli_path,
         resume=conversation_id,
         system_prompt=system_prompt or None,
     )
