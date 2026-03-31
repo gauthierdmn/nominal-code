@@ -4,8 +4,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from nominal_code.commands.webhook.job import run_job_main
+from nominal_code.jobs.dispatch import JobResult
 from nominal_code.jobs.payload import JobPayload
-from nominal_code.models import EventType
+from nominal_code.models import BotType, EventType
 from nominal_code.platforms.base import CommentEvent, PlatformName
 
 
@@ -26,6 +27,17 @@ def _make_reviewer_job():
     return JobPayload(
         event=event,
         bot_type="reviewer",
+    )
+
+
+def _make_review_result():
+    mock_result = MagicMock()
+    mock_result.valid_findings = []
+    mock_result.cost = None
+
+    return JobResult(
+        bot_type=BotType.REVIEWER,
+        review_result=mock_result,
     )
 
 
@@ -54,15 +66,7 @@ class TestRunJobMain:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
         monkeypatch.setenv("GITHUB_TOKEN", "test-token")
 
-        mock_review_result = MagicMock()
-        mock_review_result.valid_findings = []
-        mock_review_result.cost = None
-
         mock_platform = MagicMock()
-        mock_platform.authenticate = AsyncMock()
-        mock_platform.build_clone_url = MagicMock(
-            return_value="https://token@github.com/owner/repo.git",
-        )
 
         with (
             patch(
@@ -70,20 +74,15 @@ class TestRunJobMain:
                 return_value=mock_platform,
             ),
             patch(
-                "nominal_code.commands.webhook.job.prepare_job_event",
+                "nominal_code.commands.webhook.job.execute_job",
                 new_callable=AsyncMock,
-                return_value=job.event,
-            ),
-            patch(
-                "nominal_code.commands.webhook.job.run_and_post_review",
-                new_callable=AsyncMock,
-                return_value=mock_review_result,
-            ) as mock_review,
+                return_value=_make_review_result(),
+            ) as mock_execute,
         ):
             result = await run_job_main()
 
         assert result == 0
-        mock_review.assert_called_once()
+        mock_execute.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_review_exception_returns_1(self, monkeypatch):
@@ -94,10 +93,6 @@ class TestRunJobMain:
         monkeypatch.setenv("GITHUB_TOKEN", "test-token")
 
         mock_platform = MagicMock()
-        mock_platform.authenticate = AsyncMock()
-        mock_platform.build_clone_url = MagicMock(
-            return_value="https://token@github.com/owner/repo.git",
-        )
 
         with (
             patch(
@@ -105,7 +100,7 @@ class TestRunJobMain:
                 return_value=mock_platform,
             ),
             patch(
-                "nominal_code.commands.webhook.job.prepare_job_event",
+                "nominal_code.commands.webhook.job.execute_job",
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("Agent failed"),
             ),
@@ -125,15 +120,7 @@ class TestPublishCompletion:
         monkeypatch.setenv("GITHUB_TOKEN", "test-token")
         monkeypatch.setenv("REDIS_URL", "redis://localhost:6379")
 
-        mock_review_result = MagicMock()
-        mock_review_result.valid_findings = []
-        mock_review_result.cost = None
-
         mock_platform = MagicMock()
-        mock_platform.authenticate = AsyncMock()
-        mock_platform.build_clone_url = MagicMock(
-            return_value="https://token@github.com/owner/repo.git",
-        )
 
         with (
             patch(
@@ -145,14 +132,9 @@ class TestPublishCompletion:
                 return_value=MagicMock(),
             ),
             patch(
-                "nominal_code.commands.webhook.job.prepare_job_event",
+                "nominal_code.commands.webhook.job.execute_job",
                 new_callable=AsyncMock,
-                return_value=job.event,
-            ),
-            patch(
-                "nominal_code.commands.webhook.job.run_and_post_review",
-                new_callable=AsyncMock,
-                return_value=mock_review_result,
+                return_value=_make_review_result(),
             ),
             patch(
                 "nominal_code.commands.webhook.job.publish_job_completion",
@@ -177,10 +159,6 @@ class TestPublishCompletion:
         monkeypatch.setenv("REDIS_URL", "redis://localhost:6379")
 
         mock_platform = MagicMock()
-        mock_platform.authenticate = AsyncMock()
-        mock_platform.build_clone_url = MagicMock(
-            return_value="https://token@github.com/owner/repo.git",
-        )
 
         with (
             patch(
@@ -192,7 +170,7 @@ class TestPublishCompletion:
                 return_value=MagicMock(),
             ),
             patch(
-                "nominal_code.commands.webhook.job.prepare_job_event",
+                "nominal_code.commands.webhook.job.execute_job",
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("Agent failed"),
             ),
@@ -218,15 +196,7 @@ class TestPublishCompletion:
         monkeypatch.setenv("GITHUB_TOKEN", "test-token")
         monkeypatch.delenv("REDIS_URL", raising=False)
 
-        mock_review_result = MagicMock()
-        mock_review_result.valid_findings = []
-        mock_review_result.cost = None
-
         mock_platform = MagicMock()
-        mock_platform.authenticate = AsyncMock()
-        mock_platform.build_clone_url = MagicMock(
-            return_value="https://token@github.com/owner/repo.git",
-        )
 
         with (
             patch(
@@ -234,14 +204,9 @@ class TestPublishCompletion:
                 return_value=mock_platform,
             ),
             patch(
-                "nominal_code.commands.webhook.job.prepare_job_event",
+                "nominal_code.commands.webhook.job.execute_job",
                 new_callable=AsyncMock,
-                return_value=job.event,
-            ),
-            patch(
-                "nominal_code.commands.webhook.job.run_and_post_review",
-                new_callable=AsyncMock,
-                return_value=mock_review_result,
+                return_value=_make_review_result(),
             ),
             patch(
                 "nominal_code.commands.webhook.job.publish_job_completion",

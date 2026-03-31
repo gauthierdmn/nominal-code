@@ -6,10 +6,11 @@ import pytest
 
 from nominal_code.config import CliAgentConfig, ReviewerConfig, WorkerConfig
 from nominal_code.conversation.memory import MemoryConversationStore
+from nominal_code.jobs.dispatch import JobResult
 from nominal_code.jobs.payload import JobPayload
 from nominal_code.jobs.queue.asyncio import AsyncioJobQueue
 from nominal_code.jobs.runner.process import ProcessRunner
-from nominal_code.models import EventType
+from nominal_code.models import BotType, EventType
 from nominal_code.platforms.base import (
     CommentEvent,
     LifecycleEvent,
@@ -97,7 +98,7 @@ def _make_lifecycle_job():
 
 class TestProcessRunner:
     @pytest.mark.asyncio
-    async def test_worker_job_dispatches_to_review_and_fix(self):
+    async def test_worker_job_dispatches_via_execute_job(self):
         config = _make_config()
         platform = _make_platform()
         platforms = {"github": platform}
@@ -113,26 +114,21 @@ class TestProcessRunner:
 
         job = _make_worker_job()
 
-        with (
-            patch(
-                "nominal_code.jobs.runner.process.prepare_job_event",
-                new_callable=AsyncMock,
-                return_value=job.event,
-            ),
-            patch(
-                "nominal_code.jobs.runner.process.review_and_fix",
-                new_callable=AsyncMock,
-            ) as mock_handler,
-        ):
+        with patch(
+            "nominal_code.jobs.runner.process.execute_job",
+            new_callable=AsyncMock,
+            return_value=JobResult(bot_type=BotType.WORKER),
+        ) as mock_execute:
             await runner.enqueue(job)
             await asyncio.sleep(0.05)
 
-            mock_handler.assert_called_once()
-            call_kwargs = mock_handler.call_args.kwargs
-            assert call_kwargs["event"].repo_full_name == "owner/repo"
+            mock_execute.assert_called_once()
+            call_kwargs = mock_execute.call_args.kwargs
+            assert call_kwargs["job"] is job
+            assert call_kwargs["platform"] is platform
 
     @pytest.mark.asyncio
-    async def test_reviewer_job_dispatches_to_run_and_post_review(self):
+    async def test_reviewer_job_dispatches_via_execute_job(self):
         config = _make_config()
         platform = _make_platform()
         platforms = {"github": platform}
@@ -146,27 +142,18 @@ class TestProcessRunner:
             queue=job_queue,
         )
 
-        mock_result = MagicMock()
-
-        with (
-            patch(
-                "nominal_code.jobs.runner.process.prepare_job_event",
-                new_callable=AsyncMock,
-                return_value=_make_reviewer_job().event,
-            ),
-            patch(
-                "nominal_code.jobs.runner.process.run_and_post_review",
-                new_callable=AsyncMock,
-                return_value=mock_result,
-            ) as mock_handler,
-        ):
+        with patch(
+            "nominal_code.jobs.runner.process.execute_job",
+            new_callable=AsyncMock,
+            return_value=JobResult(bot_type=BotType.REVIEWER),
+        ) as mock_execute:
             await runner.enqueue(_make_reviewer_job())
             await asyncio.sleep(0.05)
 
-            mock_handler.assert_called_once()
+            mock_execute.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_lifecycle_job_dispatches_reviewer(self):
+    async def test_lifecycle_job_dispatches_via_execute_job(self):
         config = _make_config()
         platform = _make_platform()
         platforms = {"github": platform}
@@ -180,29 +167,21 @@ class TestProcessRunner:
             queue=job_queue,
         )
 
-        mock_result = MagicMock()
-
-        with (
-            patch(
-                "nominal_code.jobs.runner.process.prepare_job_event",
-                new_callable=AsyncMock,
-                return_value=_make_lifecycle_job().event,
-            ),
-            patch(
-                "nominal_code.jobs.runner.process.run_and_post_review",
-                new_callable=AsyncMock,
-                return_value=mock_result,
-            ) as mock_handler,
-        ):
+        with patch(
+            "nominal_code.jobs.runner.process.execute_job",
+            new_callable=AsyncMock,
+            return_value=JobResult(bot_type=BotType.REVIEWER),
+        ) as mock_execute:
             await runner.enqueue(_make_lifecycle_job())
             await asyncio.sleep(0.05)
 
-            mock_handler.assert_called_once()
+            mock_execute.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_ensures_auth_before_dispatch(self):
+    async def test_non_reviewer_platform_skips_reviewer_job(self):
         config = _make_config()
-        platform = _make_platform()
+        platform = MagicMock()
+        platform.authenticate = AsyncMock()
         platforms = {"github": platform}
         job_queue = AsyncioJobQueue()
         conversation_store = MemoryConversationStore()
@@ -214,18 +193,11 @@ class TestProcessRunner:
             queue=job_queue,
         )
 
-        with (
-            patch(
-                "nominal_code.jobs.runner.process.prepare_job_event",
-                new_callable=AsyncMock,
-                return_value=_make_worker_job().event,
-            ),
-            patch(
-                "nominal_code.jobs.runner.process.review_and_fix",
-                new_callable=AsyncMock,
-            ),
-        ):
-            await runner.enqueue(_make_worker_job())
+        with patch(
+            "nominal_code.jobs.runner.process.execute_job",
+            new_callable=AsyncMock,
+        ) as mock_execute:
+            await runner.enqueue(_make_reviewer_job())
             await asyncio.sleep(0.05)
 
-        platform.authenticate.assert_called_once()
+            mock_execute.assert_not_called()

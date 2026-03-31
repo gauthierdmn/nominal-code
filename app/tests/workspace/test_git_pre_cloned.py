@@ -8,18 +8,19 @@ from nominal_code.workspace.git import GitWorkspace
 
 
 @pytest.fixture
-def workspace_no_clone_url(tmp_path):
+def read_only_workspace(tmp_path):
     return GitWorkspace(
         base_dir=tmp_path,
         repo_full_name="owner/repo",
         pr_number=42,
         clone_url="",
         branch="feature-branch",
+        read_only=True,
     )
 
 
 @pytest.fixture
-def workspace_with_clone_url(tmp_path):
+def writable_workspace(tmp_path):
     return GitWorkspace(
         base_dir=tmp_path,
         repo_full_name="owner/repo",
@@ -29,69 +30,85 @@ def workspace_with_clone_url(tmp_path):
     )
 
 
-class TestExternallyManagedWorkspace:
+class TestReadOnlyWorkspace:
     @pytest.mark.asyncio
-    async def test_ensure_ready_skips_when_no_clone_url_and_git_exists(
+    async def test_ensure_ready_skips_when_git_exists(
         self,
-        workspace_no_clone_url,
+        read_only_workspace,
     ):
-        git_dir = Path(workspace_no_clone_url.repo_path) / ".git"
+        git_dir = Path(read_only_workspace.repo_path) / ".git"
         git_dir.mkdir(parents=True)
 
         with (
             patch.object(
-                workspace_no_clone_url,
+                read_only_workspace,
                 "_clone",
                 new_callable=AsyncMock,
             ) as mock_clone,
             patch.object(
-                workspace_no_clone_url,
+                read_only_workspace,
                 "_update",
                 new_callable=AsyncMock,
             ) as mock_update,
         ):
-            await workspace_no_clone_url.ensure_ready()
+            await read_only_workspace.ensure_ready()
 
             mock_clone.assert_not_called()
             mock_update.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_ensure_ready_raises_when_no_clone_url_and_no_git(
+    async def test_ensure_ready_raises_when_no_git_dir(
         self,
-        workspace_no_clone_url,
+        read_only_workspace,
     ):
-        with pytest.raises(RuntimeError, match="No clone URL provided"):
-            await workspace_no_clone_url.ensure_ready()
+        with pytest.raises(RuntimeError, match="Read-only workspace"):
+            await read_only_workspace.ensure_ready()
+
+    def test_maybe_create_deps_dir_skips(self, read_only_workspace):
+        read_only_workspace.maybe_create_deps_dir()
+
+        assert not read_only_workspace.deps_path.exists()
+
+    def test_read_only_flag_is_set(self, read_only_workspace):
+        assert read_only_workspace.read_only is True
 
 
-class TestManagedWorkspace:
+class TestWritableWorkspace:
     @pytest.mark.asyncio
-    async def test_ensure_ready_clones_when_clone_url_set_and_no_git(
+    async def test_ensure_ready_clones_when_no_git(
         self,
-        workspace_with_clone_url,
+        writable_workspace,
     ):
         with patch.object(
-            workspace_with_clone_url,
+            writable_workspace,
             "_clone",
             new_callable=AsyncMock,
         ) as mock_clone:
-            await workspace_with_clone_url.ensure_ready()
+            await writable_workspace.ensure_ready()
 
             mock_clone.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_ensure_ready_updates_when_clone_url_set_and_git_exists(
+    async def test_ensure_ready_updates_when_git_exists(
         self,
-        workspace_with_clone_url,
+        writable_workspace,
     ):
-        git_dir = Path(workspace_with_clone_url.repo_path) / ".git"
+        git_dir = Path(writable_workspace.repo_path) / ".git"
         git_dir.mkdir(parents=True)
 
         with patch.object(
-            workspace_with_clone_url,
+            writable_workspace,
             "_update",
             new_callable=AsyncMock,
         ) as mock_update:
-            await workspace_with_clone_url.ensure_ready()
+            await writable_workspace.ensure_ready()
 
             mock_update.assert_called_once()
+
+    def test_maybe_create_deps_dir_creates(self, writable_workspace):
+        writable_workspace.maybe_create_deps_dir()
+
+        assert writable_workspace.deps_path.exists()
+
+    def test_read_only_flag_is_false(self, writable_workspace):
+        assert writable_workspace.read_only is False

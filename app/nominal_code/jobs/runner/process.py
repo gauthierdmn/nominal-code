@@ -4,12 +4,11 @@ import logging
 from typing import TYPE_CHECKING
 
 from nominal_code.agent.errors import handle_agent_errors
-from nominal_code.handlers.review import run_and_post_review
-from nominal_code.handlers.worker import review_and_fix
+from nominal_code.jobs.dispatch import execute_job
+from nominal_code.jobs.handler import DefaultJobHandler
 from nominal_code.jobs.payload import JobPayload
 from nominal_code.models import BotType
-from nominal_code.platforms.base import CommentEvent, ReviewerPlatform
-from nominal_code.workspace.setup import prepare_job_event
+from nominal_code.platforms.base import ReviewerPlatform
 
 if TYPE_CHECKING:
     from nominal_code.config import Config
@@ -79,17 +78,14 @@ class ProcessRunner:
         """
         Execute a single dequeued job in the current process.
 
-        Looks up the platform, prepares the job event, and dispatches
-        to the appropriate handler.
+        Looks up the platform, validates capabilities, and delegates
+        to ``execute_job`` for unified dispatch.
 
         Args:
             job (JobPayload): The review job to execute.
         """
 
         platform: Platform = self._platforms[job.event.platform]
-
-        await platform.authenticate()
-
         bot_type: BotType = BotType(job.bot_type)
 
         if bot_type == BotType.WORKER:
@@ -104,43 +100,17 @@ class ProcessRunner:
 
             return
 
+        handler: DefaultJobHandler = DefaultJobHandler()
+
         async with handle_agent_errors(
             event=job.event,
             platform=platform,
             agent_label=agent_label,
         ):
-            prepared_event = await prepare_job_event(
-                event=job.event,
-                bot_type=bot_type,
+            await execute_job(
+                job=job,
                 platform=platform,
+                handler=handler,
+                config=self._config,
+                conversation_store=self._conversation_store,
             )
-
-            if bot_type == BotType.WORKER:
-                if not isinstance(prepared_event, CommentEvent):
-                    raise RuntimeError("Worker job requires a comment event")
-
-                await review_and_fix(
-                    event=prepared_event,
-                    prompt=prepared_event.mention_prompt or "",
-                    config=self._config,
-                    platform=platform,
-                    conversation_store=self._conversation_store,
-                    namespace=job.namespace,
-                )
-            elif isinstance(platform, ReviewerPlatform):
-                mention_prompt: str = ""
-
-                if (
-                    isinstance(prepared_event, CommentEvent)
-                    and prepared_event.mention_prompt
-                ):
-                    mention_prompt = prepared_event.mention_prompt
-
-                await run_and_post_review(
-                    event=prepared_event,
-                    prompt=mention_prompt,
-                    config=self._config,
-                    platform=platform,
-                    conversation_store=self._conversation_store,
-                    namespace=job.namespace,
-                )

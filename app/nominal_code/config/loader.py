@@ -320,7 +320,9 @@ def load_config_for_ci(
     )
 
 
-def _resolve_kubernetes(settings: AppSettings) -> KubernetesConfig | None:
+def _resolve_kubernetes(
+    settings: AppSettings,
+) -> KubernetesConfig | None:
     """
     Resolve KubernetesConfig from settings when a K8s image is configured.
 

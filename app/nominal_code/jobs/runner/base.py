@@ -3,8 +3,10 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Protocol
 
-from nominal_code.config.settings import DEFAULT_REDIS_KEY_TTL_SECONDS
+from nominal_code.conversation.base import build_conversation_store
 from nominal_code.jobs.payload import JobPayload
+from nominal_code.jobs.queue.asyncio import AsyncioJobQueue
+from nominal_code.jobs.runner.process import ProcessRunner
 
 if TYPE_CHECKING:
     from nominal_code.config import Config
@@ -58,19 +60,18 @@ def build_runner(config: Config, platforms: dict[str, Platform]) -> JobRunner:
     redis = webhook.redis if webhook is not None else None
 
     if kubernetes is not None:
-        redis_url: str = redis.url if redis is not None else ""
-
-        if not redis_url:
+        if redis is None or not redis.url:
             raise ValueError("REDIS_URL is required when kubernetes config is set")
 
         from nominal_code.jobs.queue.redis import RedisJobQueue
         from nominal_code.jobs.runner.kubernetes import KubernetesRunner
 
-        redis_queue: RedisJobQueue = RedisJobQueue(redis_url)
+        redis_queue: RedisJobQueue = RedisJobQueue(redis.url)
 
         runner: JobRunner = KubernetesRunner(
             config=kubernetes,
             queue=redis_queue,
+            redis=redis,
         )
 
         logger.info(
@@ -81,17 +82,9 @@ def build_runner(config: Config, platforms: dict[str, Platform]) -> JobRunner:
 
         return runner
 
-    from nominal_code.conversation.base import build_conversation_store
-    from nominal_code.jobs.queue.asyncio import AsyncioJobQueue
-    from nominal_code.jobs.runner.process import ProcessRunner
-
     conversation_store = build_conversation_store(
-        redis_url=redis.url if redis is not None else "",
-        redis_key_ttl_seconds=(
-            redis.key_ttl_seconds
-            if redis is not None
-            else DEFAULT_REDIS_KEY_TTL_SECONDS
-        ),
+        redis_url=redis.url if redis is not None else None,
+        redis_key_ttl_seconds=redis.key_ttl_seconds if redis is not None else None,
     )
     job_queue: AsyncioJobQueue = AsyncioJobQueue()
 

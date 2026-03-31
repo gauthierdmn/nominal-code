@@ -150,6 +150,32 @@ class TestCreateWorkspace:
 
         assert str(workspace.repo_path).startswith(str(tmp_path))
 
+    def test_create_workspace_writable_when_clone_url_set(self, tmp_path):
+        event = _make_event(branch="feature")
+        config = _make_config(tmp_path)
+
+        workspace = create_workspace(event, config)
+
+        assert workspace.read_only is False
+
+    def test_create_workspace_read_only_when_clone_url_empty(self, tmp_path):
+        event = CommentEvent(
+            platform=PlatformName.GITHUB,
+            repo_full_name="owner/repo",
+            pr_number=42,
+            pr_branch="feature",
+            clone_url="",
+            event_type=EventType.ISSUE_COMMENT,
+            comment_id=10,
+            author_username="alice",
+            body="fix this",
+        )
+        config = _make_config(tmp_path)
+
+        workspace = create_workspace(event, config)
+
+        assert workspace.read_only is True
+
 
 def _make_job_platform():
     platform = MagicMock(spec=Platform)
@@ -220,6 +246,21 @@ class TestPrepareJobEvent:
                 bot_type=BotType.WORKER,
                 platform=platform,
             )
+
+    @pytest.mark.asyncio
+    async def test_pre_cloned_skips_clone_url_resolution(self):
+        event = _make_event(branch="feature")
+        platform = _make_job_platform()
+
+        result = await prepare_job_event(
+            event=event,
+            bot_type=BotType.REVIEWER,
+            platform=platform,
+            pre_cloned=True,
+        )
+
+        assert result.clone_url == ""
+        platform.build_clone_url.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_raises_when_branch_unresolvable(self):

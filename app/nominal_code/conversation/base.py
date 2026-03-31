@@ -4,6 +4,7 @@ import logging
 from datetime import timedelta
 from typing import Protocol, runtime_checkable
 
+from nominal_code.config.settings import DEFAULT_REDIS_KEY_TTL_SECONDS
 from nominal_code.conversation.memory import MemoryConversationStore
 from nominal_code.llm.messages import Message, TextBlock
 from nominal_code.models import BotType
@@ -198,7 +199,7 @@ def build_conversation_store(
             (e.g. ``redis://host:6379/0``). When ``None``, an in-memory
             store is returned.
         redis_key_ttl_seconds (int | None): TTL in seconds for Redis keys.
-            Uses the Redis store default (7 days) when ``None``.
+            Uses ``DEFAULT_REDIS_KEY_TTL_SECONDS`` when ``None``.
 
     Returns:
         ConversationStore: A Redis-backed or in-memory conversation store.
@@ -216,15 +217,12 @@ def build_conversation_store(
 
     import redis
 
-    from nominal_code.conversation.redis import (
-        DEFAULT_KEY_TTL,
-        RedisConversationStore,
-    )
+    from nominal_code.conversation.redis import RedisConversationStore
 
-    key_ttl: timedelta = (
-        timedelta(seconds=redis_key_ttl_seconds)
+    key_ttl: timedelta = timedelta(
+        seconds=redis_key_ttl_seconds
         if redis_key_ttl_seconds is not None
-        else DEFAULT_KEY_TTL
+        else DEFAULT_REDIS_KEY_TTL_SECONDS,
     )
 
     client: redis.Redis = redis.Redis.from_url(url=redis_url)

@@ -1,10 +1,10 @@
 # type: ignore
-import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from nominal_code.config import KubernetesConfig
+from nominal_code.config.settings import RedisConfig
 from nominal_code.jobs.payload import JobPayload
 from nominal_code.jobs.queue.redis import RedisJobQueue
 from nominal_code.jobs.runner.kubernetes import (
@@ -86,7 +86,11 @@ class TestBuildJobChannelKey:
 class TestKubernetesRunnerBuildJobSpec:
     def test_spec_structure(self):
         config = _make_config()
-        runner = KubernetesRunner(config=config, queue=_make_mock_queue())
+        runner = KubernetesRunner(
+            config=config,
+            queue=_make_mock_queue(),
+            redis=RedisConfig(),
+        )
         job = _make_job()
 
         spec = runner._build_job_spec(
@@ -101,7 +105,11 @@ class TestKubernetesRunnerBuildJobSpec:
 
     def test_labels(self):
         config = _make_config()
-        runner = KubernetesRunner(config=config, queue=_make_mock_queue())
+        runner = KubernetesRunner(
+            config=config,
+            queue=_make_mock_queue(),
+            redis=RedisConfig(),
+        )
         job = _make_job()
 
         spec = runner._build_job_spec(
@@ -116,7 +124,11 @@ class TestKubernetesRunnerBuildJobSpec:
 
     def test_container_command(self):
         config = _make_config()
-        runner = KubernetesRunner(config=config, queue=_make_mock_queue())
+        runner = KubernetesRunner(
+            config=config,
+            queue=_make_mock_queue(),
+            redis=RedisConfig(),
+        )
         job = _make_job()
 
         spec = runner._build_job_spec(
@@ -135,7 +147,11 @@ class TestKubernetesRunnerBuildJobSpec:
 
     def test_env_vars_include_payload(self):
         config = _make_config()
-        runner = KubernetesRunner(config=config, queue=_make_mock_queue())
+        runner = KubernetesRunner(
+            config=config,
+            queue=_make_mock_queue(),
+            redis=RedisConfig(),
+        )
         job = _make_job()
 
         spec = runner._build_job_spec(
@@ -151,7 +167,11 @@ class TestKubernetesRunnerBuildJobSpec:
 
     def test_env_from_secrets(self):
         config = _make_config()
-        runner = KubernetesRunner(config=config, queue=_make_mock_queue())
+        runner = KubernetesRunner(
+            config=config,
+            queue=_make_mock_queue(),
+            redis=RedisConfig(),
+        )
         job = _make_job()
 
         spec = runner._build_job_spec(
@@ -166,7 +186,11 @@ class TestKubernetesRunnerBuildJobSpec:
 
     def test_resource_limits(self):
         config = _make_config()
-        runner = KubernetesRunner(config=config, queue=_make_mock_queue())
+        runner = KubernetesRunner(
+            config=config,
+            queue=_make_mock_queue(),
+            redis=RedisConfig(),
+        )
         job = _make_job()
 
         spec = runner._build_job_spec(
@@ -180,7 +204,11 @@ class TestKubernetesRunnerBuildJobSpec:
 
     def test_image_pull_policy(self):
         config = _make_config()
-        runner = KubernetesRunner(config=config, queue=_make_mock_queue())
+        runner = KubernetesRunner(
+            config=config,
+            queue=_make_mock_queue(),
+            redis=RedisConfig(),
+        )
         job = _make_job()
 
         spec = runner._build_job_spec(
@@ -193,7 +221,11 @@ class TestKubernetesRunnerBuildJobSpec:
 
     def test_service_account(self):
         config = _make_config()
-        runner = KubernetesRunner(config=config, queue=_make_mock_queue())
+        runner = KubernetesRunner(
+            config=config,
+            queue=_make_mock_queue(),
+            redis=RedisConfig(),
+        )
         job = _make_job()
 
         spec = runner._build_job_spec(
@@ -206,7 +238,11 @@ class TestKubernetesRunnerBuildJobSpec:
 
     def test_job_spec_fields(self):
         config = _make_config()
-        runner = KubernetesRunner(config=config, queue=_make_mock_queue())
+        runner = KubernetesRunner(
+            config=config,
+            queue=_make_mock_queue(),
+            redis=RedisConfig(),
+        )
         job = _make_job()
 
         spec = runner._build_job_spec(
@@ -222,7 +258,11 @@ class TestKubernetesRunnerBuildJobSpec:
         config = KubernetesConfig(
             image="nominal-code:dev",
         )
-        runner = KubernetesRunner(config=config, queue=_make_mock_queue())
+        runner = KubernetesRunner(
+            config=config,
+            queue=_make_mock_queue(),
+            redis=RedisConfig(),
+        )
         job = _make_job()
 
         spec = runner._build_job_spec(
@@ -233,9 +273,13 @@ class TestKubernetesRunnerBuildJobSpec:
 
         assert "resources" not in container
 
-    def test_security_context_enabled_by_default(self):
+    def test_security_context_hardened(self):
         config = _make_config()
-        runner = KubernetesRunner(config=config, queue=_make_mock_queue())
+        runner = KubernetesRunner(
+            config=config,
+            queue=_make_mock_queue(),
+            redis=RedisConfig(),
+        )
         job = _make_job()
 
         spec = runner._build_job_spec(payload="{}", job=job)
@@ -248,9 +292,13 @@ class TestKubernetesRunnerBuildJobSpec:
         assert sec_ctx["allowPrivilegeEscalation"] is False
         assert sec_ctx["capabilities"] == {"drop": ["ALL"]}
 
-    def test_volume_mounts_present_when_security_enabled(self):
+    def test_volume_mounts_present(self):
         config = _make_config()
-        runner = KubernetesRunner(config=config, queue=_make_mock_queue())
+        runner = KubernetesRunner(
+            config=config,
+            queue=_make_mock_queue(),
+            redis=RedisConfig(),
+        )
         job = _make_job()
 
         spec = runner._build_job_spec(payload="{}", job=job)
@@ -260,9 +308,13 @@ class TestKubernetesRunnerBuildJobSpec:
         assert "/workspace" in mount_paths
         assert "/tmp" in mount_paths
 
-    def test_automount_service_account_token_false_by_default(self):
+    def test_automount_service_account_token_false(self):
         config = _make_config()
-        runner = KubernetesRunner(config=config, queue=_make_mock_queue())
+        runner = KubernetesRunner(
+            config=config,
+            queue=_make_mock_queue(),
+            redis=RedisConfig(),
+        )
         job = _make_job()
 
         spec = runner._build_job_spec(payload="{}", job=job)
@@ -270,9 +322,13 @@ class TestKubernetesRunnerBuildJobSpec:
 
         assert pod_spec["automountServiceAccountToken"] is False
 
-    def test_volumes_present_when_security_enabled(self):
+    def test_volumes_present(self):
         config = _make_config()
-        runner = KubernetesRunner(config=config, queue=_make_mock_queue())
+        runner = KubernetesRunner(
+            config=config,
+            queue=_make_mock_queue(),
+            redis=RedisConfig(),
+        )
         job = _make_job()
 
         spec = runner._build_job_spec(payload="{}", job=job)
@@ -284,33 +340,33 @@ class TestKubernetesRunnerBuildJobSpec:
 
     def test_redis_url_forwarded_when_set(self):
         config = _make_config()
-        runner = KubernetesRunner(config=config, queue=_make_mock_queue())
+        redis = RedisConfig(url="redis://redis:6379/0")
+        runner = KubernetesRunner(
+            config=config,
+            queue=_make_mock_queue(),
+            redis=redis,
+        )
         job = _make_job()
 
-        with patch.dict("os.environ", {"REDIS_URL": "redis://redis:6379/0"}):
-            spec = runner._build_job_spec(
-                payload="{}",
-                job=job,
-            )
+        spec = runner._build_job_spec(payload="{}", job=job)
 
         container = spec["spec"]["template"]["spec"]["containers"][0]
         env_vars = {env["name"]: env["value"] for env in container["env"]}
 
         assert env_vars["REDIS_URL"] == "redis://redis:6379/0"
+        assert env_vars["REDIS_KEY_TTL_SECONDS"] == "86400"
 
     def test_redis_url_and_ttl_forwarded(self):
         config = _make_config()
-        runner = KubernetesRunner(config=config, queue=_make_mock_queue())
+        redis = RedisConfig(url="redis://redis:6379/0", key_ttl_seconds=3600)
+        runner = KubernetesRunner(
+            config=config,
+            queue=_make_mock_queue(),
+            redis=redis,
+        )
         job = _make_job()
 
-        with patch.dict(
-            "os.environ",
-            {"REDIS_URL": "redis://redis:6379/0", "REDIS_KEY_TTL_SECONDS": "3600"},
-        ):
-            spec = runner._build_job_spec(
-                payload="{}",
-                job=job,
-            )
+        spec = runner._build_job_spec(payload="{}", job=job)
 
         container = spec["spec"]["template"]["spec"]["containers"][0]
         env_vars = {env["name"]: env["value"] for env in container["env"]}
@@ -320,18 +376,15 @@ class TestKubernetesRunnerBuildJobSpec:
 
     def test_redis_url_not_set(self):
         config = _make_config()
-        runner = KubernetesRunner(config=config, queue=_make_mock_queue())
+        redis = RedisConfig()
+        runner = KubernetesRunner(
+            config=config,
+            queue=_make_mock_queue(),
+            redis=redis,
+        )
         job = _make_job()
 
-        with patch.dict("os.environ", {}, clear=False):
-            env = dict(**os.environ)
-            env.pop("REDIS_URL", None)
-
-            with patch.dict("os.environ", env, clear=True):
-                spec = runner._build_job_spec(
-                    payload="{}",
-                    job=job,
-                )
+        spec = runner._build_job_spec(payload="{}", job=job)
 
         container = spec["spec"]["template"]["spec"]["containers"][0]
         env_names = [env["name"] for env in container["env"]]
@@ -344,7 +397,7 @@ class TestKubernetesRunnerEnqueue:
     async def test_enqueue_delegates_to_queue(self):
         config = _make_config()
         mock_queue = _make_mock_queue()
-        runner = KubernetesRunner(config=config, queue=mock_queue)
+        runner = KubernetesRunner(config=config, queue=mock_queue, redis=RedisConfig())
         job = _make_job()
 
         await runner.enqueue(job)
@@ -355,7 +408,7 @@ class TestKubernetesRunnerEnqueue:
     async def test_init_registers_callback(self):
         config = _make_config()
         mock_queue = _make_mock_queue()
-        KubernetesRunner(config=config, queue=mock_queue)
+        KubernetesRunner(config=config, queue=mock_queue, redis=RedisConfig())
 
         mock_queue.set_job_callback.assert_called_once()
 
@@ -366,7 +419,7 @@ class TestKubernetesRunnerExecute:
         config = _make_config()
         mock_queue = _make_mock_queue()
         mock_queue.await_job_completion = AsyncMock(return_value="succeeded")
-        runner = KubernetesRunner(config=config, queue=mock_queue)
+        runner = KubernetesRunner(config=config, queue=mock_queue, redis=RedisConfig())
         job = _make_job()
 
         mock_response = AsyncMock()
@@ -400,7 +453,7 @@ class TestKubernetesRunnerExecute:
         mock_queue.await_job_completion = AsyncMock(
             side_effect=TimeoutError("timed out"),
         )
-        runner = KubernetesRunner(config=config, queue=mock_queue)
+        runner = KubernetesRunner(config=config, queue=mock_queue, redis=RedisConfig())
         job = _make_job()
 
         mock_response = AsyncMock()
@@ -431,7 +484,7 @@ class TestKubernetesRunnerExecute:
             active_deadline_seconds=300,
         )
         mock_queue = _make_mock_queue()
-        runner = KubernetesRunner(config=config, queue=mock_queue)
+        runner = KubernetesRunner(config=config, queue=mock_queue, redis=RedisConfig())
         job = _make_job()
 
         mock_response = AsyncMock()
@@ -462,7 +515,7 @@ class TestKubernetesRunnerExecute:
     async def test_failed_job_creation_raises(self):
         config = _make_config()
         mock_queue = _make_mock_queue()
-        runner = KubernetesRunner(config=config, queue=mock_queue)
+        runner = KubernetesRunner(config=config, queue=mock_queue, redis=RedisConfig())
         job = _make_job()
 
         mock_response = AsyncMock()

@@ -345,7 +345,7 @@ async def test_webhook_unauthorized_user_ignored(
         },
     )
 
-    assert response.status == 200
+    assert response.status == 403
     data = await response.json()
     assert data["status"] == "unauthorized"
 

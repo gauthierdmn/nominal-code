@@ -9,6 +9,7 @@ from typing import Any
 
 import redis
 
+from nominal_code.config.settings import DEFAULT_REDIS_KEY_TTL_SECONDS
 from nominal_code.llm.messages import (
     Message,
     TextBlock,
@@ -20,7 +21,7 @@ from nominal_code.platforms.base import PlatformName
 
 logger: logging.Logger = logging.getLogger(__name__)
 
-DEFAULT_KEY_TTL: timedelta = timedelta(days=7)
+DEFAULT_KEY_TTL: timedelta = timedelta(seconds=DEFAULT_REDIS_KEY_TTL_SECONDS)
 
 
 class _KeyPrefix(StrEnum):

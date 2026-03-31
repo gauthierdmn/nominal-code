@@ -5,10 +5,10 @@ import logging
 from environs import Env
 
 from nominal_code.config import Config, load_config_for_ci, resolve_provider_config
-from nominal_code.config.settings import DEFAULT_REDIS_KEY_TTL_SECONDS
+from nominal_code.config.settings import DEFAULT_REDIS_KEY_TTL_SECONDS, RedisConfig
 from nominal_code.conversation.base import ConversationStore, build_conversation_store
-from nominal_code.handlers.review import run_and_post_review
-from nominal_code.handlers.worker import review_and_fix
+from nominal_code.jobs.dispatch import JobResult, execute_job
+from nominal_code.jobs.handler import DefaultJobHandler, JobHandler
 from nominal_code.jobs.payload import JobPayload
 from nominal_code.jobs.runner.kubernetes import (
     build_job_channel_key,
@@ -17,8 +17,7 @@ from nominal_code.jobs.runner.kubernetes import (
 from nominal_code.llm.cost import format_cost_summary
 from nominal_code.models import BotType
 from nominal_code.platforms import load_platform_ci
-from nominal_code.platforms.base import CommentEvent, PlatformName, ReviewerPlatform
-from nominal_code.workspace.setup import prepare_job_event
+from nominal_code.platforms.base import PlatformName, ReviewerPlatform
 
 _env: Env = Env()
 logger: logging.Logger = logging.getLogger(__name__)
@@ -57,54 +56,45 @@ async def run_job_main() -> int:
 
         return 1
 
-    redis = config.webhook.redis if config.webhook is not None else None
+    redis: RedisConfig = _build_redis_config()
+
     conversation_store: ConversationStore = build_conversation_store(
-        redis_url=redis.url if redis is not None else "",
-        redis_key_ttl_seconds=(
-            redis.key_ttl_seconds
-            if redis is not None
-            else DEFAULT_REDIS_KEY_TTL_SECONDS
-        ),
+        redis_url=redis.url,
+        redis_key_ttl_seconds=redis.key_ttl_seconds,
     )
 
     platform_name: PlatformName = PlatformName(job.event.platform)
     platform: ReviewerPlatform = _build_platform(platform_name)
+    handler: JobHandler = DefaultJobHandler()
 
-    bot_type: BotType = BotType(job.bot_type)
+    exit_code: int = await _run_job(
+        job=job,
+        config=config,
+        platform=platform,
+        handler=handler,
+        conversation_store=conversation_store,
+    )
 
-    if bot_type == BotType.REVIEWER:
-        exit_code: int = await _run_reviewer_job(
-            job=job,
-            config=config,
-            platform=platform,
-            conversation_store=conversation_store,
-        )
-    else:
-        exit_code = await _run_worker_job(
-            job=job,
-            config=config,
-            platform=platform,
-            conversation_store=conversation_store,
-        )
-
-    _publish_completion(exit_code=exit_code, job=job)
+    _publish_completion(exit_code=exit_code, job=job, redis=redis)
 
     return exit_code
 
 
-async def _run_reviewer_job(
+async def _run_job(
     job: JobPayload,
     config: Config,
     platform: ReviewerPlatform,
+    handler: JobHandler,
     conversation_store: ConversationStore | None = None,
 ) -> int:
     """
-    Execute a reviewer job and post results.
+    Execute a job via the unified dispatch pipeline.
 
     Args:
         job (JobPayload): The deserialized job payload.
         config (Config): Application configuration.
         platform (ReviewerPlatform): The platform client.
+        handler (JobHandler): The job handler to delegate execution to.
         conversation_store (ConversationStore | None): Conversation store
             for conversation continuity.
 
@@ -112,124 +102,50 @@ async def _run_reviewer_job(
         int: Exit code (0 on success, 1 on failure).
     """
 
-    await platform.authenticate()
+    bot_type: BotType = BotType(job.bot_type)
 
     logger.info(
-        "Running job review for %s#%d on %s",
+        "Running %s job for %s#%d on %s",
+        bot_type.value,
         job.event.repo_full_name,
         job.event.pr_number,
         job.event.platform,
     )
 
     try:
-        prepared_event = await prepare_job_event(
-            event=job.event,
-            bot_type=BotType.REVIEWER,
+        result: JobResult = await execute_job(
+            job=job,
             platform=platform,
+            handler=handler,
+            config=config,
+            conversation_store=conversation_store,
+        )
+    except Exception:
+        logger.exception(
+            "%s job failed for %s#%d",
+            bot_type.value.capitalize(),
+            job.event.repo_full_name,
+            job.event.pr_number,
         )
 
-        mention_prompt: str = ""
+        return 1
 
-        if isinstance(prepared_event, CommentEvent) and prepared_event.mention_prompt:
-            mention_prompt = prepared_event.mention_prompt
+    if result.review_result is not None:
+        cost_info: str = format_cost_summary(cost=result.review_result.cost)
 
         logger.info(
-            "Starting review for %s#%d",
+            "Job review posted for %s#%d (findings=%d)%s",
+            job.event.repo_full_name,
+            job.event.pr_number,
+            len(result.review_result.valid_findings),
+            cost_info,
+        )
+    else:
+        logger.info(
+            "Worker job completed for %s#%d",
             job.event.repo_full_name,
             job.event.pr_number,
         )
-
-        result = await run_and_post_review(
-            event=prepared_event,
-            prompt=mention_prompt,
-            config=config,
-            platform=platform,
-            conversation_store=conversation_store,
-            namespace=job.namespace,
-        )
-    except Exception:
-        logger.exception(
-            "Review failed for %s#%d",
-            job.event.repo_full_name,
-            job.event.pr_number,
-        )
-
-        return 1
-
-    cost_info: str = format_cost_summary(cost=result.cost)
-
-    logger.info(
-        "Job review posted for %s#%d (findings=%d)%s",
-        job.event.repo_full_name,
-        job.event.pr_number,
-        len(result.valid_findings),
-        cost_info,
-    )
-
-    return 0
-
-
-async def _run_worker_job(
-    job: JobPayload,
-    config: Config,
-    platform: ReviewerPlatform,
-    conversation_store: ConversationStore | None = None,
-) -> int:
-    """
-    Execute a worker job.
-
-    Args:
-        job (JobPayload): The deserialized job payload.
-        config (Config): Application configuration.
-        platform (ReviewerPlatform): The platform client.
-        conversation_store (ConversationStore | None): Conversation store
-            for conversation continuity.
-
-    Returns:
-        int: Exit code (0 on success, 1 on failure).
-    """
-
-    await platform.authenticate()
-
-    logger.info(
-        "Running worker job for %s#%d on %s",
-        job.event.repo_full_name,
-        job.event.pr_number,
-        job.event.platform,
-    )
-
-    try:
-        prepared_event = await prepare_job_event(
-            event=job.event,
-            bot_type=BotType.WORKER,
-            platform=platform,
-        )
-
-        if not isinstance(prepared_event, CommentEvent):
-            raise RuntimeError("Worker job requires a comment event")
-
-        await review_and_fix(
-            event=prepared_event,
-            prompt=prepared_event.mention_prompt or "",
-            config=config,
-            platform=platform,
-            conversation_store=conversation_store,
-            namespace=job.namespace,
-        )
-    except Exception:
-        logger.exception(
-            "Worker job failed for %s#%d",
-            job.event.repo_full_name,
-            job.event.pr_number,
-        )
-
-        return 1
-
-    logger.info(
-        "Worker job completed for %s#%d",
-        job.event.repo_full_name,
-        job.event.pr_number,
-    )
 
     return 0
 
@@ -273,23 +189,38 @@ def _build_job_config() -> Config:
     return load_config_for_ci(provider=provider_config)
 
 
-def _publish_completion(exit_code: int, job: JobPayload) -> None:
+def _build_redis_config() -> RedisConfig:
+    """
+    Build a RedisConfig from environment variables.
+
+    The K8s job pod receives ``REDIS_URL`` and ``REDIS_KEY_TTL_SECONDS``
+    as env vars forwarded by ``KubernetesRunner``.
+
+    Returns:
+        RedisConfig: The resolved Redis configuration.
+    """
+
+    return RedisConfig(
+        url=_env.str("REDIS_URL", ""),
+        key_ttl_seconds=int(
+            _env.str("REDIS_KEY_TTL_SECONDS", str(DEFAULT_REDIS_KEY_TTL_SECONDS)),
+        ),
+    )
+
+
+def _publish_completion(exit_code: int, job: JobPayload, redis: RedisConfig) -> None:
     """
     Publish a job completion signal to Redis if running as a K8s Job.
-
-    Checks for ``REDIS_URL`` to determine whether Redis pub/sub is
-    available. The channel key is derived from the job payload.
 
     Args:
         exit_code (int): The job exit code (0 = succeeded).
         job (JobPayload): The job payload (used to build the channel key).
+        redis (RedisConfig): Redis configuration.
     """
 
-    redis_url: str = _env.str("REDIS_URL", "")
-
-    if not redis_url:
+    if not redis.url:
         return
 
     channel_key: str = build_job_channel_key(job)
     status: str = "succeeded" if exit_code == 0 else "failed"
-    publish_job_completion(redis_url=redis_url, channel_key=channel_key, status=status)
+    publish_job_completion(redis_url=redis.url, channel_key=channel_key, status=status)

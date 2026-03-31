@@ -5,16 +5,15 @@ import re
 from typing import TYPE_CHECKING, Any
 
 import httpx
-from environs import Env
 
 from nominal_code.config import KubernetesConfig
+from nominal_code.config.settings import RedisConfig
 from nominal_code.jobs.payload import JobPayload
 from nominal_code.jobs.queue.redis import RedisJobQueue
 
 if TYPE_CHECKING:
     import redis
 
-_env: Env = Env()
 logger: logging.Logger = logging.getLogger(__name__)
 
 SERVICE_ACCOUNT_TOKEN_PATH: str = "/var/run/secrets/kubernetes.io/serviceaccount/token"
@@ -38,9 +37,15 @@ class KubernetesRunner:
     Attributes:
         _config (KubernetesConfig): Kubernetes-specific configuration.
         _queue (RedisJobQueue): Redis-backed per-PR job queue.
+        _redis (RedisConfig): Redis configuration forwarded to job pods.
     """
 
-    def __init__(self, config: KubernetesConfig, queue: RedisJobQueue) -> None:
+    def __init__(
+        self,
+        config: KubernetesConfig,
+        queue: RedisJobQueue,
+        redis: RedisConfig,
+    ) -> None:
         """
         Initialize the Kubernetes runner.
 
@@ -50,10 +55,13 @@ class KubernetesRunner:
         Args:
             config (KubernetesConfig): Kubernetes-specific configuration.
             queue (RedisJobQueue): Redis-backed job queue.
+            redis (RedisConfig): Redis configuration forwarded to job pods
+                as ``REDIS_URL`` and ``REDIS_KEY_TTL_SECONDS`` env vars.
         """
 
         self._config = config
         self._queue = queue
+        self._redis = redis
         self._queue.set_job_callback(self._execute)
 
     async def enqueue(self, job: JobPayload) -> None:
@@ -190,17 +198,14 @@ class KubernetesRunner:
             {"name": "REVIEW_JOB_PAYLOAD", "value": payload},
         ]
 
-        redis_url: str = _env.str("REDIS_URL", "")
-
-        if redis_url:
-            env_vars.append({"name": "REDIS_URL", "value": redis_url})
-
-            redis_ttl: str = _env.str("REDIS_KEY_TTL_SECONDS", "")
-
-            if redis_ttl:
-                env_vars.append(
-                    {"name": "REDIS_KEY_TTL_SECONDS", "value": redis_ttl},
-                )
+        if self._redis.url:
+            env_vars.append({"name": "REDIS_URL", "value": self._redis.url})
+            env_vars.append(
+                {
+                    "name": "REDIS_KEY_TTL_SECONDS",
+                    "value": str(self._redis.key_ttl_seconds),
+                },
+            )
 
         for env_name, env_value in job.extra_env.items():
             env_vars.append({"name": env_name, "value": env_value})

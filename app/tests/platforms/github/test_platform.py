@@ -50,11 +50,8 @@ def platform_with_reviewer_token():
     return GitHubPlatform(auth=auth, webhook_secret="test-secret")
 
 
-def _make_request(headers=None, body=b""):
-    request = MagicMock()
-    request.headers = headers or {}
-
-    return request
+def _make_headers(headers=None):
+    return headers or {}
 
 
 def _sign(secret, body):
@@ -85,27 +82,27 @@ class TestVerifyWebhook:
     def test_verify_webhook_valid_signature(self, platform):
         body = b'{"test": true}'
         signature = _sign("test-secret", body)
-        request = _make_request({"X-Hub-Signature-256": signature})
+        headers = _make_headers({"X-Hub-Signature-256": signature})
 
-        assert platform.verify_webhook(request, body) is True
+        assert platform.verify_webhook(headers, body) is True
 
     def test_verify_webhook_invalid_signature(self, platform):
         body = b'{"test": true}'
-        request = _make_request({"X-Hub-Signature-256": "sha256=invalid"})
+        headers = _make_headers({"X-Hub-Signature-256": "sha256=invalid"})
 
-        assert platform.verify_webhook(request, body) is False
+        assert platform.verify_webhook(headers, body) is False
 
     def test_verify_webhook_missing_signature(self, platform):
         body = b'{"test": true}'
-        request = _make_request({})
+        headers = _make_headers({})
 
-        assert platform.verify_webhook(request, body) is False
+        assert platform.verify_webhook(headers, body) is False
 
     def test_verify_webhook_no_secret_configured(self, platform_no_secret):
         body = b'{"test": true}'
-        request = _make_request({})
+        headers = _make_headers({})
 
-        assert platform_no_secret.verify_webhook(request, body) is True
+        assert platform_no_secret.verify_webhook(headers, body) is True
 
 
 class TestParseWebhook:
@@ -124,8 +121,8 @@ class TestParseWebhook:
             "repository": {"full_name": "owner/repo"},
         }
         body = json.dumps(payload).encode()
-        request = _make_request({"X-GitHub-Event": "issue_comment"})
-        result = platform.parse_event(request, body)
+        headers = _make_headers({"X-GitHub-Event": "issue_comment"})
+        result = platform.parse_event(headers, body)
 
         assert result is not None
         assert result.platform == "github"
@@ -144,9 +141,9 @@ class TestParseWebhook:
             "repository": {"full_name": "owner/repo"},
         }
         body = json.dumps(payload).encode()
-        request = _make_request({"X-GitHub-Event": "issue_comment"})
+        headers = _make_headers({"X-GitHub-Event": "issue_comment"})
 
-        assert platform.parse_event(request, body) is None
+        assert platform.parse_event(headers, body) is None
 
     def test_parse_issue_comment_not_created(self, platform):
         payload = {
@@ -159,9 +156,9 @@ class TestParseWebhook:
             "repository": {"full_name": "owner/repo"},
         }
         body = json.dumps(payload).encode()
-        request = _make_request({"X-GitHub-Event": "issue_comment"})
+        headers = _make_headers({"X-GitHub-Event": "issue_comment"})
 
-        assert platform.parse_event(request, body) is None
+        assert platform.parse_event(headers, body) is None
 
     def test_parse_review_comment(self, platform):
         payload = {
@@ -180,10 +177,10 @@ class TestParseWebhook:
             "repository": {"full_name": "owner/repo"},
         }
         body = json.dumps(payload).encode()
-        request = _make_request(
+        headers = _make_headers(
             {"X-GitHub-Event": "pull_request_review_comment"},
         )
-        result = platform.parse_event(request, body)
+        result = platform.parse_event(headers, body)
 
         assert result is not None
         assert result.pr_number == 10
@@ -207,8 +204,8 @@ class TestParseWebhook:
             "repository": {"full_name": "owner/repo"},
         }
         body = json.dumps(payload).encode()
-        request = _make_request({"X-GitHub-Event": "pull_request_review"})
-        result = platform.parse_event(request, body)
+        headers = _make_headers({"X-GitHub-Event": "pull_request_review"})
+        result = platform.parse_event(headers, body)
 
         assert result is not None
         assert result.pr_number == 5
@@ -227,15 +224,15 @@ class TestParseWebhook:
             "repository": {"full_name": "owner/repo"},
         }
         body = json.dumps(payload).encode()
-        request = _make_request({"X-GitHub-Event": "pull_request_review"})
+        headers = _make_headers({"X-GitHub-Event": "pull_request_review"})
 
-        assert platform.parse_event(request, body) is None
+        assert platform.parse_event(headers, body) is None
 
     def test_parse_unknown_event(self, platform):
         body = b'{"action": "opened"}'
-        request = _make_request({"X-GitHub-Event": "push"})
+        headers = _make_headers({"X-GitHub-Event": "push"})
 
-        assert platform.parse_event(request, body) is None
+        assert platform.parse_event(headers, body) is None
 
     def test_parse_event_does_not_mutate_auth(self, platform):
         payload = {
@@ -253,9 +250,9 @@ class TestParseWebhook:
             "repository": {"full_name": "owner/repo"},
         }
         body = json.dumps(payload).encode()
-        request = _make_request({"X-GitHub-Event": "issue_comment"})
+        headers = _make_headers({"X-GitHub-Event": "issue_comment"})
 
-        platform.parse_event(request, body)
+        platform.parse_event(headers, body)
 
 
 class TestParsePullRequest:
@@ -272,8 +269,8 @@ class TestParsePullRequest:
             "repository": {"full_name": "owner/repo"},
         }
         body = json.dumps(payload).encode()
-        request = _make_request({"X-GitHub-Event": "pull_request"})
-        result = platform.parse_event(request, body)
+        headers = _make_headers({"X-GitHub-Event": "pull_request"})
+        result = platform.parse_event(headers, body)
 
         assert result is not None
         assert result.event_type == EventType.PR_OPENED
@@ -296,8 +293,8 @@ class TestParsePullRequest:
             "repository": {"full_name": "owner/repo"},
         }
         body = json.dumps(payload).encode()
-        request = _make_request({"X-GitHub-Event": "pull_request"})
-        result = platform.parse_event(request, body)
+        headers = _make_headers({"X-GitHub-Event": "pull_request"})
+        result = platform.parse_event(headers, body)
 
         assert result is not None
         assert result.event_type == EventType.PR_PUSH
@@ -315,8 +312,8 @@ class TestParsePullRequest:
             "repository": {"full_name": "owner/repo"},
         }
         body = json.dumps(payload).encode()
-        request = _make_request({"X-GitHub-Event": "pull_request"})
-        result = platform.parse_event(request, body)
+        headers = _make_headers({"X-GitHub-Event": "pull_request"})
+        result = platform.parse_event(headers, body)
 
         assert result is not None
         assert result.event_type == EventType.PR_REOPENED
@@ -334,8 +331,8 @@ class TestParsePullRequest:
             "repository": {"full_name": "owner/repo"},
         }
         body = json.dumps(payload).encode()
-        request = _make_request({"X-GitHub-Event": "pull_request"})
-        result = platform.parse_event(request, body)
+        headers = _make_headers({"X-GitHub-Event": "pull_request"})
+        result = platform.parse_event(headers, body)
 
         assert result is not None
         assert result.event_type == EventType.PR_READY_FOR_REVIEW
@@ -353,9 +350,9 @@ class TestParsePullRequest:
             "repository": {"full_name": "owner/repo"},
         }
         body = json.dumps(payload).encode()
-        request = _make_request({"X-GitHub-Event": "pull_request"})
+        headers = _make_headers({"X-GitHub-Event": "pull_request"})
 
-        assert platform.parse_event(request, body) is None
+        assert platform.parse_event(headers, body) is None
 
     def test_parse_pr_closed_ignored(self, platform):
         payload = {
@@ -370,9 +367,9 @@ class TestParsePullRequest:
             "repository": {"full_name": "owner/repo"},
         }
         body = json.dumps(payload).encode()
-        request = _make_request({"X-GitHub-Event": "pull_request"})
+        headers = _make_headers({"X-GitHub-Event": "pull_request"})
 
-        assert platform.parse_event(request, body) is None
+        assert platform.parse_event(headers, body) is None
 
 
 class TestBuildCloneUrl:
