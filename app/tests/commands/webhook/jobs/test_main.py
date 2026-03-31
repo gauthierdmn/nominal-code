@@ -83,6 +83,58 @@ class TestRunJobMain:
         mock_execute.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_pre_cloned_forwarded_to_execute_job(self, monkeypatch):
+        job = _make_reviewer_job()
+        monkeypatch.setenv("REVIEW_JOB_PAYLOAD", job.serialize())
+        monkeypatch.setenv("AGENT_PROVIDER", "anthropic")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+        monkeypatch.setenv("GITHUB_TOKEN", "test-token")
+
+        mock_platform = MagicMock()
+
+        with (
+            patch(
+                "nominal_code.commands.webhook.jobs.main.build_platform",
+                return_value=mock_platform,
+            ),
+            patch(
+                "nominal_code.commands.webhook.jobs.main.execute_job",
+                new_callable=AsyncMock,
+                return_value=_make_review_result(),
+            ) as mock_execute,
+        ):
+            await run_job_main(pre_cloned=True)
+
+        _, call_kwargs = mock_execute.call_args
+        assert call_kwargs["pre_cloned"] is True
+
+    @pytest.mark.asyncio
+    async def test_pre_cloned_defaults_to_false(self, monkeypatch):
+        job = _make_reviewer_job()
+        monkeypatch.setenv("REVIEW_JOB_PAYLOAD", job.serialize())
+        monkeypatch.setenv("AGENT_PROVIDER", "anthropic")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+        monkeypatch.setenv("GITHUB_TOKEN", "test-token")
+
+        mock_platform = MagicMock()
+
+        with (
+            patch(
+                "nominal_code.commands.webhook.jobs.main.build_platform",
+                return_value=mock_platform,
+            ),
+            patch(
+                "nominal_code.commands.webhook.jobs.main.execute_job",
+                new_callable=AsyncMock,
+                return_value=_make_review_result(),
+            ) as mock_execute,
+        ):
+            await run_job_main()
+
+        _, call_kwargs = mock_execute.call_args
+        assert call_kwargs["pre_cloned"] is False
+
+    @pytest.mark.asyncio
     async def test_review_exception_returns_1(self, monkeypatch):
         job = _make_reviewer_job()
         monkeypatch.setenv("REVIEW_JOB_PAYLOAD", job.serialize())
