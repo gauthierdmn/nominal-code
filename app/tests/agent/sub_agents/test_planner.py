@@ -9,24 +9,25 @@ from nominal_code.agent.sub_agents.planner import (
     parse_planner_response,
     plan_exploration_groups,
 )
-from nominal_code.agent.sub_agents.result import ExploreGroup
 from nominal_code.llm.messages import LLMResponse, StopReason, TextBlock
 
 
 class TestParsePlannerResponse:
     def test_valid_json(self):
-        response = json.dumps([
-            {
-                "label": "auth",
-                "files": ["src/auth.py"],
-                "prompt": "Explore auth changes.",
-            },
-            {
-                "label": "models",
-                "files": ["src/models.py"],
-                "prompt": "Explore model changes.",
-            },
-        ])
+        response = json.dumps(
+            [
+                {
+                    "label": "auth",
+                    "files": ["src/auth.py"],
+                    "prompt": "Explore auth changes.",
+                },
+                {
+                    "label": "models",
+                    "files": ["src/models.py"],
+                    "prompt": "Explore model changes.",
+                },
+            ]
+        )
         changed_files = ["src/auth.py", "src/models.py"]
 
         groups = parse_planner_response(response, changed_files)
@@ -60,12 +61,14 @@ class TestParsePlannerResponse:
         assert result is None
 
     def test_missing_fields_skipped(self):
-        response = json.dumps([
-            {"label": "good", "files": ["a.py"], "prompt": "explore"},
-            {"label": "no-prompt", "files": ["b.py"]},
-            {"files": ["c.py"], "prompt": "no label"},
-            {"label": "no-files", "prompt": "explore"},
-        ])
+        response = json.dumps(
+            [
+                {"label": "good", "files": ["a.py"], "prompt": "explore"},
+                {"label": "no-prompt", "files": ["b.py"]},
+                {"files": ["c.py"], "prompt": "no label"},
+                {"label": "no-files", "prompt": "explore"},
+            ]
+        )
         changed_files = ["a.py", "b.py", "c.py"]
 
         groups = parse_planner_response(response, changed_files)
@@ -75,13 +78,15 @@ class TestParsePlannerResponse:
         assert groups[0].label == "good"
 
     def test_unknown_files_filtered(self):
-        response = json.dumps([
-            {
-                "label": "mixed",
-                "files": ["known.py", "unknown.py"],
-                "prompt": "explore",
-            },
-        ])
+        response = json.dumps(
+            [
+                {
+                    "label": "mixed",
+                    "files": ["known.py", "unknown.py"],
+                    "prompt": "explore",
+                },
+            ]
+        )
         changed_files = ["known.py"]
 
         groups = parse_planner_response(response, changed_files)
@@ -91,9 +96,11 @@ class TestParsePlannerResponse:
         assert groups[0].files == ["known.py"]
 
     def test_all_unknown_files_returns_none(self):
-        response = json.dumps([
-            {"label": "ghost", "files": ["unknown.py"], "prompt": "explore"},
-        ])
+        response = json.dumps(
+            [
+                {"label": "ghost", "files": ["unknown.py"], "prompt": "explore"},
+            ]
+        )
         changed_files = ["actual.py"]
 
         groups = parse_planner_response(response, changed_files)
@@ -138,13 +145,15 @@ class TestBuildPlannerUserMessage:
 class TestPlanExplorationGroups:
     @pytest.mark.asyncio
     async def test_successful_planning(self):
-        response_json = json.dumps([
-            {
-                "label": "core",
-                "files": ["src/core.py"],
-                "prompt": "Explore core changes.",
-            },
-        ])
+        response_json = json.dumps(
+            [
+                {
+                    "label": "core",
+                    "files": ["src/core.py"],
+                    "prompt": "Explore core changes.",
+                },
+            ]
+        )
 
         mock_provider = AsyncMock()
         mock_provider.send = AsyncMock(
@@ -182,13 +191,15 @@ class TestPlanExplorationGroups:
 
     @pytest.mark.asyncio
     async def test_uses_custom_system_prompt(self):
-        response_json = json.dumps([
-            {
-                "label": "all",
-                "files": ["a.py"],
-                "prompt": "explore",
-            },
-        ])
+        response_json = json.dumps(
+            [
+                {
+                    "label": "all",
+                    "files": ["a.py"],
+                    "prompt": "explore",
+                },
+            ]
+        )
 
         mock_provider = AsyncMock()
         mock_provider.send = AsyncMock(
