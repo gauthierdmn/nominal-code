@@ -47,6 +47,7 @@ if TYPE_CHECKING:
     from nominal_code.config import Config
     from nominal_code.conversation.base import ConversationStore
     from nominal_code.llm.cost import CostSummary
+    from nominal_code.llm.messages import Message
     from nominal_code.models import AgentReview
     from nominal_code.platforms.base import Platform
     from nominal_code.workspace.git import GitWorkspace
@@ -76,6 +77,9 @@ class ReviewResult:
         effective_summary (str): Summary with rejected findings appended.
         raw_output (str): The raw agent output text.
         cost (CostSummary | None): Cost information from the agent invocation.
+        num_turns (int): Number of agentic turns taken by the LLM.
+        messages (tuple[Message, ...]): Full LLM conversation transcript.
+        input_prompt (str): Full prompt sent to the LLM.
     """
 
     agent_review: AgentReview | None
@@ -84,6 +88,9 @@ class ReviewResult:
     effective_summary: str
     raw_output: str
     cost: CostSummary | None = None
+    num_turns: int = 0
+    messages: tuple[Message, ...] = ()
+    input_prompt: str = ""
 
 
 @dataclass(frozen=True)
@@ -209,6 +216,7 @@ async def review(
     workspace_path: str = "",
     conversation_store: ConversationStore | None = None,
     namespace: str = "",
+    context: str = "",
 ) -> ReviewResult:
     """
     Run the core review logic without posting results to the platform.
@@ -227,6 +235,9 @@ async def review(
         conversation_store (ConversationStore | None): Conversation store for
             conversation continuity.
         namespace (str): Logical namespace for conversation key isolation.
+        context (str): Pre-review context to include in the user message.
+            Inserted verbatim before the review instruction. Typically
+            the output from codebase exploration sub-agents.
 
     Returns:
         ReviewResult: The review result with findings and summary.
@@ -243,18 +254,26 @@ async def review(
         bot_username=bot_username,
     )
 
+    if config.reviewer is None:
+        raise ValueError("ReviewerConfig is required but not configured")
+
+    reviewer_config = config.reviewer
+
     full_prompt: str = _build_reviewer_prompt(
         event=event,
         user_prompt=prompt,
         changed_files=ctx.changed_files,
         deps_path=ctx.deps_path,
         existing_comments=ctx.existing_comments,
+        inline_suggestions=bool(reviewer_config.suggestions_prompt),
+        context=context,
     )
+    base_system_prompt: str = reviewer_config.system_prompt
 
-    if config.reviewer is None:
-        raise ValueError("ReviewerConfig is required but not configured")
-
-    reviewer_config = config.reviewer
+    if reviewer_config.suggestions_prompt:
+        base_system_prompt = (
+            base_system_prompt + "\n\n" + reviewer_config.suggestions_prompt
+        )
 
     file_paths: list[Path] = [Path(changed.file_path) for changed in ctx.changed_files]
 
@@ -267,17 +286,17 @@ async def review(
         )
         if effective_guidelines:
             combined_system_prompt: str = (
-                reviewer_config.system_prompt
+                base_system_prompt
                 + "\n\n"
                 + wrap_tag(TAG_REPO_GUIDELINES, effective_guidelines)
             )
         else:
-            combined_system_prompt = reviewer_config.system_prompt
+            combined_system_prompt = base_system_prompt
     else:
         combined_system_prompt = resolve_system_prompt(
             workspace=ctx.workspace,
             config=config,
-            bot_system_prompt=reviewer_config.system_prompt,
+            bot_system_prompt=base_system_prompt,
             file_paths=file_paths,
         )
 
@@ -341,6 +360,10 @@ async def review(
             rejected_findings=[],
             effective_summary="",
             raw_output=fallback_comment,
+            cost=result.cost,
+            num_turns=result.num_turns,
+            messages=result.messages,
+            input_prompt=full_prompt,
         )
 
     valid_findings, rejected_findings = filter_findings(
@@ -388,6 +411,9 @@ async def review(
         effective_summary=effective_summary,
         raw_output=result.output,
         cost=result.cost,
+        num_turns=result.num_turns,
+        messages=result.messages,
+        input_prompt=full_prompt,
     )
 
 
@@ -452,6 +478,7 @@ async def run_and_post_review(
     workspace_path: str = "",
     conversation_store: ConversationStore | None = None,
     namespace: str = "",
+    context: str = "",
 ) -> ReviewResult:
     """
     Run a review and post the results to the platform.
@@ -469,6 +496,7 @@ async def run_and_post_review(
         conversation_store (ConversationStore | None): Conversation store for
             conversation continuity.
         namespace (str): Logical namespace for conversation key isolation.
+        context (str): Pre-review context to include in the user message.
 
     Returns:
         ReviewResult: The review result with findings and summary.
@@ -488,6 +516,7 @@ async def run_and_post_review(
         workspace_path=workspace_path,
         conversation_store=conversation_store,
         namespace=namespace,
+        context=context,
     )
 
     await post_review_result(
@@ -505,6 +534,8 @@ def _build_reviewer_prompt(
     changed_files: list[ChangedFile],
     deps_path: Path | None = None,
     existing_comments: list[ExistingComment] | None = None,
+    inline_suggestions: bool = True,
+    context: str = "",
 ) -> str:
     """
     Build a prompt for the reviewer bot including the full PR diff.
@@ -514,8 +545,12 @@ def _build_reviewer_prompt(
         user_prompt (str): The user's extracted prompt text.
         changed_files (list[ChangedFile]): Files changed in the PR.
         deps_path (Path | None): Path to the shared dependencies directory.
+        inline_suggestions (bool): Whether to instruct the agent to produce
+            one-click-apply code suggestions.
         existing_comments (list[ExistingComment] | None): Existing PR
             comments to include as context.
+        context (str): Pre-review context to include before the review
+            instruction. Inserted verbatim when non-empty.
 
     Returns:
         str: The full prompt to send to the agent.
@@ -549,13 +584,29 @@ def _build_reviewer_prompt(
     if existing_comments:
         parts.append(_format_existing_comments(existing_comments))
 
-    parts.append(
-        "Review the above changes and output your review as JSON "
-        "following the format described in your system prompt. "
+    if context:
+        parts.append(context)
+
+    review_instruction: str = (
+        "Review the above changes. Before submitting your review, use the "
+        "Read tool to open each file you plan to comment on and verify that "
+        "your line numbers match the actual code. Diff hunk headers are not "
+        "reliable for counting — always confirm with Read. When you are "
+        "confident in your findings, call the submit_review tool.\n\n"
         "For comments on deleted lines (lines starting with `-` in the diff), "
         'set `"side": "LEFT"`. For additions (`+`) and context lines omit '
-        '`side` or use `"RIGHT"`.',
+        '`side` or use `"RIGHT"`.'
     )
+
+    if inline_suggestions:
+        review_instruction += (
+            "\n\nFor every issue where you can provide a concrete fix, "
+            "you MUST include a `suggestion` field with the exact "
+            "replacement code. Read the file first to get the correct "
+            "indentation and surrounding context."
+        )
+
+    parts.append(review_instruction)
 
     if deps_path is not None:
         parts.append(
