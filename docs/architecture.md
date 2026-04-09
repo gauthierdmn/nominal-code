@@ -141,6 +141,71 @@ Used by **CI mode**. Calls the LLM provider API directly with tool use. Supports
 
 The dispatcher in `agent/invoke.py` routes to the appropriate backend based on whether the config is a `CliAgentConfig` or `ApiAgentConfig`.
 
+## Sub-Agents
+
+The `agent/sub_agents/` package provides first-class support for parallel sub-agent execution. Sub-agents are lightweight, isolated agent instances that compose on top of `run_api_agent()`.
+
+### Agent Types
+
+`AgentType` is a `StrEnum` with per-type tool restrictions:
+
+| Type | Tools | Purpose |
+|---|---|---|
+| `explore` | Read, Glob, Grep, Bash | Read-only codebase exploration |
+| `plan` | Read, Glob, Grep, Bash | Planning and analysis |
+
+No agent type includes the `submit_review` or `Agent` tool — sub-agents cannot produce reviews or spawn other sub-agents.
+
+### Parallel Exploration
+
+The primary entry point is `run_explore_with_planner()`:
+
+```
+changed_files + diffs
+        │
+        ├─ if len(files) >= file_threshold (default 8):
+        │       ▼
+        │   plan_exploration_groups()
+        │       │
+        │       ├─ build_planner_user_message() → file paths + line counts
+        │       ├─ provider.send() → single LLM call (no tools, JSON output)
+        │       └─ parse_planner_response() → list[ExploreGroup]
+        │
+        ├─ if planner produced ≥2 groups:
+        │       ▼
+        │   run_explore(groups)
+        │       │
+        │       ├─ allocate_turns(total, num_groups) → per_group turns (min 4)
+        │       ├─ asyncio.gather([
+        │       │    _run_single_sub_agent(group) → run_api_agent(allowed_tools=...)
+        │       │    for group in groups
+        │       │  ], return_exceptions=True)
+        │       └─ aggregate_metrics() → AggregatedMetrics
+        │
+        └─ else (fallback):
+                ▼
+            Single agent with all files in one group
+```
+
+Each sub-agent receives:
+- A system prompt with the sub-agent suffix ("You are a background sub-agent...")
+- Tool restrictions from `AGENT_TYPE_TOOLS[AgentType.EXPLORE]`
+- The group's exploration prompt (authored by the planner)
+- An isolated turn budget
+
+### Key Types
+
+- `ExploreGroup(label, files, prompt)` — a partition of changed files with a focused exploration prompt.
+- `SubAgentResult(group, output, is_error, num_turns, duration_ms, messages, cost)` — result from one sub-agent.
+- `AggregatedMetrics` — summed token counts, API calls, and costs across sub-agents with wall-clock duration.
+- `ParallelExploreResult(sub_results, metrics)` — aggregated result from parallel execution.
+
+### Prompts
+
+Bundled prompt files in `prompts/sub_agents/`:
+- `explore.md` — system prompt for exploration sub-agents (read-only context gathering).
+- `planner.md` — system prompt for the planner (file grouping into JSON).
+
 ## Policies
 
 Event handling is governed by two frozen Pydantic models that separate **what** gets processed from **how** it gets dispatched:
@@ -256,9 +321,23 @@ Defines and executes tools for the API runner: `Read`, `Glob`, `Grep`, and `Bash
 
 Wraps the Claude Code SDK to stream messages from the CLI subprocess. See [Claude Code CLI Runner](#claude-code-cli-runner) above.
 
-### Prompt Composition (`agent/prompts.py`)
+### Prompt Composition
 
-Loads and composes the system prompt from multiple sources: the bot's base prompt, global coding guidelines, and per-repo/per-language overrides from the `.nominal/` directory. Language detection is based on file extensions in the PR diff.
+The reviewer prompt is composed from multiple sources across two layers:
+
+**System prompt** (instructions — who you are, how to behave):
+1. Base reviewer prompt (`prompts/reviewer_prompt.md`)
+2. Suggestions instructions (`prompts/reviewer_suggestions.md`) — appended when `inline_suggestions` is enabled in config
+3. Repository guidelines (`.nominal/guidelines.md` or built-in) — wrapped in `<repo-guidelines>` tags
+
+**User message** (the review input — what to review):
+1. Branch header and user prompt (wrapped in `<untrusted-request>`)
+2. Changed files with diffs (wrapped in `<untrusted-diff>`)
+3. Existing PR comments (wrapped in `<untrusted-comment>`)
+4. Context — optional pre-review context via the `context` parameter on `review()`. Typically the output from codebase exploration sub-agents, but can be any additional information the caller wants the reviewer to consider. Inserted verbatim.
+5. Review instruction (verify line numbers, call `submit_review`)
+
+System prompt composition is handled by `agent/prompts.py`, which loads guidelines from the `.nominal/` directory with per-repo and per-language overrides. Language detection is based on file extensions in the PR diff.
 
 ### Conversation Store and Job Queue
 
@@ -372,11 +451,18 @@ nominal_code/
 │   ├── result.py        # AgentResult dataclass (output, turns, conversation ID, cost)
 │   ├── prompts.py       # Guideline loading, language detection, system prompt composition
 │   ├── errors.py        # Async context manager for handler error handling
+│   ├── compaction.py    # Deterministic message compaction (no LLM call)
 │   ├── api/
 │   │   ├── runner.py    # LLM provider API agentic loop (tool use)
 │   │   └── tools.py     # Tool definitions and execution (Read, Glob, Grep, Bash)
-│   └── cli/
-│       └── runner.py    # Claude Code CLI subprocess wrapper (SDK integration)
+│   ├── cli/
+│   │   └── runner.py    # Claude Code CLI subprocess wrapper (SDK integration)
+│   └── sub_agents/      # Parallel sub-agent orchestration
+│       ├── types.py     # AgentType enum, per-type tool mappings
+│       ├── result.py    # ExploreGroup, SubAgentResult, AggregatedMetrics
+│       ├── planner.py   # LLM-based file grouping planner
+│       ├── runner.py    # run_explore(), run_explore_with_planner()
+│       └── prompts.py   # Bundled prompt loading
 ├── conversation/
 │   ├── base.py          # Conversation store protocol
 │   ├── memory.py        # In-memory conversation store
