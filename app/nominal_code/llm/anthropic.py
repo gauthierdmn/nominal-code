@@ -126,16 +126,14 @@ class AnthropicProvider:
                     _map_tool_choice(tool_choice)
                 )
 
-                response: anthropic.types.Message = (
-                    await self._client.messages.create(
-                        model=model,
-                        max_tokens=max_tokens,
-                        messages=api_messages,
-                        cache_control=cache,
-                        system=system_prompt,
-                        tools=api_tools,
-                        tool_choice=api_tool_choice,
-                    )
+                response: anthropic.types.Message = await self._client.messages.create(
+                    model=model,
+                    max_tokens=max_tokens,
+                    messages=api_messages,
+                    cache_control=cache,
+                    system=system_prompt,
+                    tools=api_tools,
+                    tool_choice=api_tool_choice,
                 )
             else:
                 response = await self._client.messages.create(

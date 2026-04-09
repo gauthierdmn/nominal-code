@@ -6,7 +6,6 @@ import time
 from pathlib import Path
 
 from nominal_code.agent.api.runner import run_api_agent
-from nominal_code.agent.compaction import CompactionConfig
 from nominal_code.agent.sub_agents.planner import plan_exploration_groups
 from nominal_code.agent.sub_agents.prompts import load_explore_system_prompt
 from nominal_code.agent.sub_agents.result import (
@@ -37,7 +36,7 @@ async def run_explore(
     provider_name: ProviderName = ProviderName.GOOGLE,
     system_prompt: str = "",
     max_turns: int = 0,
-    compaction_config: CompactionConfig | None = None,
+    enable_compaction: bool = False,
 ) -> ParallelExploreResult:
     """
     Run parallel exploration sub-agents for the given groups.
@@ -64,8 +63,8 @@ async def run_explore(
         max_turns (int): Total turn budget. Divided across groups
             with a minimum of 4 per group. When 0, each group gets
             ``DEFAULT_MAX_TURNS_PER_SUB_AGENT``.
-        compaction_config (CompactionConfig | None): Optional
-            compaction config for sub-agents.
+        enable_compaction (bool): When True, enables session-level
+            compaction of older messages to reduce token costs.
 
     Returns:
         ParallelExploreResult: Aggregated result with per-sub-agent
@@ -103,7 +102,7 @@ async def run_explore(
             system_prompt=full_system_prompt,
             max_turns=per_group_turns,
             agent_type=AgentType.EXPLORE,
-            compaction_config=compaction_config,
+            enable_compaction=enable_compaction,
         )
         for group in groups
     ]
@@ -149,7 +148,7 @@ async def run_explore_with_planner(
     planner_model: str = "",
     max_turns: int = 0,
     file_threshold: int = DEFAULT_FILE_THRESHOLD,
-    compaction_config: CompactionConfig | None = None,
+    enable_compaction: bool = False,
 ) -> ParallelExploreResult:
     """
     Run codebase exploration with automatic planning and parallel execution.
@@ -178,8 +177,8 @@ async def run_explore_with_planner(
         max_turns (int): Total turn budget for exploration.
         file_threshold (int): Minimum changed files to trigger
             parallel mode.
-        compaction_config (CompactionConfig | None): Optional
-            compaction config for sub-agents.
+        enable_compaction (bool): When True, enables session-level
+            compaction of older messages to reduce token costs.
 
     Returns:
         ParallelExploreResult: Aggregated result with per-sub-agent
@@ -218,7 +217,7 @@ async def run_explore_with_planner(
         provider_name=provider_name,
         system_prompt=system_prompt,
         max_turns=max_turns,
-        compaction_config=compaction_config,
+        enable_compaction=enable_compaction,
     )
 
 
@@ -310,7 +309,7 @@ async def _run_single_sub_agent(
     system_prompt: str,
     max_turns: int,
     agent_type: AgentType,
-    compaction_config: CompactionConfig | None,
+    enable_compaction: bool,
 ) -> SubAgentResult:
     """
     Run a single sub-agent for one exploration group.
@@ -330,8 +329,7 @@ async def _run_single_sub_agent(
         max_turns (int): Maximum agentic turns for this sub-agent.
         agent_type (AgentType): The sub-agent type (determines allowed
             tools).
-        compaction_config (CompactionConfig | None): Optional compaction
-            config.
+        enable_compaction (bool): When True, enables compaction.
 
     Returns:
         SubAgentResult: The sub-agent's result.
@@ -355,7 +353,7 @@ async def _run_single_sub_agent(
         system_prompt=system_prompt,
         allowed_tools=allowed_tools,
         provider_name=provider_name,
-        compaction_config=compaction_config,
+        enable_compaction=enable_compaction,
     )
 
     logger.info(

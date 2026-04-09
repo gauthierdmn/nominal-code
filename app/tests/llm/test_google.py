@@ -418,7 +418,6 @@ class TestGoogleProviderSend:
 class TestGoogleProviderToolChoice:
     @pytest.mark.asyncio
     async def test_send_passes_tool_choice_required(self):
-        from google.genai import types as genai_types
 
         from nominal_code.llm.messages import ToolChoice
 
