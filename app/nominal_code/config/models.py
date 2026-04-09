@@ -69,11 +69,14 @@ class ReviewerSettings(BaseModel):
         bot_username (str): The @mention name for the reviewer bot.
         system_prompt_path (str): Path to the reviewer prompt file.
         triggers (list[str]): PR lifecycle events that auto-trigger the reviewer.
+        inline_suggestions (bool): Whether to enable one-click-apply code
+            suggestions in review comments.
     """
 
     bot_username: str | None = None
     system_prompt_path: str = "prompts/reviewer_prompt.md"
     triggers: list[str] = Field(default_factory=list)
+    inline_suggestions: bool = True
 
 
 class AgentSettings(BaseModel):

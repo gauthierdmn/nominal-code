@@ -146,9 +146,16 @@ def _build_reviewer(
         ValueError: If ``require_webhook`` is True and no bot username is set.
     """
 
+    from nominal_code.config.settings import SUGGESTIONS_PROMPT_PATH
+
     reviewer_system_prompt: str = load_file_content(
         Path(settings.reviewer.system_prompt_path),
     )
+
+    suggestions_prompt: str = ""
+
+    if settings.reviewer.inline_suggestions:
+        suggestions_prompt = load_file_content(Path(SUGGESTIONS_PROMPT_PATH))
 
     if require_webhook:
         if not settings.reviewer.bot_username:
@@ -157,11 +164,13 @@ def _build_reviewer(
         return ReviewerConfig(
             bot_username=settings.reviewer.bot_username,
             system_prompt=reviewer_system_prompt,
+            suggestions_prompt=suggestions_prompt,
         )
 
     return ReviewerConfig(
         bot_username="",
         system_prompt=reviewer_system_prompt,
+        suggestions_prompt=suggestions_prompt,
     )
 
 

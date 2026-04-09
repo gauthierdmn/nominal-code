@@ -28,6 +28,7 @@ ENV_MAP: list[tuple[str, list[str]]] = [
     ("REVIEWER_BOT_USERNAME", ["reviewer", "bot_username"]),
     ("REVIEWER_SYSTEM_PROMPT", ["reviewer", "system_prompt_path"]),
     ("REVIEWER_TRIGGERS", ["reviewer", "triggers"]),
+    ("INLINE_SUGGESTIONS", ["reviewer", "inline_suggestions"]),
     ("AGENT_PROVIDER", ["agent", "provider"]),
     ("AGENT_MODEL", ["agent", "model"]),
     ("AGENT_MAX_TURNS", ["agent", "max_turns"]),
@@ -81,6 +82,12 @@ INT_KEYS: frozenset[str] = frozenset(
         "K8S_BACKOFF_LIMIT",
         "K8S_ACTIVE_DEADLINE_SECONDS",
         "K8S_TTL_AFTER_FINISHED",
+    }
+)
+
+BOOL_KEYS: frozenset[str] = frozenset(
+    {
+        "INLINE_SUGGESTIONS",
     }
 )
 
@@ -160,12 +167,14 @@ def _collect_env_overrides() -> dict[str, Any]:
         if raw is None:
             continue
 
-        value: str | int | list[str]
+        value: str | int | bool | list[str]
 
         if env_name in COMMA_LIST_KEYS:
             value = [item.strip() for item in raw.split(",") if item.strip()]
         elif env_name in INT_KEYS:
             value = int(raw)
+        elif env_name in BOOL_KEYS:
+            value = raw.lower() in ("true", "1", "yes")
         else:
             value = raw
 
