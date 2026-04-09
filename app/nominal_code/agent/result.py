@@ -23,6 +23,9 @@ class AgentResult:
             Maps to a CLI conversation ID or a provider response ID.
         messages (tuple[Message, ...]): Full message history from the API
             runner. Empty for CLI runner.
+        compacted_messages (tuple[Message, ...]): The compacted message
+            history sent to the LLM on the final turn. Empty when
+            compaction was not active or no compaction occurred.
         cost (CostSummary | None): Cost information for the invocation.
     """
 
@@ -32,4 +35,5 @@ class AgentResult:
     duration_ms: int
     conversation_id: str | None = None
     messages: tuple[Message, ...] = ()
+    compacted_messages: tuple[Message, ...] = ()
     cost: CostSummary | None = None
