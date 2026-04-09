@@ -27,10 +27,10 @@ class TestGetToolDefinitions:
 
         assert len(result) == len(TOOL_DEFINITIONS)
 
-    def test_returns_all_tools_when_allowed_is_empty(self):
+    def test_returns_no_tools_when_allowed_is_empty(self):
         result = get_tool_definitions([])
 
-        assert len(result) == len(TOOL_DEFINITIONS)
+        assert len(result) == 0
 
     def test_filters_to_allowed_tools(self):
         result = get_tool_definitions(["Read", "Glob"])

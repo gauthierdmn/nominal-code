@@ -223,7 +223,9 @@ def get_tool_definitions(
     """
     Return tool definitions filtered by the allowed tools list.
 
-    If ``allowed_tools`` is None or empty, all tools are returned.
+    Pass ``None`` to include all default tools. Pass an empty list
+    ``[]`` to include no tools (single-shot LLM call).
+
     Entries like ``"Bash(git clone*)"`` enable the Bash tool; the pattern
     is enforced at execution time by ``execute_tool``.
 
@@ -232,14 +234,18 @@ def get_tool_definitions(
     to this tool and returns the input as JSON output.
 
     Args:
-        allowed_tools (list[str] | None): List of allowed tool names/patterns.
+        allowed_tools (list[str] | None): List of allowed tool
+            names/patterns. ``None`` for all tools, ``[]`` for none.
 
     Returns:
         list[ToolDefinition]: Filtered list of tool definitions.
     """
 
-    if not allowed_tools:
+    if allowed_tools is None:
         return list(TOOL_DEFINITIONS)
+
+    if not allowed_tools:
+        return []
 
     allowed_names: set[str] = set()
 
