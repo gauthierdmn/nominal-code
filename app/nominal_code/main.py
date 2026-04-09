@@ -81,8 +81,8 @@ def main() -> None:
         from nominal_code.commands.webhook.jobs.main import run_job_main
 
         setup_logging()
-        exit_code = asyncio.run(run_job_main())
-        sys.exit(exit_code)
+        result = asyncio.run(run_job_main())
+        sys.exit(0 if result is not None else 1)
 
     print(USAGE, file=sys.stderr)
     sys.exit(1)

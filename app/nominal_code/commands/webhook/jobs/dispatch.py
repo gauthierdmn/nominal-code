@@ -59,6 +59,7 @@ async def execute_job(
     config: Config,
     conversation_store: ConversationStore | None = None,
     pre_cloned: bool = False,
+    context: str = "",
 ) -> JobResult:
     """
     Execute a review job.
@@ -75,6 +76,7 @@ async def execute_job(
             for conversation continuity.
         pre_cloned (bool): When True, the repository was pre-cloned by
             an external process and clone URL resolution is skipped.
+        context (str): Pre-review context to include in the user message.
 
     Returns:
         JobResult: The execution result.
@@ -97,6 +99,7 @@ async def execute_job(
         platform=platform,
         conversation_store=conversation_store,
         namespace=job.namespace,
+        context=context,
     )
 
     return JobResult(review_result=review_result)
