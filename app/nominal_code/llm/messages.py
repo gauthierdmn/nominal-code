@@ -1,8 +1,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import Enum, StrEnum
 from typing import Any, Literal, TypedDict
+
+
+class ToolChoice(StrEnum):
+    """
+    Controls whether the model must use tools.
+
+    Attributes:
+        AUTO: The model decides whether to call a tool or return text.
+        REQUIRED: The model must call at least one tool.
+    """
+
+    AUTO = "auto"
+    REQUIRED = "required"
 
 
 class StopReason(Enum):
