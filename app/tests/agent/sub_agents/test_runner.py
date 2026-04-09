@@ -17,7 +17,6 @@ from nominal_code.agent.sub_agents.runner import (
 from nominal_code.agent.sub_agents.types import DEFAULT_MAX_TURNS_PER_SUB_AGENT
 from nominal_code.llm.cost import CostSummary
 from nominal_code.llm.messages import LLMResponse, StopReason, TextBlock
-from nominal_code.models import ProviderName
 
 
 def _make_group(label="test", files=None, prompt="explore"):
