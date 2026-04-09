@@ -5,6 +5,7 @@ from typing import Protocol
 from nominal_code.llm.messages import (
     LLMResponse,
     Message,
+    ToolChoice,
     ToolDefinition,
 )
 
@@ -64,6 +65,7 @@ class LLMProvider(Protocol):
         model: str,
         max_tokens: int,
         previous_response_id: str | None = None,
+        tool_choice: ToolChoice | None = None,
     ) -> LLMResponse:
         """
         Send a request to the LLM and return the response.
@@ -83,6 +85,8 @@ class LLMProvider(Protocol):
             previous_response_id (str | None): Provider response ID from
                 the previous turn for server-side continuity. ``None``
                 when not applicable.
+            tool_choice (ToolChoice | None): Controls whether the model
+                must use tools. ``None`` uses the provider default (auto).
 
         Returns:
             LLMResponse: The model's response.

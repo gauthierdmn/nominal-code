@@ -10,6 +10,7 @@ from nominal_code.llm.messages import (
     StopReason,
     TextBlock,
     TokenUsage,
+    ToolChoice,
     ToolDefinition,
     ToolResultBlock,
     ToolUseBlock,
@@ -27,6 +28,11 @@ if TYPE_CHECKING:
     from google.genai import types as genai_types
 
 logger: logging.Logger = logging.getLogger(__name__)
+
+_GEMINI_TOOL_CHOICE_MAP: dict[ToolChoice, str] = {
+    ToolChoice.AUTO: "AUTO",
+    ToolChoice.REQUIRED: "ANY",
+}
 
 STOP_REASON_MAP: dict[str, StopReason] = {
     "STOP": StopReason.END_TURN,
@@ -83,6 +89,7 @@ class GoogleProvider:
         model: str,
         max_tokens: int,
         previous_response_id: str | None = None,
+        tool_choice: ToolChoice | None = None,
     ) -> LLMResponse:
         """
         Send a request to the Google Gemini API.
@@ -95,6 +102,8 @@ class GoogleProvider:
             max_tokens (int): Maximum tokens in the response.
             previous_response_id (str | None): Ignored. Gemini does not
                 support server-side conversation chaining.
+            tool_choice (ToolChoice | None): Controls whether the model
+                must use tools. ``None`` uses the provider default.
 
         Returns:
             LLMResponse: The model's response in canonical format.
@@ -111,10 +120,22 @@ class GoogleProvider:
         api_contents: list[genai_types.Content] = _to_api_contents(messages=messages)
         api_tools: genai_types.Tool | None = _to_api_tools(tools=tools)
 
+        gemini_tool_config: genai_types.ToolConfig | None = None
+
+        if api_tools and tool_choice is not None:
+            gemini_mode: str = _GEMINI_TOOL_CHOICE_MAP[tool_choice]
+
+            gemini_tool_config = genai_types.ToolConfig(
+                function_calling_config=genai_types.FunctionCallingConfig(
+                    mode=gemini_mode,
+                ),
+            )
+
         config: genai_types.GenerateContentConfig = genai_types.GenerateContentConfig(
             system_instruction=system_prompt,
             max_output_tokens=max_tokens,
             tools=[api_tools] if api_tools else None,
+            tool_config=gemini_tool_config,
         )
 
         try:

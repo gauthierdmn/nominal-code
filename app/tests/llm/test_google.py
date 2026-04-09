@@ -415,6 +415,92 @@ class TestGoogleProviderSend:
             )
 
 
+class TestGoogleProviderToolChoice:
+    @pytest.mark.asyncio
+    async def test_send_passes_tool_choice_required(self):
+        from google.genai import types as genai_types
+
+        from nominal_code.llm.messages import ToolChoice
+
+        provider = _make_provider()
+
+        mock_part = MagicMock()
+        mock_part.function_call = None
+        mock_part.text = "ok"
+        mock_candidate = MagicMock()
+        mock_candidate.content.parts = [mock_part]
+        mock_candidate.finish_reason = "STOP"
+        mock_response = MagicMock()
+        mock_response.candidates = [mock_candidate]
+
+        mock_generate = AsyncMock(return_value=mock_response)
+        provider._client = MagicMock()
+        provider._client.aio.models.generate_content = mock_generate
+
+        tools = [
+            {
+                "name": "Read",
+                "description": "Read a file",
+                "input_schema": {"type": "object", "properties": {}},
+            },
+        ]
+        messages = [Message(role="user", content=[TextBlock(text="test")])]
+
+        await provider.send(
+            messages=messages,
+            system_prompt="",
+            tools=tools,
+            model="gemini-2.5-flash",
+            max_tokens=1024,
+            tool_choice=ToolChoice.REQUIRED,
+        )
+
+        call_kwargs = mock_generate.call_args[1]
+        tool_config = call_kwargs["config"].tool_config
+
+        assert tool_config is not None
+        assert tool_config.function_calling_config.mode == "ANY"
+
+    @pytest.mark.asyncio
+    async def test_send_no_tool_choice_omits_tool_config(self):
+        provider = _make_provider()
+
+        mock_part = MagicMock()
+        mock_part.function_call = None
+        mock_part.text = "ok"
+        mock_candidate = MagicMock()
+        mock_candidate.content.parts = [mock_part]
+        mock_candidate.finish_reason = "STOP"
+        mock_response = MagicMock()
+        mock_response.candidates = [mock_candidate]
+
+        mock_generate = AsyncMock(return_value=mock_response)
+        provider._client = MagicMock()
+        provider._client.aio.models.generate_content = mock_generate
+
+        tools = [
+            {
+                "name": "Read",
+                "description": "Read a file",
+                "input_schema": {"type": "object", "properties": {}},
+            },
+        ]
+        messages = [Message(role="user", content=[TextBlock(text="test")])]
+
+        await provider.send(
+            messages=messages,
+            system_prompt="",
+            tools=tools,
+            model="gemini-2.5-flash",
+            max_tokens=1024,
+        )
+
+        call_kwargs = mock_generate.call_args[1]
+        tool_config = call_kwargs["config"].tool_config
+
+        assert tool_config is None
+
+
 class TestGoogleProviderMissingSdk:
     def test_init_raises_missing_provider_error_when_sdk_absent(self):
         real_import = builtins.__import__

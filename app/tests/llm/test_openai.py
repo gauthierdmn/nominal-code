@@ -438,6 +438,89 @@ class TestOpenAIProviderSend:
         assert "tools" not in call_kwargs
 
 
+class TestOpenAIProviderToolChoice:
+    @pytest.mark.asyncio
+    async def test_send_passes_tool_choice_required(self):
+        from nominal_code.llm.messages import ToolChoice
+
+        provider = OpenAIProvider(
+            api_key="test-key",
+            provider_name=ProviderName.DEEPSEEK,
+        )
+
+        choice = MagicMock()
+        choice.message.content = "ok"
+        choice.message.tool_calls = None
+        choice.finish_reason = "stop"
+
+        mock_response = MagicMock()
+        mock_response.choices = [choice]
+
+        mock_create = AsyncMock(return_value=mock_response)
+        provider._client = MagicMock()
+        provider._client.chat.completions.create = mock_create
+
+        tools = [
+            {
+                "name": "Read",
+                "description": "Read a file",
+                "input_schema": {"type": "object", "properties": {}},
+            },
+        ]
+        messages = [Message(role="user", content=[TextBlock(text="test")])]
+
+        await provider.send(
+            messages=messages,
+            system_prompt="",
+            tools=tools,
+            model="test",
+            max_tokens=1024,
+            tool_choice=ToolChoice.REQUIRED,
+        )
+
+        call_kwargs = mock_create.call_args[1]
+        assert call_kwargs["tool_choice"] == "required"
+
+    @pytest.mark.asyncio
+    async def test_send_no_tool_choice_omits_param(self):
+        provider = OpenAIProvider(
+            api_key="test-key",
+            provider_name=ProviderName.DEEPSEEK,
+        )
+
+        choice = MagicMock()
+        choice.message.content = "ok"
+        choice.message.tool_calls = None
+        choice.finish_reason = "stop"
+
+        mock_response = MagicMock()
+        mock_response.choices = [choice]
+
+        mock_create = AsyncMock(return_value=mock_response)
+        provider._client = MagicMock()
+        provider._client.chat.completions.create = mock_create
+
+        tools = [
+            {
+                "name": "Read",
+                "description": "Read a file",
+                "input_schema": {"type": "object", "properties": {}},
+            },
+        ]
+        messages = [Message(role="user", content=[TextBlock(text="test")])]
+
+        await provider.send(
+            messages=messages,
+            system_prompt="",
+            tools=tools,
+            model="test",
+            max_tokens=1024,
+        )
+
+        call_kwargs = mock_create.call_args[1]
+        assert "tool_choice" not in call_kwargs
+
+
 class TestOpenAIProviderMissingSdk:
     def test_init_raises_missing_provider_error_when_sdk_absent(self):
         real_import = builtins.__import__

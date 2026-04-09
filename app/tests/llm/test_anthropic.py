@@ -429,6 +429,67 @@ class TestAnthropicProviderSend:
             )
 
 
+class TestAnthropicProviderToolChoice:
+    @pytest.mark.asyncio
+    async def test_send_passes_tool_choice_required(self):
+        from nominal_code.llm.messages import ToolChoice
+
+        provider = AnthropicProvider()
+
+        mock_response = MagicMock()
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "ok"
+        mock_response.content = [text_block]
+        mock_response.stop_reason = "end_turn"
+
+        mock_create = AsyncMock(return_value=mock_response)
+        provider._client = MagicMock()
+        provider._client.messages.create = mock_create
+
+        messages = [Message(role="user", content=[TextBlock(text="test")])]
+
+        await provider.send(
+            messages=messages,
+            system_prompt="",
+            tools=[],
+            model="test",
+            max_tokens=1024,
+            tool_choice=ToolChoice.REQUIRED,
+        )
+
+        call_kwargs = mock_create.call_args[1]
+        assert call_kwargs["tool_choice"] == {"type": "any"}
+
+    @pytest.mark.asyncio
+    async def test_send_no_tool_choice_omits_param(self):
+        provider = AnthropicProvider()
+
+        mock_response = MagicMock()
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "ok"
+        mock_response.content = [text_block]
+        mock_response.stop_reason = "end_turn"
+
+        mock_create = AsyncMock(return_value=mock_response)
+        provider._client = MagicMock()
+        provider._client.messages.create = mock_create
+
+        messages = [Message(role="user", content=[TextBlock(text="test")])]
+
+        await provider.send(
+            messages=messages,
+            system_prompt="",
+            tools=[],
+            model="test",
+            max_tokens=1024,
+        )
+
+        call_kwargs = mock_create.call_args[1]
+        assert "tool_choice" not in call_kwargs
+
+
 class TestAnthropicProviderMissingSdk:
     def test_init_raises_missing_provider_error_when_sdk_absent(self):
         real_import = builtins.__import__
