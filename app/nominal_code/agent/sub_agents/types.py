@@ -20,7 +20,7 @@ class AgentType(StrEnum):
 
 
 AGENT_TYPE_TOOLS: dict[AgentType, list[str]] = {
-    AgentType.EXPLORE: ["Read", "Glob", "Grep", "Bash"],
+    AgentType.EXPLORE: ["Read", "Glob", "Grep", "Bash", "WriteNotes"],
     AgentType.PLAN: ["Read", "Glob", "Grep", "Bash"],
 }
 

@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
+import shutil
+import tempfile
 import time
 from pathlib import Path
 
@@ -26,6 +29,11 @@ from nominal_code.models import ProviderName
 logger: logging.Logger = logging.getLogger(__name__)
 
 DEFAULT_FILE_THRESHOLD: int = 8
+MAX_COMBINED_NOTES_SIZE: int = 100_000
+
+NOTES_HEADER_TEMPLATE: str = (
+    "# Exploration Notes: {label}\n\n**Files:** {files}\n\n---\n\n"
+)
 
 
 async def run_explore(
@@ -91,26 +99,31 @@ async def run_explore(
     )
 
     start_ms: int = _now_ms()
+    notes_dir: Path = Path(tempfile.mkdtemp(prefix="nominal-notes-"))
 
-    coroutines = [
-        _run_single_sub_agent(
-            group=group,
-            cwd=cwd,
-            provider=provider,
-            model=model,
-            provider_name=provider_name,
-            system_prompt=full_system_prompt,
-            max_turns=per_group_turns,
-            agent_type=AgentType.EXPLORE,
-            enable_compaction=enable_compaction,
+    try:
+        coroutines = [
+            _run_single_sub_agent(
+                group=group,
+                cwd=cwd,
+                provider=provider,
+                model=model,
+                provider_name=provider_name,
+                system_prompt=full_system_prompt,
+                max_turns=per_group_turns,
+                agent_type=AgentType.EXPLORE,
+                enable_compaction=enable_compaction,
+                notes_dir=notes_dir,
+            )
+            for group in groups
+        ]
+
+        raw_results: list[SubAgentResult | BaseException] = await asyncio.gather(
+            *coroutines,
+            return_exceptions=True,
         )
-        for group in groups
-    ]
-
-    raw_results: list[SubAgentResult | BaseException] = await asyncio.gather(
-        *coroutines,
-        return_exceptions=True,
-    )
+    finally:
+        shutil.rmtree(notes_dir, ignore_errors=True)
 
     successful: list[SubAgentResult] = []
 
@@ -310,6 +323,7 @@ async def _run_single_sub_agent(
     max_turns: int,
     agent_type: AgentType,
     enable_compaction: bool,
+    notes_dir: Path | None = None,
 ) -> SubAgentResult:
     """
     Run a single sub-agent for one exploration group.
@@ -317,6 +331,10 @@ async def _run_single_sub_agent(
     Builds the user prompt from the group's diffs and exploration
     instructions, then delegates to ``run_api_agent`` with the
     tool restrictions for the given agent type.
+
+    When ``notes_dir`` is provided, creates a notes file for the agent
+    to write findings into via the WriteNotes tool. The file content is
+    read back after execution and stored in ``SubAgentResult.notes``.
 
     Args:
         group (ExploreGroup): The exploration group to process.
@@ -330,12 +348,25 @@ async def _run_single_sub_agent(
         agent_type (AgentType): The sub-agent type (determines allowed
             tools).
         enable_compaction (bool): When True, enables compaction.
+        notes_dir (Path | None): Directory for notes files. When
+            provided, a notes file is created for this sub-agent.
 
     Returns:
         SubAgentResult: The sub-agent's result.
     """
 
     allowed_tools: list[str] = AGENT_TYPE_TOOLS[agent_type]
+    notes_file_path: Path | None = None
+
+    if notes_dir is not None:
+        safe_label: str = re.sub(r"[^a-zA-Z0-9_-]", "_", group.label)
+        notes_file_path = notes_dir / f"{safe_label}.md"
+
+        header: str = NOTES_HEADER_TEMPLATE.format(
+            label=group.label,
+            files=", ".join(group.files),
+        )
+        notes_file_path.write_text(header, encoding="utf-8")
 
     logger.info(
         "Starting sub-agent '%s': %d files, %d turns",
@@ -354,12 +385,19 @@ async def _run_single_sub_agent(
         allowed_tools=allowed_tools,
         provider_name=provider_name,
         enable_compaction=enable_compaction,
+        notes_file_path=notes_file_path,
     )
 
+    notes_content: str = ""
+
+    if notes_file_path is not None and notes_file_path.exists():
+        notes_content = notes_file_path.read_text(encoding="utf-8")
+
     logger.info(
-        "Sub-agent '%s' complete: %d turns",
+        "Sub-agent '%s' complete: %d turns, %d chars of notes",
         group.label,
         result.num_turns,
+        len(notes_content),
     )
 
     return SubAgentResult(
@@ -370,6 +408,60 @@ async def _run_single_sub_agent(
         duration_ms=result.duration_ms,
         messages=result.messages,
         cost=result.cost,
+        notes=notes_content,
+    )
+
+
+def assemble_notes(
+    sub_results: tuple[SubAgentResult, ...],
+    max_size: int = MAX_COMBINED_NOTES_SIZE,
+) -> str:
+    """
+    Combine notes from all sub-agents into a single context string.
+
+    Concatenates non-empty notes from each sub-agent with a preamble
+    header. Truncates at ``max_size`` characters to prevent the
+    analysis prompt from growing too large.
+
+    Args:
+        sub_results (tuple[SubAgentResult, ...]): Sub-agent results.
+        max_size (int): Maximum combined size in characters.
+
+    Returns:
+        str: Combined notes with preamble, or empty string if no notes
+            were written.
+    """
+
+    parts: list[str] = []
+    total_size: int = 0
+
+    for sub_result in sub_results:
+        if not sub_result.notes:
+            continue
+
+        content: str = sub_result.notes
+        remaining: int = max_size - total_size
+
+        if remaining <= 0:
+            break
+
+        if len(content) > remaining:
+            content = content[:remaining] + "\n\n... (truncated)"
+
+        parts.append(content)
+        total_size += len(content)
+
+    if not parts:
+        return ""
+
+    combined: str = "\n\n".join(parts)
+
+    return (
+        "## Codebase Exploration Notes\n\n"
+        "The following findings were gathered by exploration agents that "
+        "searched the repository for callers, tests, type definitions, "
+        "and knock-on effects related to the changed files.\n\n"
+        f"{combined}"
     )
 
 

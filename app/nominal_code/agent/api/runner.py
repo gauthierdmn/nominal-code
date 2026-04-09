@@ -43,6 +43,7 @@ async def run_api_agent(
     prior_messages: list[Message] | None = None,
     provider_name: ProviderName = ProviderName.GOOGLE,
     enable_compaction: bool = False,
+    notes_file_path: Path | None = None,
 ) -> AgentResult:
     """
     Run the agent using an LLM provider with tool use.
@@ -67,12 +68,16 @@ async def run_api_agent(
         provider (LLMProvider): The LLM provider to use for API calls.
         max_turns (int): Maximum agentic turns (0 for unlimited).
         system_prompt (str): Optional system prompt for the agent.
-        allowed_tools (list[str] | None): Restrict which tools the agent may use.
+        allowed_tools (list[str] | None): Restrict which tools the agent
+            may use.
         prior_messages (list[Message] | None): Prior conversation messages
             for multi-turn continuity. Prepended before the new user message.
         provider_name (ProviderName): Provider identifier for cost tracking.
-        enable_compaction (bool): When True, enables session-level compaction
-            of older messages to reduce token costs.
+        enable_compaction (bool): When True, enables session-level
+            compaction of older messages to reduce token costs.
+        notes_file_path (Path | None): Pre-assigned file path for the
+            WriteNotes tool. When provided, the agent can append findings
+            to this file during execution.
 
     Returns:
         AgentResult: The parsed result from the agent.
@@ -189,6 +194,7 @@ async def run_api_agent(
                     tool_input=block.input,
                     cwd=cwd,
                     allowed_tools=allowed_tools,
+                    notes_file_path=notes_file_path,
                 )
 
                 logger.debug(
