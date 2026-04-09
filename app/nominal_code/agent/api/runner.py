@@ -10,7 +10,7 @@ from nominal_code.agent.api.tools import (
     execute_tool,
     get_tool_definitions,
 )
-from nominal_code.agent.compaction import CompactionConfig, compact_messages
+from nominal_code.agent.compaction import compact_messages
 from nominal_code.agent.result import AgentResult
 from nominal_code.conversation.base import truncate_messages
 from nominal_code.llm.cost import build_cost_summary
@@ -42,7 +42,7 @@ async def run_api_agent(
     allowed_tools: list[str] | None = None,
     prior_messages: list[Message] | None = None,
     provider_name: ProviderName = ProviderName.GOOGLE,
-    compaction_config: CompactionConfig | None = None,
+    enable_compaction: bool = False,
 ) -> AgentResult:
     """
     Run the agent using an LLM provider with tool use.
@@ -55,7 +55,7 @@ async def run_api_agent(
     structured-output tool is included. If the model calls it, the tool
     input is serialized as JSON and returned as the agent output.
 
-    When ``compaction_config`` is provided, the messages sent to the LLM
+    When ``enable_compaction`` is True, the messages sent to the LLM
     are periodically compacted (older messages replaced with a summary)
     to reduce token usage. The full uncompacted history is always
     preserved and returned in ``AgentResult.messages``.
@@ -71,8 +71,8 @@ async def run_api_agent(
         prior_messages (list[Message] | None): Prior conversation messages
             for multi-turn continuity. Prepended before the new user message.
         provider_name (ProviderName): Provider identifier for cost tracking.
-        compaction_config (CompactionConfig | None): When provided, enables
-            session-level compaction of older messages to reduce token costs.
+        enable_compaction (bool): When True, enables session-level compaction
+            of older messages to reduce token costs.
 
     Returns:
         AgentResult: The parsed result from the agent.
@@ -94,7 +94,6 @@ async def run_api_agent(
     conversation_id: str | None = None
     token_usage: TokenUsage | None = None
     api_call_count: int = 0
-    did_compact: bool = False
 
     try:
         while True:
@@ -138,7 +137,6 @@ async def run_api_agent(
                     num_turns=turns,
                     duration_ms=duration_ms,
                     messages=tuple(full_messages),
-                    compacted_messages=tuple(llm_messages) if did_compact else (),
                     conversation_id=conversation_id,
                     cost=build_cost_summary(
                         usage=token_usage,
@@ -166,7 +164,6 @@ async def run_api_agent(
                         num_turns=turns,
                         duration_ms=duration_ms,
                         messages=tuple(full_messages),
-                        compacted_messages=tuple(llm_messages) if did_compact else (),
                         conversation_id=conversation_id,
                         cost=build_cost_summary(
                             usage=token_usage,
@@ -218,20 +215,13 @@ async def run_api_agent(
 
             turns += 1
 
-            if compaction_config is not None:
-                compaction_result = compact_messages(
-                    llm_messages,
-                    compaction_config,
-                )
+            if enable_compaction:
+                compaction_result = compact_messages(llm_messages)
 
-                if compaction_result.did_compact:
+                if compaction_result.summary_text:
                     llm_messages = compaction_result.messages
-                    did_compact = True
 
-                    logger.info(
-                        "Compacted %d messages from LLM context",
-                        compaction_result.removed_count,
-                    )
+                    logger.info("Compacted LLM context")
 
             # TBI: better handling — e.g. prompt to return
             # a review on the next turn
@@ -250,7 +240,6 @@ async def run_api_agent(
                     num_turns=turns,
                     duration_ms=duration_ms,
                     messages=tuple(full_messages),
-                    compacted_messages=tuple(llm_messages) if did_compact else (),
                     conversation_id=conversation_id,
                     cost=build_cost_summary(
                         usage=token_usage,
