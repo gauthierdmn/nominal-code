@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -29,33 +28,8 @@ FILE_PATH_PATTERN: re.Pattern[str] = re.compile(
 MAX_FILES_IN_SUMMARY: int = 8
 MAX_RECENT_REQUESTS: int = 3
 CURRENT_WORK_MAX_CHARS: int = 200
-
-PENDING_KEYWORDS: re.Pattern[str] = re.compile(
-    r"\b(?:todo|next|pending|follow\s*up|remaining)\b",
-    re.IGNORECASE,
-)
-
-
-@dataclass(frozen=True)
-class CompactionConfig:
-    """
-    Configuration for session-level message compaction.
-
-    Args:
-        preserve_recent_messages (int): Number of recent messages to keep
-            verbatim after compaction.
-        max_estimated_tokens (int): Token threshold above which compaction
-            triggers for the removable (older) portion of messages.
-        summary_max_chars (int): Maximum characters in the compressed summary.
-        summary_max_lines (int): Maximum lines in the compressed summary.
-        line_max_chars (int): Maximum characters per summary line.
-    """
-
-    preserve_recent_messages: int = 4
-    max_estimated_tokens: int = 10_000
-    summary_max_chars: int = 1_200
-    summary_max_lines: int = 24
-    line_max_chars: int = 160
+LINE_MAX_CHARS: int = 160
+PRESERVE_RECENT_MESSAGES: int = 4
 
 
 @dataclass(frozen=True)
@@ -65,14 +39,10 @@ class CompactionResult:
 
     Args:
         messages (list[Message]): The compacted (or unchanged) message list.
-        did_compact (bool): Whether compaction actually occurred.
-        removed_count (int): Number of messages removed.
         summary_text (str): The generated summary text, empty if no compaction.
     """
 
     messages: list[Message] = field(default_factory=list)
-    did_compact: bool = False
-    removed_count: int = 0
     summary_text: str = ""
 
 
@@ -80,8 +50,8 @@ def _compacted_summary_prefix_len(messages: list[Message]) -> int:
     """
     Return 1 if the first message is an existing compaction summary, 0 otherwise.
 
-    Allows ``should_compact`` and ``compact_messages`` to skip a prior
-    compaction message when deciding whether to re-compact.
+    Allows ``compact_messages`` to skip a prior compaction message when
+    deciding whether to re-compact.
 
     Args:
         messages (list[Message]): Current message history.
@@ -100,105 +70,46 @@ def _compacted_summary_prefix_len(messages: list[Message]) -> int:
     return 0
 
 
-def estimate_message_tokens(messages: list[Message]) -> int:
-    """
-    Estimate token count for a list of messages using a character heuristic.
-
-    Uses ``len(text) // 4 + 1`` per content block, matching the approach
-    used in claw-code's compaction system.
-
-    Args:
-        messages (list[Message]): Messages to estimate.
-
-    Returns:
-        int: Estimated token count.
-    """
-
-    total: int = 0
-
-    for message in messages:
-        for block in message.content:
-            if isinstance(block, TextBlock):
-                total += len(block.text) // 4 + 1
-            elif isinstance(block, ToolUseBlock):
-                serialized: str = json.dumps(block.input, separators=(",", ":"))
-                total += (len(block.name) + len(serialized)) // 4 + 1
-            elif isinstance(block, ToolResultBlock):
-                total += (len(block.tool_use_id) + len(block.content)) // 4 + 1
-
-    return total
-
-
-def should_compact(
-    messages: list[Message],
-    config: CompactionConfig,
-) -> bool:
-    """
-    Decide whether the message list should be compacted.
-
-    Returns ``True`` when there are enough messages to preserve the recent
-    tail and the older portion exceeds the token threshold.
-
-    Args:
-        messages (list[Message]): Current message history.
-        config (CompactionConfig): Compaction settings.
-
-    Returns:
-        bool: Whether compaction should fire.
-    """
-
-    start: int = _compacted_summary_prefix_len(messages)
-    compactable: list[Message] = messages[start:]
-
-    if len(compactable) <= config.preserve_recent_messages:
-        return False
-
-    older: list[Message] = compactable[: -config.preserve_recent_messages]
-
-    return estimate_message_tokens(older) >= config.max_estimated_tokens
-
-
-def compact_messages(
-    messages: list[Message],
-    config: CompactionConfig,
-) -> CompactionResult:
+def compact_messages(messages: list[Message]) -> CompactionResult:
     """
     Compact a message list by summarising older messages.
 
-    Preserves the most recent ``config.preserve_recent_messages`` messages
+    Preserves the most recent ``PRESERVE_RECENT_MESSAGES`` messages
     verbatim and replaces the older portion with a deterministic, rule-based
     summary. No LLM call is made.
 
-    If the messages do not meet the compaction threshold, returns a no-op
-    result with the original messages unchanged.
+    The caller is responsible for deciding *when* to compact (e.g. after
+    cumulative input tokens exceed a threshold). This function only checks
+    whether there are enough messages to split.
 
     Args:
         messages (list[Message]): Current message history.
-        config (CompactionConfig): Compaction settings.
 
     Returns:
         CompactionResult: The compacted result.
     """
 
-    if not should_compact(messages, config):
+    prefix_len: int = _compacted_summary_prefix_len(messages)
+    compactable: int = len(messages) - prefix_len
+
+    if compactable <= PRESERVE_RECENT_MESSAGES:
         return CompactionResult(messages=messages)
 
     existing_summary: str | None = _extract_prior_summary(messages)
-    prefix_len: int = _compacted_summary_prefix_len(messages)
 
-    preserved: list[Message] = messages[-config.preserve_recent_messages :]
-    removed: list[Message] = messages[prefix_len : -config.preserve_recent_messages]
+    preserved: list[Message] = messages[-PRESERVE_RECENT_MESSAGES:]
+    removed: list[Message] = messages[prefix_len:-PRESERVE_RECENT_MESSAGES]
 
-    new_summary: str = _build_summary(removed, config)
+    new_summary: str = _build_summary(removed)
 
     if existing_summary:
-        raw_summary: str = _merge_summaries(existing_summary, new_summary)
+        summary_text: str = _merge_summaries(existing_summary, new_summary)
     else:
-        raw_summary = new_summary
+        summary_text = new_summary
 
-    compressed: str = _compress_summary(raw_summary, config)
-
-    continuation_text: str = f"{COMPACTION_MARKER}\n{CONTINUATION_PREAMBLE}{compressed}"
+    continuation_text: str = (
+        f"{COMPACTION_MARKER}\n{CONTINUATION_PREAMBLE}{summary_text}"
+    )
 
     if preserved:
         continuation_text += f"\n\n{COMPACT_RECENT_MESSAGES_NOTE}"
@@ -214,9 +125,7 @@ def compact_messages(
 
     return CompactionResult(
         messages=compacted,
-        did_compact=True,
-        removed_count=len(removed),
-        summary_text=compressed,
+        summary_text=summary_text,
     )
 
 
@@ -266,23 +175,18 @@ def _extract_prior_summary(messages: list[Message]) -> str | None:
     return None
 
 
-def _build_summary(
-    removed: list[Message],
-    config: CompactionConfig,
-) -> str:
+def _build_summary(removed: list[Message]) -> str:
     """
     Build a rule-based summary from removed messages.
 
-    Extracts scope, tools used, recent user requests, pending work,
-    files referenced, current work status, and a key timeline from
-    the message history.
+    Extracts scope, tools used, recent user requests, files referenced,
+    current work status, and a key timeline from the message history.
 
     Args:
         removed (list[Message]): Messages being removed.
-        config (CompactionConfig): Compaction settings.
 
     Returns:
-        str: The raw summary text (before compression).
+        str: The summary text.
     """
 
     user_count: int = sum(1 for msg in removed if msg.role == "user")
@@ -311,21 +215,13 @@ def _build_summary(
     if tools:
         sections.append(f"- Tools used: {', '.join(sorted(tools))}")
 
-    recent_requests: list[str] = _extract_recent_requests(removed, config)
+    recent_requests: list[str] = _extract_recent_requests(removed)
 
     if recent_requests:
         sections.append("- Recent requests:")
 
         for request in recent_requests:
             sections.append(f"  - {request}")
-
-    pending: list[str] = _extract_pending_work(removed, config)
-
-    if pending:
-        sections.append("- Pending work:")
-
-        for item in pending:
-            sections.append(f"  - {item}")
 
     if files:
         sorted_files: list[str] = sorted(files)[:MAX_FILES_IN_SUMMARY]
@@ -336,7 +232,7 @@ def _build_summary(
     if current_work:
         sections.append(f"- Current work: {current_work}")
 
-    timeline: list[str] = _build_timeline(removed, config)
+    timeline: list[str] = _build_timeline(removed)
 
     if timeline:
         sections.append("- Key timeline:")
@@ -388,10 +284,7 @@ def _extract_files_from_text(text: str, files: set[str]) -> None:
             files.add(match)
 
 
-def _extract_recent_requests(
-    removed: list[Message],
-    config: CompactionConfig,
-) -> list[str]:
+def _extract_recent_requests(removed: list[Message]) -> list[str]:
     """
     Extract the most recent user text requests from removed messages.
 
@@ -399,7 +292,6 @@ def _extract_recent_requests(
 
     Args:
         removed (list[Message]): Messages being removed.
-        config (CompactionConfig): Compaction settings.
 
     Returns:
         list[str]: Up to MAX_RECENT_REQUESTS truncated request strings.
@@ -425,7 +317,7 @@ def _extract_recent_requests(
         if COMPACTION_MARKER in combined:
             continue
 
-        requests.append(_truncate(combined, config.line_max_chars))
+        requests.append(_truncate(combined, LINE_MAX_CHARS))
 
         if len(requests) >= MAX_RECENT_REQUESTS:
             break
@@ -433,54 +325,6 @@ def _extract_recent_requests(
     requests.reverse()
 
     return requests
-
-
-def _extract_pending_work(
-    removed: list[Message],
-    config: CompactionConfig,
-) -> list[str]:
-    """
-    Extract lines mentioning pending or future work from removed messages.
-
-    Scans text blocks for keywords like "todo", "next", "pending", etc.
-
-    Args:
-        removed (list[Message]): Messages being removed.
-        config (CompactionConfig): Compaction settings.
-
-    Returns:
-        list[str]: Unique pending work items, truncated.
-    """
-
-    seen: set[str] = set()
-    pending: list[str] = []
-
-    for message in reversed(removed):
-        for block in message.content:
-            if not isinstance(block, TextBlock):
-                continue
-
-            for line in block.text.splitlines():
-                stripped: str = line.strip()
-
-                if not stripped:
-                    continue
-
-                if not PENDING_KEYWORDS.search(stripped):
-                    continue
-
-                dedup_key: str = stripped.lower()
-
-                if dedup_key in seen:
-                    continue
-
-                seen.add(dedup_key)
-                pending.append(_truncate(stripped, config.line_max_chars))
-
-                if len(pending) >= MAX_RECENT_REQUESTS:
-                    return pending
-
-    return pending
 
 
 def _extract_current_work(removed: list[Message]) -> str:
@@ -505,10 +349,7 @@ def _extract_current_work(removed: list[Message]) -> str:
     return ""
 
 
-def _build_timeline(
-    removed: list[Message],
-    config: CompactionConfig,
-) -> list[str]:
+def _build_timeline(removed: list[Message]) -> list[str]:
     """
     Build a chronological timeline from removed messages.
 
@@ -516,7 +357,6 @@ def _build_timeline(
 
     Args:
         removed (list[Message]): Messages being removed.
-        config (CompactionConfig): Compaction settings.
 
     Returns:
         list[str]: Timeline entries.
@@ -528,7 +368,7 @@ def _build_timeline(
         first_text: str = _first_text_block(message)
 
         if first_text:
-            truncated: str = _truncate(first_text, config.line_max_chars)
+            truncated: str = _truncate(first_text, LINE_MAX_CHARS)
             entry: str = f"{message.role}: {truncated}"
             timeline.append(entry)
             continue
@@ -536,7 +376,7 @@ def _build_timeline(
         tool_summary: str = _first_tool_summary(message)
 
         if tool_summary:
-            entry = f"{message.role}: {_truncate(tool_summary, config.line_max_chars)}"
+            entry = f"{message.role}: {_truncate(tool_summary, LINE_MAX_CHARS)}"
             timeline.append(entry)
 
     return timeline
@@ -692,178 +532,6 @@ def _merge_summaries(existing_summary: str, new_summary: str) -> str:
             sections.append(f"  {line}")
 
     return "\n".join(sections)
-
-
-def _compress_summary(raw_summary: str, config: CompactionConfig) -> str:
-    """
-    Compress a raw summary by deduplicating and enforcing budget limits.
-
-    Applies line-level deduplication (case-insensitive), truncates lines,
-    and selects lines by priority to fit within character and line budgets.
-
-    Args:
-        raw_summary (str): The uncompressed summary text.
-        config (CompactionConfig): Compaction settings.
-
-    Returns:
-        str: The compressed summary.
-    """
-
-    seen: set[str] = set()
-    unique_lines: list[str] = []
-
-    for raw_line in raw_summary.splitlines():
-        normalized: str = " ".join(raw_line.split())
-
-        if not normalized:
-            continue
-
-        truncated: str = _truncate(normalized, config.line_max_chars)
-        dedup_key: str = truncated.lower().strip()
-
-        if dedup_key in seen:
-            continue
-
-        seen.add(dedup_key)
-        unique_lines.append(truncated)
-
-    selected: list[str] = _select_lines_by_priority(
-        unique_lines,
-        config.summary_max_lines,
-        config.summary_max_chars,
-    )
-
-    omitted_count: int = len(unique_lines) - len(selected)
-
-    if omitted_count > 0:
-        selected.append(f"- ... {omitted_count} additional line(s) omitted.")
-
-    return "\n".join(selected)
-
-
-_PRIORITY_PREFIXES: list[list[str]] = [
-    ["- Scope:", "- Tools used:", "- Current work:"],
-    ["- Recent requests:", "- Pending work:", "- Key files:"],
-    [
-        "- Previously compacted context:",
-        "- Newly compacted context:",
-        "- Key timeline:",
-    ],
-]
-
-
-def _select_lines_by_priority(
-    lines: list[str],
-    max_lines: int,
-    max_chars: int,
-) -> list[str]:
-    """
-    Select lines by priority tier to fit within budget constraints.
-
-    Priority 0 (highest): scope, tools, current work.
-    Priority 1: key files, pending work, recent requests.
-    Priority 2: previously compacted context, key timeline.
-    Priority 3 (lowest): everything else (sub-items, etc.).
-
-    Args:
-        lines (list[str]): Deduplicated summary lines.
-        max_lines (int): Maximum number of lines to include.
-        max_chars (int): Maximum total characters.
-
-    Returns:
-        list[str]: Selected lines within budget.
-    """
-
-    selected: list[str] = []
-    total_chars: int = 0
-    used_indexes: set[int] = set()
-
-    for priority_prefixes in _PRIORITY_PREFIXES:
-        for index, line in enumerate(lines):
-            if index in used_indexes:
-                continue
-
-            if not any(line.startswith(prefix) for prefix in priority_prefixes):
-                continue
-
-            if len(selected) >= max_lines:
-                break
-
-            if total_chars + len(line) + 1 > max_chars:
-                break
-
-            selected.append(line)
-            total_chars += len(line) + 1
-            used_indexes.add(index)
-
-            _add_sub_items(
-                lines,
-                index,
-                used_indexes,
-                selected,
-                max_lines,
-                max_chars,
-                total_chars,
-            )
-            total_chars = sum(len(item) + 1 for item in selected)
-
-    for index, line in enumerate(lines):
-        if index in used_indexes:
-            continue
-
-        if len(selected) >= max_lines:
-            break
-
-        if total_chars + len(line) + 1 > max_chars:
-            break
-
-        selected.append(line)
-        total_chars += len(line) + 1
-        used_indexes.add(index)
-
-    return selected
-
-
-def _add_sub_items(
-    lines: list[str],
-    parent_index: int,
-    used_indexes: set[int],
-    selected: list[str],
-    max_lines: int,
-    max_chars: int,
-    total_chars: int,
-) -> None:
-    """
-    Add indented sub-items that follow a parent line.
-
-    Args:
-        lines (list[str]): All summary lines.
-        parent_index (int): Index of the parent line.
-        used_indexes (set[int]): Already selected indexes.
-        selected (list[str]): Accumulator of selected lines.
-        max_lines (int): Maximum number of lines.
-        max_chars (int): Maximum total characters.
-        total_chars (int): Current total character count.
-    """
-
-    for sub_index in range(parent_index + 1, len(lines)):
-        sub_line: str = lines[sub_index]
-
-        if not sub_line.startswith("  "):
-            break
-
-        if sub_index in used_indexes:
-            continue
-
-        if len(selected) >= max_lines:
-            break
-
-        if total_chars + len(sub_line) + 1 > max_chars:
-            break
-
-        selected.append(sub_line)
-        total_chars += len(sub_line) + 1
-        used_indexes.add(sub_index)
 
 
 def _truncate(text: str, max_chars: int) -> str:
