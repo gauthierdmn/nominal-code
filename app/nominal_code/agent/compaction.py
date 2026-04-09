@@ -155,11 +155,7 @@ def compact_messages(
     summary_text: str = _build_summary(removed, prior_summary, config)
     compressed: str = _compress_summary(summary_text, config)
 
-    continuation_text: str = (
-        f"{COMPACTION_MARKER}\n"
-        f"{CONTINUATION_PREAMBLE}"
-        f"{compressed}"
-    )
+    continuation_text: str = f"{COMPACTION_MARKER}\n{CONTINUATION_PREAMBLE}{compressed}"
 
     continuation_message: Message = Message(
         role="user",
@@ -491,7 +487,8 @@ def _build_timeline(
         first_text: str = _first_text_block(message)
 
         if first_text:
-            entry: str = f"{message.role}: {_truncate(first_text, config.line_max_chars)}"
+            truncated: str = _truncate(first_text, config.line_max_chars)
+            entry: str = f"{message.role}: {truncated}"
             timeline.append(entry)
             continue
 

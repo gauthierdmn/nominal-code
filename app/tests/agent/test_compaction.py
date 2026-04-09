@@ -1,10 +1,7 @@
 # type: ignore
-import pytest
-
 from nominal_code.agent.compaction import (
     COMPACTION_MARKER,
     CompactionConfig,
-    CompactionResult,
     _build_summary,
     _compress_summary,
     _truncate,
@@ -76,9 +73,7 @@ class TestEstimateMessageTokens:
         tokens = estimate_message_tokens(messages)
 
         expected = (
-            len("prompt") // 4 + 1
-            + len("response") // 4 + 1
-            + len("followup") // 4 + 1
+            len("prompt") // 4 + 1 + len("response") // 4 + 1 + len("followup") // 4 + 1
         )
 
         assert tokens == expected
