@@ -242,6 +242,26 @@ class TestFromEnv:
             with pytest.raises(ValueError, match="Unknown AGENT_PROVIDER"):
                 Config.from_env(require_webhook=True)
 
+    def test_from_env_inline_suggestions_enabled_by_default(self, _reviewer_only_env):
+        config = Config.from_env(require_webhook=True)
+
+        assert config.reviewer is not None
+        assert config.reviewer.suggestions_prompt != ""
+
+    def test_from_env_inline_suggestions_disabled(self, _reviewer_only_env):
+        with patch.dict(os.environ, {"INLINE_SUGGESTIONS": "false"}):
+            config = Config.from_env(require_webhook=True)
+
+        assert config.reviewer is not None
+        assert config.reviewer.suggestions_prompt == ""
+
+    def test_from_env_inline_suggestions_explicit_true(self, _reviewer_only_env):
+        with patch.dict(os.environ, {"INLINE_SUGGESTIONS": "true"}):
+            config = Config.from_env(require_webhook=True)
+
+        assert config.reviewer is not None
+        assert config.reviewer.suggestions_prompt != ""
+
 
 class TestParseReviewerTriggers:
     def testparse_reviewer_triggers_empty_string(self):
