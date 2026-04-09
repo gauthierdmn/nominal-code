@@ -1,9 +1,15 @@
 # type: ignore
 from nominal_code.agent.compaction import (
+    COMPACT_DIRECT_RESUME_INSTRUCTION,
+    COMPACT_RECENT_MESSAGES_NOTE,
     COMPACTION_MARKER,
     CompactionConfig,
     _build_summary,
+    _compacted_summary_prefix_len,
     _compress_summary,
+    _extract_summary_highlights,
+    _extract_summary_timeline,
+    _merge_summaries,
     _truncate,
     compact_messages,
     estimate_message_tokens,
@@ -38,6 +44,24 @@ def _tool_result_message(tool_use_id, content, is_error=False):
             ),
         ],
     )
+
+
+class TestCompactedSummaryPrefixLen:
+    def test_returns_zero_for_empty(self):
+        assert _compacted_summary_prefix_len([]) == 0
+
+    def test_returns_zero_for_normal_message(self):
+        messages = [_user_text("hello")]
+
+        assert _compacted_summary_prefix_len(messages) == 0
+
+    def test_returns_one_for_compaction_message(self):
+        msg = Message(
+            role="system",
+            content=[TextBlock(text=f"{COMPACTION_MARKER}\nSome summary")],
+        )
+
+        assert _compacted_summary_prefix_len([msg]) == 1
 
 
 class TestEstimateMessageTokens:
@@ -122,14 +146,31 @@ class TestShouldCompact:
 
         assert should_compact(messages, config) is True
 
-    def test_at_threshold_does_not_compact(self):
+    def test_at_threshold_does_compact(self):
         config = CompactionConfig(
             preserve_recent_messages=1,
             max_estimated_tokens=10_000,
         )
-        # len("x" * 39_996) // 4 + 1 == 10_000 exactly, which is not > threshold
+        # len("x" * 39_996) // 4 + 1 == 10_000 exactly, which IS >= threshold
         text = "x" * 39_996
         messages = [_user_text(text), _assistant_text("recent")]
+
+        assert should_compact(messages, config) is True
+
+    def test_skips_existing_compaction_prefix(self):
+        config = CompactionConfig(
+            preserve_recent_messages=2,
+            max_estimated_tokens=10,
+        )
+        compaction_msg = Message(
+            role="system",
+            content=[TextBlock(text=f"{COMPACTION_MARKER}\nOld summary " + "x" * 1000)],
+        )
+        messages = [
+            compaction_msg,
+            _user_text("tiny"),
+            _assistant_text("recent"),
+        ]
 
         assert should_compact(messages, config) is False
 
@@ -190,10 +231,31 @@ class TestCompactMessages:
 
         continuation = result.messages[0]
 
-        assert continuation.role == "user"
+        assert continuation.role == "system"
         assert len(continuation.content) == 1
         assert isinstance(continuation.content[0], TextBlock)
         assert COMPACTION_MARKER in continuation.content[0].text
+
+    def test_continuation_message_has_instructions(self):
+        config = CompactionConfig(
+            preserve_recent_messages=2,
+            max_estimated_tokens=10,
+        )
+        large_content = "x" * 1000
+        messages = [
+            _user_text(large_content),
+            _assistant_text(large_content),
+            _user_text("recent"),
+            _assistant_text("recent"),
+        ]
+        result = compact_messages(messages, config)
+
+        assert result.did_compact is True
+
+        continuation_text = result.messages[0].content[0].text
+
+        assert COMPACT_RECENT_MESSAGES_NOTE in continuation_text
+        assert COMPACT_DIRECT_RESUME_INSTRUCTION in continuation_text
 
     def test_summary_contains_scope(self):
         config = CompactionConfig(
@@ -275,6 +337,7 @@ class TestCompactMessages:
 
         assert second_result.did_compact is True
         assert "Previously compacted context" in second_result.summary_text
+        assert "Newly compacted context" in second_result.summary_text
 
 
 class TestBuildSummary:
@@ -286,7 +349,7 @@ class TestBuildSummary:
             _tool_result_message("t2", "output"),
         ]
         config = CompactionConfig()
-        summary = _build_summary(removed, None, config)
+        summary = _build_summary(removed, config)
 
         assert "Bash" in summary
         assert "Read" in summary
@@ -299,7 +362,7 @@ class TestBuildSummary:
             _assistant_text("Checking now"),
         ]
         config = CompactionConfig()
-        summary = _build_summary(removed, None, config)
+        summary = _build_summary(removed, config)
 
         assert "investigate the auth module" in summary
         assert "check the tests" in summary
@@ -310,21 +373,19 @@ class TestBuildSummary:
             _assistant_text("I am analyzing the service layer for bugs"),
         ]
         config = CompactionConfig()
-        summary = _build_summary(removed, None, config)
+        summary = _build_summary(removed, config)
 
         assert "analyzing the service layer" in summary
 
-    def test_prior_summary_included(self):
+    def test_current_work_searches_all_roles(self):
         removed = [
-            _user_text("x" * 100),
-            _assistant_text("y" * 100),
+            _assistant_text("older assistant text"),
+            _user_text("latest user text"),
         ]
         config = CompactionConfig()
-        prior = "- Scope: Compacted 4 messages\n- Tools used: Read"
-        summary = _build_summary(removed, prior, config)
+        summary = _build_summary(removed, config)
 
-        assert "Previously compacted context" in summary
-        assert "Compacted 4 messages" in summary
+        assert "latest user text" in summary
 
     def test_file_paths_from_tool_input(self):
         removed = [
@@ -332,7 +393,7 @@ class TestBuildSummary:
             _tool_result_message("t1", "content"),
         ]
         config = CompactionConfig()
-        summary = _build_summary(removed, None, config)
+        summary = _build_summary(removed, config)
 
         assert "lib/utils.py" in summary
 
@@ -344,10 +405,97 @@ class TestBuildSummary:
             _assistant_text("real response"),
         ]
         config = CompactionConfig()
-        summary = _build_summary(removed, None, config)
+        summary = _build_summary(removed, config)
 
         assert "Recent requests" in summary
         assert "real user request" in summary
+
+
+class TestExtractSummaryParts:
+    def test_highlights_excludes_timeline(self):
+        summary = (
+            "- Scope: 4 messages\n"
+            "- Tools used: Read\n"
+            "- Key timeline:\n"
+            "  - user: hello\n"
+            "  - assistant: world"
+        )
+        highlights = _extract_summary_highlights(summary)
+
+        assert "- Scope: 4 messages" in highlights
+        assert "- Tools used: Read" in highlights
+        assert not any("user:" in line for line in highlights)
+        assert not any("assistant:" in line for line in highlights)
+
+    def test_timeline_extraction(self):
+        summary = (
+            "- Scope: 4 messages\n"
+            "- Key timeline:\n"
+            "  - user: hello\n"
+            "  - assistant: world"
+        )
+        timeline = _extract_summary_timeline(summary)
+
+        assert len(timeline) == 2
+        assert "user: hello" in timeline[0]
+        assert "assistant: world" in timeline[1]
+
+    def test_timeline_stops_at_blank_line(self):
+        summary = "- Key timeline:\n  - user: hello\n\n- Other section:"
+        timeline = _extract_summary_timeline(summary)
+
+        assert len(timeline) == 1
+
+    def test_highlights_empty_when_only_timeline(self):
+        summary = "- Key timeline:\n  - user: hello"
+        highlights = _extract_summary_highlights(summary)
+
+        assert highlights == []
+
+
+class TestMergeSummaries:
+    def test_creates_three_sections(self):
+        existing = (
+            "- Scope: Compacted 4 messages\n"
+            "- Tools used: Read\n"
+            "- Key timeline:\n"
+            "  - user: hello"
+        )
+        new = (
+            "- Scope: Compacted 2 messages\n"
+            "- Current work: analyzing\n"
+            "- Key timeline:\n"
+            "  - user: world"
+        )
+        merged = _merge_summaries(existing, new)
+
+        assert "Previously compacted context" in merged
+        assert "Newly compacted context" in merged
+        assert "Key timeline" in merged
+
+    def test_timeline_comes_from_new_summary_only(self):
+        existing = "- Scope: old\n- Key timeline:\n  - user: old event"
+        new = "- Scope: new\n- Key timeline:\n  - user: new event"
+        merged = _merge_summaries(existing, new)
+
+        assert "new event" in merged
+        # Old timeline entries should NOT appear in the timeline section
+        timeline_start = merged.index("- Key timeline:")
+        timeline_section = merged[timeline_start:]
+
+        assert "old event" not in timeline_section
+
+    def test_excludes_timeline_from_highlights(self):
+        existing = "- Scope: old scope\n- Key timeline:\n  - user: old event"
+        new = "- Scope: new scope"
+        merged = _merge_summaries(existing, new)
+
+        prev_section_start = merged.index("- Previously compacted context:")
+        prev_section_end = merged.index("- Newly compacted context:")
+        prev_section = merged[prev_section_start:prev_section_end]
+
+        assert "old event" not in prev_section
+        assert "old scope" in prev_section
 
 
 class TestCompressSummary:

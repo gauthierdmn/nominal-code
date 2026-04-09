@@ -10,8 +10,16 @@ from nominal_code.llm.messages import Message, TextBlock, ToolResultBlock, ToolU
 COMPACTION_MARKER: str = "[context compacted]"
 
 CONTINUATION_PREAMBLE: str = (
-    "This conversation was compacted from an earlier, longer exchange. "
-    "The summary below covers the portion that was removed.\n\n"
+    "This session is being continued from a previous conversation that ran out "
+    "of context. The summary below covers the earlier portion of the conversation.\n\n"
+)
+
+COMPACT_RECENT_MESSAGES_NOTE: str = "Recent messages are preserved verbatim."
+
+COMPACT_DIRECT_RESUME_INSTRUCTION: str = (
+    "Continue the conversation from where it left off without asking the user "
+    "any further questions. Resume directly \u2014 do not acknowledge the summary, "
+    "do not recap what was happening, and do not preface with continuation text."
 )
 
 FILE_PATH_PATTERN: re.Pattern[str] = re.compile(
@@ -68,6 +76,30 @@ class CompactionResult:
     summary_text: str = ""
 
 
+def _compacted_summary_prefix_len(messages: list[Message]) -> int:
+    """
+    Return 1 if the first message is an existing compaction summary, 0 otherwise.
+
+    Allows ``should_compact`` and ``compact_messages`` to skip a prior
+    compaction message when deciding whether to re-compact.
+
+    Args:
+        messages (list[Message]): Current message history.
+
+    Returns:
+        int: 1 if the first message contains the compaction marker, 0 otherwise.
+    """
+
+    if not messages:
+        return 0
+
+    for block in messages[0].content:
+        if isinstance(block, TextBlock) and COMPACTION_MARKER in block.text:
+            return 1
+
+    return 0
+
+
 def estimate_message_tokens(messages: list[Message]) -> int:
     """
     Estimate token count for a list of messages using a character heuristic.
@@ -115,12 +147,15 @@ def should_compact(
         bool: Whether compaction should fire.
     """
 
-    if len(messages) <= config.preserve_recent_messages:
+    start: int = _compacted_summary_prefix_len(messages)
+    compactable: list[Message] = messages[start:]
+
+    if len(compactable) <= config.preserve_recent_messages:
         return False
 
-    older: list[Message] = messages[: -config.preserve_recent_messages]
+    older: list[Message] = compactable[: -config.preserve_recent_messages]
 
-    return estimate_message_tokens(older) > config.max_estimated_tokens
+    return estimate_message_tokens(older) >= config.max_estimated_tokens
 
 
 def compact_messages(
@@ -148,17 +183,30 @@ def compact_messages(
     if not should_compact(messages, config):
         return CompactionResult(messages=messages)
 
-    preserved: list[Message] = messages[-config.preserve_recent_messages :]
-    removed: list[Message] = messages[: -config.preserve_recent_messages]
+    existing_summary: str | None = _extract_prior_summary(messages)
+    prefix_len: int = _compacted_summary_prefix_len(messages)
 
-    prior_summary: str | None = _extract_prior_summary(removed)
-    summary_text: str = _build_summary(removed, prior_summary, config)
-    compressed: str = _compress_summary(summary_text, config)
+    preserved: list[Message] = messages[-config.preserve_recent_messages :]
+    removed: list[Message] = messages[prefix_len : -config.preserve_recent_messages]
+
+    new_summary: str = _build_summary(removed, config)
+
+    if existing_summary:
+        raw_summary: str = _merge_summaries(existing_summary, new_summary)
+    else:
+        raw_summary = new_summary
+
+    compressed: str = _compress_summary(raw_summary, config)
 
     continuation_text: str = f"{COMPACTION_MARKER}\n{CONTINUATION_PREAMBLE}{compressed}"
 
+    if preserved:
+        continuation_text += f"\n\n{COMPACT_RECENT_MESSAGES_NOTE}"
+
+    continuation_text += f"\n{COMPACT_DIRECT_RESUME_INSTRUCTION}"
+
     continuation_message: Message = Message(
-        role="user",
+        role="system",
         content=[TextBlock(text=continuation_text)],
     )
 
@@ -172,24 +220,25 @@ def compact_messages(
     )
 
 
-def _extract_prior_summary(removed: list[Message]) -> str | None:
+def _extract_prior_summary(messages: list[Message]) -> str | None:
     """
-    Extract a prior compaction summary from the first removed message.
+    Extract a prior compaction summary from the first message.
 
     If the first message contains the compaction marker, extracts the
-    summary text that follows the continuation preamble.
+    summary text that follows the continuation preamble, stripping any
+    appended continuation instructions.
 
     Args:
-        removed (list[Message]): The messages being removed.
+        messages (list[Message]): The current message history.
 
     Returns:
         str | None: The prior summary text, or None if not found.
     """
 
-    if not removed:
+    if not messages:
         return None
 
-    first: Message = removed[0]
+    first: Message = messages[0]
 
     for block in first.content:
         if not isinstance(block, TextBlock):
@@ -202,30 +251,34 @@ def _extract_prior_summary(removed: list[Message]) -> str | None:
 
         if preamble_end >= 0:
             start: int = preamble_end + len(CONTINUATION_PREAMBLE)
+            summary: str = block.text[start:]
+        else:
+            marker_end: int = block.text.find(COMPACTION_MARKER) + len(
+                COMPACTION_MARKER
+            )
+            summary = block.text[marker_end:]
 
-            return block.text[start:].strip()
+        summary = summary.split(f"\n\n{COMPACT_RECENT_MESSAGES_NOTE}")[0]
+        summary = summary.split(f"\n{COMPACT_DIRECT_RESUME_INSTRUCTION}")[0]
 
-        marker_end: int = block.text.find(COMPACTION_MARKER) + len(COMPACTION_MARKER)
-
-        return block.text[marker_end:].strip()
+        return summary.strip()
 
     return None
 
 
 def _build_summary(
     removed: list[Message],
-    prior_summary: str | None,
     config: CompactionConfig,
 ) -> str:
     """
     Build a rule-based summary from removed messages.
 
-    Extracts scope, tools used, files referenced, recent user requests,
-    current work status, and a key timeline from the message history.
+    Extracts scope, tools used, recent user requests, pending work,
+    files referenced, current work status, and a key timeline from
+    the message history.
 
     Args:
         removed (list[Message]): Messages being removed.
-        prior_summary (str | None): Summary from a previous compaction.
         config (CompactionConfig): Compaction settings.
 
     Returns:
@@ -241,9 +294,6 @@ def _build_summary(
         f"Compacted {len(removed)} messages "
         f"({user_count} user, {assistant_count} assistant)."
     )
-
-    if prior_summary:
-        scope += " Includes prior compacted context."
 
     sections.append(f"- Scope: {scope}")
 
@@ -261,10 +311,6 @@ def _build_summary(
     if tools:
         sections.append(f"- Tools used: {', '.join(sorted(tools))}")
 
-    if files:
-        sorted_files: list[str] = sorted(files)[:MAX_FILES_IN_SUMMARY]
-        sections.append(f"- Key files: {', '.join(sorted_files)}")
-
     recent_requests: list[str] = _extract_recent_requests(removed, config)
 
     if recent_requests:
@@ -281,6 +327,10 @@ def _build_summary(
         for item in pending:
             sections.append(f"  - {item}")
 
+    if files:
+        sorted_files: list[str] = sorted(files)[:MAX_FILES_IN_SUMMARY]
+        sections.append(f"- Key files: {', '.join(sorted_files)}")
+
     current_work: str = _extract_current_work(removed)
 
     if current_work:
@@ -293,15 +343,6 @@ def _build_summary(
 
         for entry in timeline:
             sections.append(f"  - {entry}")
-
-    if prior_summary:
-        sections.append("- Previously compacted context:")
-
-        for line in prior_summary.splitlines()[:6]:
-            stripped: str = line.strip()
-
-            if stripped:
-                sections.append(f"  - {_truncate(stripped, config.line_max_chars)}")
 
     return "\n".join(sections)
 
@@ -444,7 +485,10 @@ def _extract_pending_work(
 
 def _extract_current_work(removed: list[Message]) -> str:
     """
-    Extract the most recent non-empty assistant text as current work.
+    Extract the most recent non-empty text as current work.
+
+    Searches all message roles, matching the Rust reference
+    ``infer_current_work`` which iterates without role filtering.
 
     Args:
         removed (list[Message]): Messages being removed.
@@ -454,9 +498,6 @@ def _extract_current_work(removed: list[Message]) -> str:
     """
 
     for message in reversed(removed):
-        if message.role != "assistant":
-            continue
-
         for block in message.content:
             if isinstance(block, TextBlock) and block.text.strip():
                 return _truncate(block.text.strip(), CURRENT_WORK_MAX_CHARS)
@@ -542,6 +583,117 @@ def _first_tool_summary(message: Message) -> str:
     return ""
 
 
+def _extract_summary_highlights(summary: str) -> list[str]:
+    """
+    Extract non-timeline highlight lines from a summary.
+
+    Skips the ``- Key timeline:`` header and all indented entries below it.
+
+    Args:
+        summary (str): The summary text.
+
+    Returns:
+        list[str]: Highlight lines (everything except timeline).
+    """
+
+    lines: list[str] = []
+    in_timeline: bool = False
+
+    for line in summary.splitlines():
+        trimmed: str = line.rstrip()
+
+        if not trimmed:
+            continue
+
+        if trimmed == "- Key timeline:":
+            in_timeline = True
+            continue
+
+        if in_timeline:
+            continue
+
+        lines.append(trimmed)
+
+    return lines
+
+
+def _extract_summary_timeline(summary: str) -> list[str]:
+    """
+    Extract timeline entries from a summary.
+
+    Returns lines that appear after the ``- Key timeline:`` header.
+
+    Args:
+        summary (str): The summary text.
+
+    Returns:
+        list[str]: Timeline entry lines.
+    """
+
+    lines: list[str] = []
+    in_timeline: bool = False
+
+    for line in summary.splitlines():
+        trimmed: str = line.rstrip()
+
+        if trimmed == "- Key timeline:":
+            in_timeline = True
+            continue
+
+        if not in_timeline:
+            continue
+
+        if not trimmed:
+            break
+
+        lines.append(trimmed)
+
+    return lines
+
+
+def _merge_summaries(existing_summary: str, new_summary: str) -> str:
+    """
+    Merge an existing compaction summary with a new one.
+
+    Creates three sections: previously compacted context (highlights from
+    the existing summary), newly compacted context (highlights from the
+    new summary), and key timeline (from the new summary only).
+
+    Args:
+        existing_summary (str): The prior compaction summary text.
+        new_summary (str): The newly generated summary text.
+
+    Returns:
+        str: The merged summary.
+    """
+
+    previous_highlights: list[str] = _extract_summary_highlights(existing_summary)
+    new_highlights: list[str] = _extract_summary_highlights(new_summary)
+    new_timeline: list[str] = _extract_summary_timeline(new_summary)
+
+    sections: list[str] = []
+
+    if previous_highlights:
+        sections.append("- Previously compacted context:")
+
+        for line in previous_highlights:
+            sections.append(f"  {line}")
+
+    if new_highlights:
+        sections.append("- Newly compacted context:")
+
+        for line in new_highlights:
+            sections.append(f"  {line}")
+
+    if new_timeline:
+        sections.append("- Key timeline:")
+
+        for line in new_timeline:
+            sections.append(f"  {line}")
+
+    return "\n".join(sections)
+
+
 def _compress_summary(raw_summary: str, config: CompactionConfig) -> str:
     """
     Compress a raw summary by deduplicating and enforcing budget limits.
@@ -591,8 +743,12 @@ def _compress_summary(raw_summary: str, config: CompactionConfig) -> str:
 
 _PRIORITY_PREFIXES: list[list[str]] = [
     ["- Scope:", "- Tools used:", "- Current work:"],
-    ["- Key files:", "- Pending work:", "- Recent requests:"],
-    ["- Previously compacted context:", "- Key timeline:"],
+    ["- Recent requests:", "- Pending work:", "- Key files:"],
+    [
+        "- Previously compacted context:",
+        "- Newly compacted context:",
+        "- Key timeline:",
+    ],
 ]
 
 
