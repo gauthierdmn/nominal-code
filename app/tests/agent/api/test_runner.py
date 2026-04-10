@@ -272,6 +272,77 @@ class TestRunAgentApi:
         assert result.messages == ()
 
 
+class TestCompactionIntegration:
+    @pytest.mark.asyncio
+    async def test_compaction_not_triggered_when_disabled(self, tmp_path):
+        mock_provider = AsyncMock()
+        mock_provider.send = AsyncMock(
+            return_value=_make_text_response("Done."),
+        )
+
+        result = await run_api_agent(
+            prompt="test",
+            cwd=tmp_path,
+            model="test-model",
+            provider=mock_provider,
+        )
+
+        assert result.is_error is False
+
+    @pytest.mark.asyncio
+    async def test_compaction_noop_when_few_messages(self, tmp_path):
+        mock_provider = AsyncMock()
+        mock_provider.send = AsyncMock(
+            return_value=_make_text_response("Done."),
+        )
+
+        result = await run_api_agent(
+            prompt="test",
+            cwd=tmp_path,
+            model="test-model",
+            provider=mock_provider,
+            enable_compaction=True,
+        )
+
+        assert result.is_error is False
+
+    @pytest.mark.asyncio
+    async def test_full_messages_preserved_after_compaction(self, tmp_path):
+        call_count = 0
+
+        async def side_effect(**kwargs):
+            nonlocal call_count
+            call_count += 1
+
+            if call_count <= 6:
+                return _make_tool_use_response(
+                    f"t{call_count}",
+                    "Read",
+                    {"file_path": "test.py"},
+                )
+
+            return _make_text_response("Done.")
+
+        mock_provider = AsyncMock()
+        mock_provider.send = AsyncMock(side_effect=side_effect)
+
+        with patch(
+            "nominal_code.agent.api.runner.execute_tool",
+            new_callable=AsyncMock,
+            return_value=("x" * 5000, False),
+        ):
+            result = await run_api_agent(
+                prompt="test",
+                cwd=tmp_path,
+                model="test-model",
+                provider=mock_provider,
+                max_turns=10,
+                enable_compaction=True,
+            )
+
+        assert len(result.messages) >= 9
+
+
 class TestRunAgentApiCost:
     @pytest.mark.asyncio
     async def test_cost_summary_present_on_simple_response(self, tmp_path):

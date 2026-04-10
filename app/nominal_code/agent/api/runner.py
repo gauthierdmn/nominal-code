@@ -10,6 +10,7 @@ from nominal_code.agent.api.tools import (
     execute_tool,
     get_tool_definitions,
 )
+from nominal_code.agent.compaction import compact_messages
 from nominal_code.agent.result import AgentResult
 from nominal_code.conversation.base import truncate_messages
 from nominal_code.llm.cost import build_cost_summary
@@ -41,6 +42,7 @@ async def run_api_agent(
     allowed_tools: list[str] | None = None,
     prior_messages: list[Message] | None = None,
     provider_name: ProviderName = ProviderName.GOOGLE,
+    enable_compaction: bool = False,
 ) -> AgentResult:
     """
     Run the agent using an LLM provider with tool use.
@@ -53,6 +55,11 @@ async def run_api_agent(
     structured-output tool is included. If the model calls it, the tool
     input is serialized as JSON and returned as the agent output.
 
+    When ``enable_compaction`` is True, the messages sent to the LLM
+    are periodically compacted (older messages replaced with a summary)
+    to reduce token usage. The full uncompacted history is always
+    preserved and returned in ``AgentResult.messages``.
+
     Args:
         prompt (str): The user's prompt to pass to the agent.
         cwd (Path): Working directory for tool execution.
@@ -64,6 +71,8 @@ async def run_api_agent(
         prior_messages (list[Message] | None): Prior conversation messages
             for multi-turn continuity. Prepended before the new user message.
         provider_name (ProviderName): Provider identifier for cost tracking.
+        enable_compaction (bool): When True, enables session-level compaction
+            of older messages to reduce token costs.
 
     Returns:
         AgentResult: The parsed result from the agent.
@@ -73,11 +82,12 @@ async def run_api_agent(
         allowed_tools=allowed_tools,
     )
 
-    messages: list[Message] = prior_messages or []
-    messages.append(Message(role="user", content=[TextBlock(text=prompt)]))
+    initial_messages: list[Message] = prior_messages or []
+    initial_messages.append(Message(role="user", content=[TextBlock(text=prompt)]))
+    initial_messages = truncate_messages(messages=initial_messages)
 
-    # drop old messages to stay in the character budget
-    messages = truncate_messages(messages=messages)
+    full_messages: list[Message] = list(initial_messages)
+    llm_messages: list[Message] = list(initial_messages)
 
     turns: int = 0
     start_time: int = _now_ms()
@@ -88,7 +98,7 @@ async def run_api_agent(
     try:
         while True:
             response: LLMResponse = await provider.send(
-                messages=messages,
+                messages=llm_messages,
                 system_prompt=system_prompt,
                 tools=tool_definitions,
                 model=model,
@@ -105,9 +115,12 @@ async def run_api_agent(
                     else token_usage + response.usage
                 )
 
-            messages.append(
-                Message(role="assistant", content=list(response.content)),
+            assistant_message: Message = Message(
+                role="assistant",
+                content=list(response.content),
             )
+            full_messages.append(assistant_message)
+            llm_messages.append(assistant_message)
 
             tool_use_blocks: list[ToolUseBlock] = [
                 block for block in response.content if isinstance(block, ToolUseBlock)
@@ -123,7 +136,7 @@ async def run_api_agent(
                     is_error=False,
                     num_turns=turns,
                     duration_ms=duration_ms,
-                    messages=tuple(messages),
+                    messages=tuple(full_messages),
                     conversation_id=conversation_id,
                     cost=build_cost_summary(
                         usage=token_usage,
@@ -150,7 +163,7 @@ async def run_api_agent(
                         is_error=False,
                         num_turns=turns,
                         duration_ms=duration_ms,
-                        messages=tuple(messages),
+                        messages=tuple(full_messages),
                         conversation_id=conversation_id,
                         cost=build_cost_summary(
                             usage=token_usage,
@@ -193,9 +206,22 @@ async def run_api_agent(
                     ),
                 )
 
-            messages.append(Message(role="user", content=tool_results))
+            tool_result_message: Message = Message(
+                role="user",
+                content=tool_results,
+            )
+            full_messages.append(tool_result_message)
+            llm_messages.append(tool_result_message)
 
             turns += 1
+
+            if enable_compaction:
+                compaction_result = compact_messages(llm_messages)
+
+                if compaction_result.summary_text:
+                    llm_messages = compaction_result.messages
+
+                    logger.info("Compacted LLM context")
 
             # TBI: better handling — e.g. prompt to return
             # a review on the next turn
@@ -205,7 +231,7 @@ async def run_api_agent(
                     max_turns,
                 )
 
-                output = _extract_last_text(messages=messages)
+                output = _extract_last_text(messages=full_messages)
                 duration_ms = _now_ms() - start_time
 
                 return AgentResult(
@@ -213,7 +239,7 @@ async def run_api_agent(
                     is_error=False,
                     num_turns=turns,
                     duration_ms=duration_ms,
-                    messages=tuple(messages),
+                    messages=tuple(full_messages),
                     conversation_id=conversation_id,
                     cost=build_cost_summary(
                         usage=token_usage,
