@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from nominal_code.llm.messages import (
     LLMResponse,
@@ -10,6 +10,7 @@ from nominal_code.llm.messages import (
     StopReason,
     TextBlock,
     TokenUsage,
+    ToolChoice,
     ToolDefinition,
     ToolResultBlock,
     ToolUseBlock,
@@ -36,6 +37,13 @@ if TYPE_CHECKING:
     from openai.types.responses import Response as OpenAIResponse
 
 logger: logging.Logger = logging.getLogger(__name__)
+
+OpenAIToolChoice = Literal["auto", "required"]
+
+TOOL_CHOICE_MAP: dict[ToolChoice, OpenAIToolChoice] = {
+    ToolChoice.AUTO: "auto",
+    ToolChoice.REQUIRED: "required",
+}
 
 
 class OpenAIProvider:
@@ -106,6 +114,7 @@ class OpenAIProvider:
         model: str,
         max_tokens: int,
         previous_response_id: str | None = None,
+        tool_choice: ToolChoice | None = None,
     ) -> LLMResponse:
         """
         Send a request to an OpenAI-compatible API.
@@ -124,6 +133,8 @@ class OpenAIProvider:
             previous_response_id (str | None): Response ID from the previous
                 turn for server-side continuity. Only used by native
                 OpenAI; ignored by other providers.
+            tool_choice (ToolChoice | None): Controls whether the model
+                must use tools. ``None`` uses the provider default.
 
         Returns:
             LLMResponse: The model's response in canonical format. For
@@ -143,6 +154,7 @@ class OpenAIProvider:
                 model=model,
                 max_tokens=max_tokens,
                 previous_response_id=previous_response_id,
+                tool_choice=tool_choice,
             )
 
         return await self._send_chat_completions(
@@ -151,6 +163,7 @@ class OpenAIProvider:
             tools=tools,
             model=model,
             max_tokens=max_tokens,
+            tool_choice=tool_choice,
         )
 
     async def _send_chat_completions(
@@ -160,6 +173,7 @@ class OpenAIProvider:
         tools: list[ToolDefinition],
         model: str,
         max_tokens: int,
+        tool_choice: ToolChoice | None = None,
     ) -> LLMResponse:
         """
         Send via the standard chat completions API.
@@ -170,6 +184,8 @@ class OpenAIProvider:
             tools (list[ToolDefinition]): Available tool definitions.
             model (str): The model identifier.
             max_tokens (int): Maximum tokens in the response.
+            tool_choice (ToolChoice | None): Controls whether the model
+                must use tools.
 
         Returns:
             LLMResponse: The model's response in canonical format.
@@ -182,9 +198,16 @@ class OpenAIProvider:
             system_prompt=system_prompt,
         )
         api_tools: list[ChatCompletionToolParam] = _to_api_tools(tools=tools)
-
         try:
-            if api_tools:
+            if api_tools and tool_choice is not None:
+                response = await self._client.chat.completions.create(
+                    model=model,
+                    max_tokens=max_tokens,
+                    messages=api_messages,
+                    tools=api_tools,
+                    tool_choice=TOOL_CHOICE_MAP[tool_choice],
+                )
+            elif api_tools:
                 response = await self._client.chat.completions.create(
                     model=model,
                     max_tokens=max_tokens,
@@ -217,6 +240,7 @@ class OpenAIProvider:
         model: str,
         max_tokens: int,
         previous_response_id: str | None = None,
+        tool_choice: ToolChoice | None = None,
     ) -> LLMResponse:
         """
         Send via the OpenAI Responses API for server-side continuity.
@@ -229,6 +253,8 @@ class OpenAIProvider:
             max_tokens (int): Maximum tokens in the response.
             previous_response_id (str | None): The previous response ID
                 for conversation chaining. ``None`` for the first turn.
+            tool_choice (ToolChoice | None): Controls whether the model
+                must use tools.
 
         Returns:
             LLMResponse: The model's response with ``response_id`` set.
@@ -266,6 +292,9 @@ class OpenAIProvider:
 
         if previous_response_id:
             kwargs["previous_response_id"] = previous_response_id
+
+        if api_tools and tool_choice is not None:
+            kwargs["tool_choice"] = TOOL_CHOICE_MAP[tool_choice]
 
         try:
             response = await self._client.responses.create(**kwargs)

@@ -9,6 +9,7 @@ from nominal_code.llm.messages import (
     StopReason,
     TextBlock,
     TokenUsage,
+    ToolChoice,
     ToolDefinition,
     ToolResultBlock,
     ToolUseBlock,
@@ -28,6 +29,8 @@ if TYPE_CHECKING:
         CacheControlEphemeralParam,
         MessageParam,
         TextBlockParam,
+        ToolChoiceAnyParam,
+        ToolChoiceAutoParam,
         ToolParam,
         ToolResultBlockParam,
         ToolUseBlockParam,
@@ -36,12 +39,19 @@ if TYPE_CHECKING:
         Message as AnthropicMessage,
     )
 
+    AnthropicToolChoice = ToolChoiceAnyParam | ToolChoiceAutoParam
+
 logger: logging.Logger = logging.getLogger(__name__)
 
 STOP_REASON_MAP: dict[str, StopReason] = {
     "end_turn": StopReason.END_TURN,
     "tool_use": StopReason.TOOL_USE,
     "max_tokens": StopReason.MAX_TOKENS,
+}
+
+TOOL_CHOICE_MAP: dict[ToolChoice, AnthropicToolChoice] = {
+    ToolChoice.AUTO: {"type": "auto"},
+    ToolChoice.REQUIRED: {"type": "any"},
 }
 
 
@@ -87,6 +97,7 @@ class AnthropicProvider:
         model: str,
         max_tokens: int,
         previous_response_id: str | None = None,
+        tool_choice: ToolChoice | None = None,
     ) -> LLMResponse:
         """
         Send a request to the Anthropic Messages API.
@@ -99,6 +110,8 @@ class AnthropicProvider:
             max_tokens (int): Maximum tokens in the response.
             previous_response_id (str | None): Ignored. Anthropic does not
                 support server-side conversation chaining.
+            tool_choice (ToolChoice | None): Controls whether the model
+                must use tools. ``None`` uses the provider default.
 
         Returns:
             LLMResponse: The model's response in canonical format.
@@ -114,16 +127,30 @@ class AnthropicProvider:
         api_messages: list[MessageParam] = _to_api_messages(messages=messages)
         api_tools: list[ToolParam] = _to_api_tools(tools=tools)
         cache: CacheControlEphemeralParam = {"type": "ephemeral"}
-
         try:
-            response: anthropic.types.Message = await self._client.messages.create(
-                model=model,
-                max_tokens=max_tokens,
-                messages=api_messages,
-                cache_control=cache,
-                system=system_prompt,
-                tools=api_tools,
-            )
+            if tool_choice is not None:
+                api_tool_choice: ToolChoiceAnyParam | ToolChoiceAutoParam = (
+                    TOOL_CHOICE_MAP[tool_choice]
+                )
+
+                response: anthropic.types.Message = await self._client.messages.create(
+                    model=model,
+                    max_tokens=max_tokens,
+                    messages=api_messages,
+                    cache_control=cache,
+                    system=system_prompt,
+                    tools=api_tools,
+                    tool_choice=api_tool_choice,
+                )
+            else:
+                response = await self._client.messages.create(
+                    model=model,
+                    max_tokens=max_tokens,
+                    messages=api_messages,
+                    cache_control=cache,
+                    system=system_prompt,
+                    tools=api_tools,
+                )
         except anthropic.RateLimitError as exc:
             raise RateLimitError(str(exc)) from exc
         except anthropic.APIError as exc:
