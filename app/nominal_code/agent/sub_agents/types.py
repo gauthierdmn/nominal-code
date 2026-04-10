@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from enum import StrEnum
 
+from nominal_code.prompts import load_prompt
+
 
 class AgentType(StrEnum):
     """
@@ -24,10 +26,6 @@ AGENT_TYPE_TOOLS: dict[AgentType, list[str]] = {
     AgentType.PLAN: ["Read", "Glob", "Grep", "Bash"],
 }
 
-SUB_AGENT_SYSTEM_SUFFIX: str = (
-    "\n\nYou are a background sub-agent of type `{agent_type}`. "
-    "Work only on the delegated task, use only the tools available to you, "
-    "do not ask the user questions, and finish with a concise result."
-)
+SUB_AGENT_SYSTEM_SUFFIX: str = load_prompt("sub_agents/suffix.md")
 
 DEFAULT_MAX_TURNS_PER_SUB_AGENT: int = 32

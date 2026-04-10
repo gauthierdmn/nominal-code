@@ -77,8 +77,12 @@ async def run_explore(
     if not system_prompt:
         system_prompt = load_explore_system_prompt()
 
-    full_system_prompt: str = system_prompt + SUB_AGENT_SYSTEM_SUFFIX.format(
-        agent_type=AgentType.EXPLORE,
+    full_system_prompt: str = (
+        system_prompt
+        + "\n\n"
+        + SUB_AGENT_SYSTEM_SUFFIX.format(
+            agent_type=AgentType.EXPLORE,
+        )
     )
 
     per_group_turns: int = allocate_turns(max_turns, len(groups))
