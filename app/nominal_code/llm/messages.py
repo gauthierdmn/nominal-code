@@ -73,11 +73,11 @@ class Message:
     A conversation message with a role and content blocks.
 
     Attributes:
-        role (Literal["user", "assistant"]): The message sender role.
+        role (Literal["user", "assistant", "system"]): The message sender role.
         content (list[ContentBlock]): The content blocks in the message.
     """
 
-    role: Literal["user", "assistant"]
+    role: Literal["user", "assistant", "system"]
     content: list[ContentBlock] = field(default_factory=list)
 
 
