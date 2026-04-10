@@ -69,6 +69,33 @@ Findings that target lines within the diff are posted as native inline comments.
 
 This means no review feedback is lost, regardless of where in the codebase the issue is found.
 
+## Pre-Review Context
+
+The `review()` function accepts an optional `context` parameter for injecting additional information into the reviewer's prompt. This is typically the output from codebase exploration sub-agents (see [Sub-Agents](reference/sub-agents.md)), but can be any text the caller wants the reviewer to consider.
+
+The context is inserted verbatim into the user message before the review instruction. The caller is responsible for formatting — nominal-code does not add headers or framing.
+
+Example usage:
+
+```python
+from nominal_code.agent.sub_agents import run_explore_with_planner
+
+# Run exploration
+explore_result = await run_explore_with_planner(
+    changed_files=files, diffs=diffs, cwd=repo_path,
+    provider=provider, model="gemini-2.5-flash",
+)
+
+# Format context from sub-agent results
+context = "\n\n".join(
+    sub.output for sub in explore_result.sub_results if not sub.is_error
+)
+
+# Pass to review
+result = await review(event=event, prompt="", config=config,
+                      platform=platform, context=context)
+```
+
 ## Existing Discussion Context
 
 Before running the agent, the bot fetches all existing comments on the PR to avoid duplicating previously raised issues:

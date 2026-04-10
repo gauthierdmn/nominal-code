@@ -8,6 +8,7 @@ from json_repair import loads as json_repair_loads
 
 from nominal_code.agent.invoke import invoke_agent
 from nominal_code.models import AgentReview, DiffSide, ReviewFinding
+from nominal_code.prompts import load_prompt
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -23,29 +24,9 @@ FALLBACK_MESSAGE: str = (
     "You can re-trigger the review by mentioning me again. "
     "If the issue persists, contact your administrator."
 )
-JSON_FIX_SYSTEM_PROMPT: str = (
-    "You are a JSON repair tool. You receive malformed JSON and output "
-    "ONLY the corrected, valid JSON. Do not add commentary, markdown "
-    "fences, or explanations. Preserve all content and structure — fix "
-    "only syntax errors."
-)
-JSON_FIX_PROMPT: str = (
-    "The following text is malformed JSON. Common issues include "
-    "unescaped double quotes inside string values, trailing commas, "
-    "and missing commas. Fix the syntax errors and output ONLY the "
-    "corrected JSON.\n\n{broken_json}"
-)
-JSON_FIX_RETRY_PROMPT: str = (
-    "The following JSON has syntax errors. Pay special attention to:\n"
-    '- Double quotes inside string values MUST be escaped as \\"\n'
-    "- The `suggestion` fields often contain code with double-quoted strings "
-    "that need escaping\n"
-    "- No trailing commas after the last element in arrays or objects\n\n"
-    "The expected structure is:\n"
-    '{{"summary": "...", "comments": [{{"path": "...", "line": N, '
-    '"body": "...", "suggestion": "optional code"}}]}}\n\n'
-    "Fix this JSON and output ONLY valid JSON:\n\n{broken_json}"
-)
+JSON_FIX_SYSTEM_PROMPT: str = load_prompt("output/json_fix_system.md")
+JSON_FIX_PROMPT: str = load_prompt("output/json_fix_user.md")
+JSON_FIX_RETRY_PROMPT: str = load_prompt("output/json_fix_retry.md")
 
 logger: logging.Logger = logging.getLogger(__name__)
 

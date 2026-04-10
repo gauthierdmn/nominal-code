@@ -15,7 +15,6 @@ from nominal_code.config.models import AppSettings, GitHubSettings, GitLabSettin
 from nominal_code.config.policies import FilteringPolicy, RoutingPolicy
 from nominal_code.config.settings import (
     DEFAULT_GITLAB_API_BASE,
-    SUGGESTIONS_PROMPT_PATH,
     Config,
     GitHubConfig,
     GitLabConfig,
@@ -30,6 +29,7 @@ from nominal_code.config.settings import (
     parse_title_tags,
 )
 from nominal_code.models import EventType, ProviderName
+from nominal_code.prompts import load_bundled_language_guidelines, load_prompt
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -98,9 +98,12 @@ def load_config(
         else WorkspaceConfig().base_dir
     )
 
-    coding_guidelines: str = load_file_content(
-        Path(settings.prompts.coding_guidelines_path),
-    )
+    coding_guidelines: str = ""
+
+    if settings.prompts.coding_guidelines_path:
+        coding_guidelines = load_file_content(
+            Path(settings.prompts.coding_guidelines_path),
+        )
 
     if guidelines_path is not None:
         custom_coding: str = load_file_content(guidelines_path)
@@ -108,9 +111,12 @@ def load_config(
         if custom_coding:
             coding_guidelines = custom_coding
 
-    language_guidelines: dict[str, str] = load_language_guidelines(
-        Path(settings.prompts.language_guidelines_dir),
-    )
+    if settings.prompts.language_guidelines_dir:
+        language_guidelines: dict[str, str] = load_language_guidelines(
+            Path(settings.prompts.language_guidelines_dir),
+        )
+    else:
+        language_guidelines = load_bundled_language_guidelines()
 
     return Config(
         github=_build_github_config(settings.github),
@@ -147,14 +153,17 @@ def _build_reviewer(
         ValueError: If ``require_webhook`` is True and no bot username is set.
     """
 
-    reviewer_system_prompt: str = load_file_content(
-        Path(settings.reviewer.system_prompt_path),
-    )
+    if settings.reviewer.system_prompt_path:
+        reviewer_system_prompt: str = load_file_content(
+            Path(settings.reviewer.system_prompt_path),
+        )
+    else:
+        reviewer_system_prompt = load_prompt("reviewer_prompt.md")
 
     suggestions_prompt: str = ""
 
     if settings.reviewer.inline_suggestions:
-        suggestions_prompt = load_file_content(Path(SUGGESTIONS_PROMPT_PATH))
+        suggestions_prompt = load_prompt("reviewer_suggestions.md")
 
     if require_webhook:
         if not settings.reviewer.bot_username:

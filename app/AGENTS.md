@@ -41,9 +41,9 @@ The dispatcher in `agent/invoke.py` routes based on the agent config type (`CliA
 
 ## Guideline resolution
 
-1. Load repo-level `.nominal/guidelines.md` (overrides built-in `prompts/coding_guidelines.md`).
+1. Load repo-level `.nominal/guidelines.md` (or custom path via `CODING_GUIDELINES` env var). Defaults to empty.
 2. Detect languages from changed file extensions.
-3. Load per-language `.nominal/languages/{lang}.md` (overrides built-in `prompts/languages/{lang}.md`).
+3. Load per-language `.nominal/languages/{lang}.md` (overrides bundled `nominal_code/prompts/languages/{lang}.md`).
 4. Concatenate general + language-specific guidelines into the system prompt.
 
 ## Environment variables

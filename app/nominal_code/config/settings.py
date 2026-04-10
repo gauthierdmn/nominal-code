@@ -15,9 +15,6 @@ logger: logging.Logger = logging.getLogger(__name__)
 
 DEFAULT_GITHUB_API_BASE: str = "https://api.github.com"
 DEFAULT_GITLAB_API_BASE: str = "https://gitlab.com"
-DEFAULT_REVIEWER_PROMPT_PATH: Path = Path("prompts/reviewer_prompt.md")
-DEFAULT_CODING_GUIDELINES_PATH: Path = Path("prompts/coding_guidelines.md")
-DEFAULT_LANGUAGE_GUIDELINES_DIR: Path = Path("prompts/languages")
 DEFAULT_REDIS_KEY_TTL_SECONDS: int = 86400
 
 
@@ -59,9 +56,6 @@ class GitLabConfig(BaseModel):
     token: str | None = None
     webhook_secret: str | None = None
     api_base: str = DEFAULT_GITLAB_API_BASE
-
-
-SUGGESTIONS_PROMPT_PATH: str = "prompts/reviewer_suggestions.md"
 
 
 class ReviewerConfig(BaseModel):

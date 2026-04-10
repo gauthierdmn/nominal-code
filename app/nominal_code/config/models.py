@@ -74,7 +74,7 @@ class ReviewerSettings(BaseModel):
     """
 
     bot_username: str | None = None
-    system_prompt_path: str = "prompts/reviewer_prompt.md"
+    system_prompt_path: str = ""
     triggers: list[str] = Field(default_factory=list)
     inline_suggestions: bool = True
 
@@ -133,8 +133,8 @@ class PromptsSettings(BaseModel):
         language_guidelines_dir (str): Path to language guidelines directory.
     """
 
-    coding_guidelines_path: str = "prompts/coding_guidelines.md"
-    language_guidelines_dir: str = "prompts/languages"
+    coding_guidelines_path: str = ""
+    language_guidelines_dir: str = ""
 
 
 class RedisSettings(BaseModel):
