@@ -24,7 +24,10 @@ _env: Env = Env()
 logger: logging.Logger = logging.getLogger(__name__)
 
 
-async def run_job_main(pre_cloned: bool = False) -> int:
+async def run_job_main(
+    pre_cloned: bool = False,
+    context: str = "",
+) -> JobResult | None:
     """
     Entry point for the ``run-job`` CLI subcommand.
 
@@ -35,9 +38,11 @@ async def run_job_main(pre_cloned: bool = False) -> int:
     Args:
         pre_cloned (bool): When True, the repository was pre-cloned by
             an external process and clone URL resolution is skipped.
+        context (str): Pre-review context to include in the user message.
 
     Returns:
-        int: Exit code (0 on success, 1 on failure).
+        JobResult | None: The job result on success, or ``None`` on
+            failure.
     """
 
     payload: str = _env.str("REVIEW_JOB_PAYLOAD", "")
@@ -45,21 +50,21 @@ async def run_job_main(pre_cloned: bool = False) -> int:
     if not payload:
         logger.error("REVIEW_JOB_PAYLOAD environment variable is not set")
 
-        return 1
+        return None
 
     try:
         job: JobPayload = JobPayload.deserialize(payload)
     except (TypeError, ValueError, KeyError) as exc:
         logger.error("Failed to deserialize job payload: %s", exc)
 
-        return 1
+        return None
 
     try:
         config: Config = _build_job_config()
     except ValueError as exc:
         logger.error("%s", exc)
 
-        return 1
+        return None
 
     redis: RedisConfig = _build_redis_config()
 
@@ -72,18 +77,20 @@ async def run_job_main(pre_cloned: bool = False) -> int:
     platform = build_platform(platform_name, config)
     handler: JobHandler = DefaultJobHandler()
 
-    exit_code: int = await _run_job(
+    result: JobResult | None = await _run_job(
         job=job,
         config=config,
         platform=platform,
         handler=handler,
         conversation_store=conversation_store,
         pre_cloned=pre_cloned,
+        context=context,
     )
 
-    _publish_completion(exit_code=exit_code, job=job, redis=redis)
+    succeeded: bool = result is not None
+    _publish_completion(succeeded=succeeded, job=job, redis=redis)
 
-    return exit_code
+    return result
 
 
 async def _run_job(
@@ -93,7 +100,8 @@ async def _run_job(
     handler: JobHandler,
     conversation_store: ConversationStore | None = None,
     pre_cloned: bool = False,
-) -> int:
+    context: str = "",
+) -> JobResult | None:
     """
     Execute a job via the unified dispatch pipeline.
 
@@ -105,9 +113,11 @@ async def _run_job(
         conversation_store (ConversationStore | None): Conversation store
             for conversation continuity.
         pre_cloned (bool): When True, skip clone URL resolution.
+        context (str): Pre-review context to include in the user message.
 
     Returns:
-        int: Exit code (0 on success, 1 on failure).
+        JobResult | None: The job result on success, or ``None`` on
+            failure.
     """
 
     logger.info(
@@ -125,6 +135,7 @@ async def _run_job(
             config=config,
             conversation_store=conversation_store,
             pre_cloned=pre_cloned,
+            context=context,
         )
     except Exception:
         logger.exception(
@@ -133,7 +144,7 @@ async def _run_job(
             job.event.pr_number,
         )
 
-        return 1
+        return None
 
     cost_info: str = format_cost_summary(cost=result.review_result.cost)
 
@@ -145,7 +156,7 @@ async def _run_job(
         cost_info,
     )
 
-    return 0
+    return result
 
 
 def _build_job_config() -> Config:
@@ -185,12 +196,16 @@ def _build_redis_config() -> RedisConfig:
     )
 
 
-def _publish_completion(exit_code: int, job: JobPayload, redis: RedisConfig) -> None:
+def _publish_completion(
+    succeeded: bool,
+    job: JobPayload,
+    redis: RedisConfig,
+) -> None:
     """
     Publish a job completion signal to Redis if running as a K8s Job.
 
     Args:
-        exit_code (int): The job exit code (0 = succeeded).
+        succeeded (bool): Whether the job completed successfully.
         job (JobPayload): The job payload (used to build the channel key).
         redis (RedisConfig): Redis configuration.
     """
@@ -199,5 +214,5 @@ def _publish_completion(exit_code: int, job: JobPayload, redis: RedisConfig) -> 
         return
 
     channel_key: str = build_job_channel_key(job)
-    status: str = "succeeded" if exit_code == 0 else "failed"
+    status: str = "succeeded" if succeeded else "failed"
     publish_job_completion(redis_url=redis.url, channel_key=channel_key, status=status)
