@@ -10,7 +10,7 @@ from nominal_code.agent.api.tools import (
     execute_tool,
     get_tool_definitions,
 )
-from nominal_code.agent.compaction import compact_messages
+from nominal_code.agent.compaction import compact_with_notes
 from nominal_code.agent.result import AgentResult
 from nominal_code.conversation.base import truncate_messages
 from nominal_code.llm.cost import build_cost_summary
@@ -43,6 +43,7 @@ async def run_api_agent(
     allowed_tools: list[str] | None = None,
     prior_messages: list[Message] | None = None,
     enable_compaction: bool = False,
+    notes_file_path: Path | None = None,
 ) -> AgentResult:
     """
     Run the agent using an LLM provider with tool use.
@@ -67,12 +68,16 @@ async def run_api_agent(
         provider (LLMProvider): The LLM provider to use for API calls.
         max_turns (int): Maximum agentic turns (0 for unlimited).
         system_prompt (str): Optional system prompt for the agent.
-        allowed_tools (list[str] | None): Restrict which tools the agent may use.
+        allowed_tools (list[str] | None): Restrict which tools the agent
+            may use.
         prior_messages (list[Message] | None): Prior conversation messages
             for multi-turn continuity. Prepended before the new user message.
         provider_name (ProviderName): Provider identifier for cost tracking.
-        enable_compaction (bool): When True, enables session-level compaction
-            of older messages to reduce token costs.
+        enable_compaction (bool): When True, enables session-level
+            compaction of older messages to reduce token costs.
+        notes_file_path (Path | None): Pre-assigned file path for the
+            WriteNotes tool. When provided, the agent can append findings
+            to this file during execution.
 
     Returns:
         AgentResult: The parsed result from the agent.
@@ -189,6 +194,7 @@ async def run_api_agent(
                     tool_input=block.input,
                     cwd=cwd,
                     allowed_tools=allowed_tools,
+                    notes_file_path=notes_file_path,
                 )
 
                 logger.debug(
@@ -215,13 +221,23 @@ async def run_api_agent(
 
             turns += 1
 
-            if enable_compaction:
-                compaction_result = compact_messages(llm_messages)
+            if enable_compaction and notes_file_path is not None:
+                notes_for_compaction: str = ""
+
+                if notes_file_path.exists():
+                    notes_for_compaction = notes_file_path.read_text(
+                        encoding="utf-8",
+                    )
+
+                compaction_result = compact_with_notes(
+                    llm_messages,
+                    notes_for_compaction,
+                )
 
                 if compaction_result.summary_text:
                     llm_messages = compaction_result.messages
 
-                    logger.info("Compacted LLM context")
+                    logger.info("Compacted LLM context using notes")
 
             # TBI: better handling — e.g. prompt to return
             # a review on the next turn

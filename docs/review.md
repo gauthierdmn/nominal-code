@@ -79,17 +79,16 @@ Example usage:
 
 ```python
 from nominal_code.agent.sub_agents import run_explore_with_planner
+from nominal_code.agent.sub_agents.runner import assemble_notes
 
-# Run exploration
+# Run exploration (agents write findings to notes files via WriteNotes)
 explore_result = await run_explore_with_planner(
     changed_files=files, diffs=diffs, cwd=repo_path,
     provider=provider, model="gemini-2.5-flash",
 )
 
-# Format context from sub-agent results
-context = "\n\n".join(
-    sub.output for sub in explore_result.sub_results if not sub.is_error
-)
+# Assemble structured notes from all sub-agents
+context = assemble_notes(explore_result.sub_results)
 
 # Pass to review
 result = await review(event=event, prompt="", config=config,

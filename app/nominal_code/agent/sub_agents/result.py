@@ -42,6 +42,8 @@ class SubAgentResult:
         duration_ms (int): Wall-clock duration in milliseconds.
         messages (tuple[Message, ...]): Full message history from the agent.
         cost (CostSummary | None): Cost information for the invocation.
+        notes (str): Structured findings written to the notes file during
+            exploration. Empty when no notes were written.
     """
 
     group: ExploreGroup
@@ -51,6 +53,7 @@ class SubAgentResult:
     duration_ms: int
     messages: tuple[Message, ...] = ()
     cost: CostSummary | None = None
+    notes: str = ""
 
 
 @dataclass(frozen=True)

@@ -39,6 +39,8 @@ New here? Start with the **[Getting Started](getting-started.md)** guide.
 - :material-filter: **[Policies](reference/policies.md)** — filtering and routing policy models
 - :material-format-list-bulleted: **[Environment Variables](reference/env-vars.md)** — full variable reference by feature
 - :material-sitemap: **[Architecture](architecture.md)** — request flow, agent runners, workspace layout
+- :material-account-group: **[Sub-Agents](reference/sub-agents.md)** — parallel exploration, WriteNotes, result types
+- :material-archive-arrow-down: **[Compaction](reference/compaction.md)** — notes-based context compaction for long sessions
 - :material-shield-lock: **[Security](security.md)** — trust model, LLM risks, authentication
 - :material-server: **[Deployment](deployment/index.md)** — standalone server, Kubernetes, health checks
 

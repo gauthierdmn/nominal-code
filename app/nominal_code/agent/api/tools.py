@@ -33,6 +33,9 @@ GIT_CLONE_PATTERN: re.Pattern[str] = re.compile(
     r"^git\s+clone\s+",
 )
 
+WRITE_NOTES_TOOL_NAME: str = "WriteNotes"
+MAX_NOTES_FILE_SIZE: int = 50_000
+
 SUBMIT_REVIEW_TOOL_NAME: str = "submit_review"
 
 SUBMIT_REVIEW_TOOL: ToolDefinition = {
@@ -97,6 +100,28 @@ SUBMIT_REVIEW_TOOL: ToolDefinition = {
             },
         },
         "required": ["summary", "comments"],
+    },
+}
+
+WRITE_NOTES_TOOL: ToolDefinition = {
+    "name": WRITE_NOTES_TOOL_NAME,
+    "description": (
+        "Append findings to your notes file. Use markdown headings to "
+        "organize your discoveries. Call this tool multiple times as you "
+        "discover things — do not wait until the end."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "content": {
+                "type": "string",
+                "description": (
+                    "Markdown-formatted content to append to the notes file. "
+                    "Include code snippets with file paths and line numbers."
+                ),
+            },
+        },
+        "required": ["content"],
     },
 }
 
@@ -261,6 +286,9 @@ def get_tool_definitions(
     if SUBMIT_REVIEW_TOOL_NAME in allowed_names:
         tools.append(SUBMIT_REVIEW_TOOL)
 
+    if WRITE_NOTES_TOOL_NAME in allowed_names:
+        tools.append(WRITE_NOTES_TOOL)
+
     return tools
 
 
@@ -269,6 +297,7 @@ async def execute_tool(
     tool_input: dict[str, Any],
     cwd: Path,
     allowed_tools: list[str] | None = None,
+    notes_file_path: Path | None = None,
 ) -> tuple[str, bool]:
     """
     Execute a tool and return the result with an error flag.
@@ -279,11 +308,15 @@ async def execute_tool(
     commands are restricted to ``DEFAULT_ALLOWED_CLONE_HOSTS``.
 
     Args:
-        name (str): The tool name (Read, Glob, Grep, Bash).
-        tool_input (dict[str, Any]): The tool input parameters from the API response.
+        name (str): The tool name (Read, Glob, Grep, Bash, WriteNotes).
+        tool_input (dict[str, Any]): The tool input parameters from the
+            API response.
         cwd (Path): Working directory for the tool execution.
         allowed_tools (list[str] | None): Allowed tools list
             (for Bash pattern validation).
+        notes_file_path (Path | None): Pre-assigned file path for the
+            WriteNotes tool. Required when WriteNotes is in the allowed
+            tools list.
 
     Returns:
         tuple[str, bool]: The tool output and whether the execution failed.
@@ -313,6 +346,14 @@ async def execute_tool(
             )
 
             return sanitize_output(output), False
+
+        if name == WRITE_NOTES_TOOL_NAME:
+            output = _execute_write_notes(
+                tool_input=tool_input,
+                notes_file_path=notes_file_path,
+            )
+
+            return output, False
 
         raise ToolError(f"Unknown tool '{name}'")
 
@@ -684,3 +725,52 @@ async def _execute_bash(
         result += f"\nstderr:\n{stderr}"
 
     return result if result else "(no output)"
+
+
+def _execute_write_notes(
+    tool_input: dict[str, Any],
+    notes_file_path: Path | None,
+) -> str:
+    """
+    Append content to the pre-assigned notes file.
+
+    Args:
+        tool_input (dict[str, Any]): Must contain ``content``.
+        notes_file_path (Path | None): The assigned notes file path.
+
+    Returns:
+        str: Confirmation message with current file size.
+
+    Raises:
+        ToolError: If no notes file path is configured, content is empty,
+            or the file has reached its size limit.
+    """
+
+    if notes_file_path is None:
+        raise ToolError("WriteNotes is not available in this context")
+
+    content: str = tool_input.get("content", "")
+
+    if not content.strip():
+        raise ToolError("Content must not be empty")
+
+    current_size: int = (
+        notes_file_path.stat().st_size if notes_file_path.exists() else 0
+    )
+
+    if current_size >= MAX_NOTES_FILE_SIZE:
+        raise ToolError(
+            f"Notes file has reached the size limit "
+            f"({MAX_NOTES_FILE_SIZE} characters). "
+            f"No more content can be appended.",
+        )
+
+    try:
+        with notes_file_path.open("a", encoding="utf-8") as handle:
+            handle.write(content + "\n\n")
+    except OSError as exc:
+        raise ToolError(f"Error writing notes: {exc}") from exc
+
+    new_size: int = notes_file_path.stat().st_size
+
+    return f"Appended to notes ({new_size} characters total)."

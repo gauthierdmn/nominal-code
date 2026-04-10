@@ -40,6 +40,7 @@ The API runner's default model is resolved from `llm.registry.DEFAULT_MODELS` ba
 - **Glob** — finds files by pattern, capped at 200 results.
 - **Grep** — runs `grep -rn` as a subprocess, 30s timeout.
 - **Bash** — runs shell commands. When `allowed_tools` contains patterns like `Bash(git clone*)`, commands are validated against those patterns via `fnmatch`. Unrestricted when no patterns are set.
+- **WriteNotes** — appends structured findings to a pre-assigned notes file. Only available to explore sub-agents. Path controlled by the orchestrator, not the agent.
 
 Tool definitions use canonical `ToolDefinition` (TypedDict with `name`, `description`, `input_schema`) — provider-agnostic.
 
@@ -51,10 +52,11 @@ agent/
 ├── invoke.py        # prepare_conversation() + invoke_agent() + save_conversation()
 ├── result.py        # AgentResult dataclass (output, is_error, num_turns, duration_ms, conversation_id, cost)
 ├── prompts.py       # Guideline loading (.nominal/ overrides), language detection, system prompt composition
+├── compaction.py    # Notes-based message compaction: compact_with_notes()
 ├── errors.py        # handle_agent_errors(): async context manager that catches and posts error replies
 ├── api/
 │   ├── runner.py    # Provider-agnostic agentic loop: run_api_agent()
-│   └── tools.py     # Tool definitions and local execution (Read, Glob, Grep, Bash)
+│   └── tools.py     # Tool definitions and local execution (Read, Glob, Grep, Bash, WriteNotes)
 └── cli/
     └── runner.py    # Claude Code CLI wrapper: run_cli_agent() (claude_agent_sdk.query + SDK monkey-patch)
 ```

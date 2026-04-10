@@ -10,10 +10,18 @@ from nominal_code.agent.sub_agents import AgentType, AGENT_TYPE_TOOLS
 
 | Type | Value | Allowed Tools |
 |---|---|---|
-| `AgentType.EXPLORE` | `"explore"` | Read, Glob, Grep, Bash |
+| `AgentType.EXPLORE` | `"explore"` | Read, Glob, Grep, Bash, WriteNotes |
 | `AgentType.PLAN` | `"plan"` | Read, Glob, Grep, Bash |
 
 No agent type includes `submit_review` or `Agent` — sub-agents cannot produce reviews or spawn child agents.
+
+### WriteNotes
+
+Explore sub-agents use the `WriteNotes` tool to record structured findings to a markdown notes file during exploration. The notes file path is assigned by the orchestrator — agents cannot choose where to write. Content is appended on each call (simple append semantics). A per-file size cap of 50,000 characters prevents runaway writes.
+
+The notes file serves two purposes:
+1. **Primary deliverable** — the analysis agent receives the notes content, not the raw conversation.
+2. **Compaction summary** — when the context window fills up, the notes file is used as a zero-cost summary to replace older messages. See [Compaction](compaction.md).
 
 ## Entry Points
 
@@ -35,7 +43,7 @@ result = await run_explore_with_planner(
     planner_model="",            # Empty = use same as model
     max_turns=12,                # Total budget, divided across groups
     file_threshold=8,            # Min files to trigger parallel mode
-    compaction_config=CompactionConfig(),
+    enable_compaction=True,
 )
 ```
 
@@ -103,6 +111,7 @@ Returned by `run_explore()` and `run_explore_with_planner()`.
 | `duration_ms` | `int` | Wall-clock duration |
 | `messages` | `tuple[Message, ...]` | Full message history |
 | `cost` | `CostSummary \| None` | Token/cost info |
+| `notes` | `str` | Structured findings from the notes file (empty if none written) |
 
 ### `AggregatedMetrics`
 
@@ -128,7 +137,7 @@ Token counts and API calls are summed across sub-agents. Duration is wall-clock 
 | `file_threshold` | `8` | Min changed files to trigger the planner |
 | `max_turns` | `0` (unlimited) | Total turn budget across all sub-agents |
 | `planner_model` | Same as `model` | Model for the planner call |
-| `compaction_config` | `None` | Message compaction for long conversations |
+| `enable_compaction` | `False` | Notes-based message compaction for long conversations |
 
 ### Turn Allocation
 
@@ -152,5 +161,6 @@ planner_prompt = load_planner_system_prompt()
 
 - `allocate_turns(total_turns, num_groups)` — compute per-group turn budget.
 - `aggregate_metrics(sub_results, duration_ms)` — sum metrics across sub-agents.
+- `assemble_notes(sub_results, max_size)` — combine notes from all sub-agents into a single context string with a preamble header (capped at 100,000 characters).
 - `build_planner_user_message(changed_files, diffs)` — format the planner input.
 - `parse_planner_response(response_text, changed_files)` — parse planner JSON output.
