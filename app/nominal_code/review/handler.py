@@ -34,7 +34,11 @@ from nominal_code.platforms.base import (
     ExistingComment,
     PullRequestEvent,
 )
-from nominal_code.review.diff import build_effective_summary, filter_findings
+from nominal_code.review.diff import (
+    annotate_diff,
+    build_effective_summary,
+    filter_findings,
+)
 from nominal_code.review.output import (
     build_fallback_comment,
     parse_review_output,
@@ -54,12 +58,6 @@ if TYPE_CHECKING:
 
 
 MAX_EXISTING_COMMENTS: int = 50
-REVIEWER_ALLOWED_TOOLS: list[str] = [
-    "Read",
-    "Glob",
-    "Grep",
-    "Bash(git clone*)",
-]
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -263,7 +261,6 @@ async def review(
         event=event,
         user_prompt=prompt,
         changed_files=ctx.changed_files,
-        deps_path=ctx.deps_path,
         existing_comments=ctx.existing_comments,
         inline_suggestions=bool(reviewer_config.suggestions_prompt),
         context=context,
@@ -300,10 +297,21 @@ async def review(
             file_paths=file_paths,
         )
 
-    effective_allowed_tools: list[str] = list(REVIEWER_ALLOWED_TOOLS)
+    effective_allowed_tools: list[str]
 
     if isinstance(config.agent, ApiAgentConfig):
-        effective_allowed_tools.append(SUBMIT_REVIEW_TOOL_NAME)
+        effective_allowed_tools = [SUBMIT_REVIEW_TOOL_NAME]
+        # just needs to analyze output from explore step
+        # and return a review
+        effective_max_turns: int = 1
+    else:
+        effective_allowed_tools = [
+            "Read",
+            "Glob",
+            "Grep",
+            "Bash(git clone*)",
+        ]
+        effective_max_turns = 0
 
     conversation_id, prior_messages = prepare_conversation(
         event=event,
@@ -320,6 +328,7 @@ async def review(
         agent_config=config.agent,
         conversation_id=conversation_id,
         prior_messages=prior_messages,
+        max_turns=effective_max_turns,
     )
 
     save_conversation(
@@ -532,25 +541,27 @@ def _build_reviewer_prompt(
     event: PullRequestEvent,
     user_prompt: str,
     changed_files: list[ChangedFile],
-    deps_path: Path | None = None,
     existing_comments: list[ExistingComment] | None = None,
     inline_suggestions: bool = True,
     context: str = "",
 ) -> str:
     """
-    Build a prompt for the reviewer bot including the full PR diff.
+    Build a prompt for the one-turn reviewer agent.
+
+    Diffs are always line-annotated so the agent can reference exact
+    line numbers without needing to read files. Exploration notes
+    (when available) are inserted before the review instruction.
 
     Args:
         event (PullRequestEvent): The event with PR context.
         user_prompt (str): The user's extracted prompt text.
         changed_files (list[ChangedFile]): Files changed in the PR.
-        deps_path (Path | None): Path to the shared dependencies directory.
-        inline_suggestions (bool): Whether to instruct the agent to produce
-            one-click-apply code suggestions.
         existing_comments (list[ExistingComment] | None): Existing PR
             comments to include as context.
-        context (str): Pre-review context to include before the review
-            instruction. Inserted verbatim when non-empty.
+        inline_suggestions (bool): Whether to instruct the agent to
+            produce one-click-apply code suggestions.
+        context (str): Pre-review exploration notes. Inserted verbatim
+            when non-empty.
 
     Returns:
         str: The full prompt to send to the agent.
@@ -576,7 +587,8 @@ def _build_reviewer_prompt(
 
         if changed_file.patch:
             parts.append(
-                f"{file_header}\n{wrap_tag(TAG_UNTRUSTED_DIFF, changed_file.patch)}",
+                f"{file_header}\n"
+                f"{wrap_tag(TAG_UNTRUSTED_DIFF, annotate_diff(changed_file.patch))}",
             )
         else:
             parts.append(f"{file_header}\n_(no patch available)_")
@@ -588,34 +600,23 @@ def _build_reviewer_prompt(
         parts.append(context)
 
     review_instruction: str = (
-        "Review the above changes. Before submitting your review, use the "
-        "Read tool to open each file you plan to comment on and verify that "
-        "your line numbers match the actual code. Diff hunk headers are not "
-        "reliable for counting — always confirm with Read. When you are "
-        "confident in your findings, call the submit_review tool.\n\n"
-        "For comments on deleted lines (lines starting with `-` in the diff), "
-        'set `"side": "LEFT"`. For additions (`+`) and context lines omit '
-        '`side` or use `"RIGHT"`.'
+        "Review the above changes. Each diff line is annotated with its "
+        "actual line number — use these directly. Call the submit_review "
+        "tool with your complete review.\n\n"
+        "For comments on deleted lines (prefixed with `-` in the diff), "
+        'set `"side": "LEFT"`. For additions (`+`) and context lines '
+        'omit `side` or use `"RIGHT"`.'
     )
 
     if inline_suggestions:
         review_instruction += (
             "\n\nFor every issue where you can provide a concrete fix, "
             "you MUST include a `suggestion` field with the exact "
-            "replacement code. Read the file first to get the correct "
-            "indentation and surrounding context."
+            "replacement code. The annotated diff shows the precise "
+            "indentation — match it exactly in your suggestion."
         )
 
     parts.append(review_instruction)
-
-    if deps_path is not None:
-        parts.append(
-            f"Dependencies directory: {deps_path}\n"
-            "If you need to understand a private dependency that is not available on\n"
-            "PyPI, you can `git clone` it into this directory. Clone with `--depth=1`\n"
-            "to minimize download time. Dependencies cloned here are shared across\n"
-            "PRs for this repository.",
-        )
 
     return "\n\n".join(parts)
 

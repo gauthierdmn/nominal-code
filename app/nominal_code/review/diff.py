@@ -9,6 +9,59 @@ HUNK_HEADER_PATTERN: re.Pattern[str] = re.compile(
 )
 
 
+def annotate_diff(patch: str) -> str:
+    """
+    Transform a unified diff into a line-annotated format.
+
+    Each line is prefixed with its actual line number in the file,
+    removing the need to count through hunk headers. Context and
+    added lines show the new-file line number. Removed lines show
+    the old-file line number. Hunk headers are preserved for
+    orientation (function/class context).
+
+    Args:
+        patch (str): Unified diff text for a single file.
+
+    Returns:
+        str: The annotated diff, or empty string if patch is empty.
+    """
+
+    if not patch.strip():
+        return ""
+
+    output_lines: list[str] = []
+    old_line: int = 0
+    new_line: int = 0
+
+    for raw_line in patch.splitlines():
+        header_match: re.Match[str] | None = HUNK_HEADER_PATTERN.match(raw_line)
+
+        if header_match:
+            old_line = int(header_match.group(1))
+            new_line = int(header_match.group(2))
+            output_lines.append(raw_line)
+            continue
+
+        if old_line == 0 and new_line == 0:
+            continue
+
+        if raw_line.startswith("-"):
+            content: str = raw_line[1:]
+            output_lines.append(f"-{old_line}:{content}")
+            old_line += 1
+        elif raw_line.startswith("+"):
+            content = raw_line[1:]
+            output_lines.append(f"+{new_line}:{content}")
+            new_line += 1
+        else:
+            content = raw_line[1:] if raw_line.startswith(" ") else raw_line
+            output_lines.append(f" {new_line}:{content}")
+            old_line += 1
+            new_line += 1
+
+    return "\n".join(output_lines)
+
+
 def parse_diff_lines(patch: str) -> dict[DiffSide, set[int]]:
     """
     Extract the sets of line numbers present in a unified diff, by side.

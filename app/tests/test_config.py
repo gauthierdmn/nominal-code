@@ -78,7 +78,6 @@ class TestFromEnv:
         assert config.webhook.host == "0.0.0.0"
         assert config.webhook.port == 8080
         assert config.webhook.filtering.allowed_users == frozenset({"alice", "bob"})
-        assert config.agent.max_turns == 0
         assert config.agent.model is None
         assert config.agent.cli_path is None
 
@@ -95,7 +94,6 @@ class TestFromEnv:
             {"alice", "bob", "charlie"},
         )
         assert config.workspace.base_dir == Path("/tmp/workspaces")
-        assert config.agent.max_turns == 10
         assert config.agent.model == "claude-sonnet-4-20250514"
         assert config.agent.cli_path == "/usr/local/bin/claude"
         assert config.prompts.coding_guidelines == "Use snake_case."
@@ -398,12 +396,6 @@ class TestConfigForCli:
             config = load_config(model="claude-opus-4-6")
 
         assert config.agent.model == "claude-opus-4-6"
-
-    def test_config_for_cli_applies_max_turns_override(self, tmp_path):
-        with patch.dict(os.environ, {"WORKSPACE_BASE_DIR": str(tmp_path)}, clear=True):
-            config = load_config(max_turns=5)
-
-        assert config.agent.max_turns == 5
 
     def test_config_for_cli_no_webhook_settings_required(self, tmp_path):
         with patch.dict(os.environ, {"WORKSPACE_BASE_DIR": str(tmp_path)}, clear=True):

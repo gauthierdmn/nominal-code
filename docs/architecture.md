@@ -125,10 +125,9 @@ Used by **CLI mode** and **webhook server mode**. Wraps the [Claude Code SDK](ht
 
 Used by **CI mode**. Calls the LLM provider API directly with tool use. Supports multiple providers (Anthropic, OpenAI, Google Gemini, DeepSeek, Groq, Together, Fireworks).
 
-- Implements an agentic loop: sends a prompt, processes `tool_use` blocks by executing tools locally, sends results back, and repeats until the model produces a final text answer or `max_turns` is reached.
-- Provides four tools: `Read` (file contents), `Glob` (file search), `Grep` (content search), and `Bash` (shell commands with allowlist validation).
+- Implements an agentic loop: sends a prompt, processes `tool_use` blocks by executing tools locally, sends results back, and repeats until the model produces a final text answer or the turn limit is reached.
+- Provides tools: `Read` (file contents), `Glob` (file search), `Grep` (content search), `Bash` (shell commands with allowlist validation), `WriteNotes` (structured findings for explore agents), and `submit_review` (structured output for the review agent).
 - Does not require the Claude Code CLI — only a provider API key (per-token billing).
-- Does not support conversation continuity (each run is stateless).
 - Accumulates token usage across all turns and computes dollar cost using a bundled pricing table.
 
 ### Runner Selection
@@ -293,7 +292,7 @@ Each incoming request is verified, parsed, and dispatched. The HTTP response is 
 
 ### Handlers
 
-- **`review.handler.review()`** — core review logic (clone, fetch diff + comments, run agent, parse JSON, filter findings). Returns a `ReviewResult` without posting. Used by webhook, CLI, and CI modes.
+- **`review.handler.review()`** — core review logic (clone, fetch diff + comments, build annotated diffs, run single-turn review agent, parse JSON, filter findings). Returns a `ReviewResult` without posting. Used by webhook, CLI, and CI modes.
 - **`review.handler.run_and_post_review()`** — webhook/CI entry point. Calls `review()` then posts results to the platform.
 
 ### CLI Module (`commands/cli/main.py`)
@@ -323,7 +322,7 @@ Implements the LLM provider API agentic loop with local tool execution. See [LLM
 
 ### API Tools (`agent/api/tools.py`)
 
-Defines and executes tools for the API runner: `Read`, `Glob`, `Grep`, `Bash`, and `WriteNotes`. Bash commands are validated against an allowlist when `allowed_tools` restricts the agent (e.g. the reviewer is limited to `Bash(git clone*)`). `WriteNotes` is restricted to a pre-assigned file path controlled by the orchestrator — agents cannot write to arbitrary locations.
+Defines and executes tools for the API runner: `Read`, `Glob`, `Grep`, `Bash`, `WriteNotes`, and `submit_review`. Bash commands are validated against an allowlist when `allowed_tools` restricts the agent. `WriteNotes` is restricted to a pre-assigned file path controlled by the orchestrator — agents cannot write to arbitrary locations.
 
 ### CLI Runner (`agent/cli/runner.py`)
 
@@ -340,10 +339,12 @@ The reviewer prompt is composed from multiple sources across two layers:
 
 **User message** (the review input — what to review):
 1. Branch header and user prompt (wrapped in `<untrusted-request>`)
-2. Changed files with diffs (wrapped in `<untrusted-diff>`)
+2. Changed files with annotated diffs (wrapped in `<untrusted-diff>`) — each line prefixed with its actual line number
 3. Existing PR comments (wrapped in `<untrusted-comment>`)
-4. Context — optional pre-review context via the `context` parameter on `review()`. Typically the output from codebase exploration sub-agents, but can be any additional information the caller wants the reviewer to consider. Inserted verbatim.
-5. Review instruction (verify line numbers, call `submit_review`)
+4. Exploration notes — structured findings from sub-agents (callers, tests, types, knock-on effects)
+5. Review instruction (use annotated line numbers, call `submit_review`)
+
+The review agent runs in single-turn mode with only the `submit_review` tool — one API call, no file reading. All context is provided upfront.
 
 System prompt composition is handled by `agent/prompts.py`, which loads guidelines from the `.nominal/` directory with per-repo and per-language overrides. Language detection is based on file extensions in the PR diff.
 
@@ -462,7 +463,7 @@ nominal_code/
 │   ├── compaction.py    # Notes-based message compaction
 │   ├── api/
 │   │   ├── runner.py    # LLM provider API agentic loop (tool use)
-│   │   └── tools.py     # Tool definitions and execution (Read, Glob, Grep, Bash)
+│   │   └── tools.py     # Tool definitions and execution (Read, Glob, Grep, Bash, WriteNotes, submit_review)
 │   ├── cli/
 │   │   └── runner.py    # Claude Code CLI subprocess wrapper (SDK integration)
 │   └── sub_agents/      # Parallel sub-agent orchestration

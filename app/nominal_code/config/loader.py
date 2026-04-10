@@ -39,7 +39,6 @@ def load_config(
     require_webhook: bool = False,
     default_provider: str | None = None,
     model: str | None = None,
-    max_turns: int | None = None,
     provider: ProviderName | None = None,
     guidelines_path: Path | None = None,
 ) -> Config:
@@ -50,8 +49,8 @@ def load_config(
 
     - **Webhook mode**: pass ``require_webhook=True`` to enforce
       ``REVIEWER_BOT_USERNAME`` and ``ALLOWED_USERS``.
-    - **CLI mode**: pass ``model``, ``max_turns``, and/or ``provider``
-      to override settings. Agent type is determined by ``provider``.
+    - **CLI mode**: pass ``model`` and/or ``provider`` to override
+      settings. Agent type is determined by ``provider``.
     - **CI / job mode**: pass ``default_provider`` to force API agent
       mode with a fallback provider when ``AGENT_PROVIDER`` is unset.
 
@@ -61,7 +60,6 @@ def load_config(
         default_provider (str | None): Fallback provider name for API agent
             mode. When set, the agent is always ``ApiAgentConfig``.
         model (str | None): Agent model override. None to use settings.
-        max_turns (int | None): Agent max turns override. None to use settings.
         provider (ProviderName | None): LLM provider override. None to use
             settings.
         guidelines_path (Path | None): Custom coding guidelines file that
@@ -88,7 +86,6 @@ def load_config(
         settings=settings,
         default_provider=default_provider,
         model=model,
-        max_turns=max_turns,
         provider=provider,
     )
 
@@ -253,7 +250,6 @@ def _build_agent(
     settings: AppSettings,
     default_provider: str | None,
     model: str | None,
-    max_turns: int | None,
     provider: ProviderName | None,
 ) -> AgentConfig:
     """
@@ -267,8 +263,8 @@ def _build_agent(
         settings (AppSettings): The application settings.
         default_provider (str | None): Fallback provider for API mode.
         model (str | None): Model override. None to use settings.
-        max_turns (int | None): Max turns override. None to use settings.
-        provider (ProviderName | None): Provider override. None to use settings.
+        provider (ProviderName | None): Provider override. None to use
+            settings.
 
     Returns:
         AgentConfig: The resolved agent configuration.
@@ -278,16 +274,12 @@ def _build_agent(
     """
 
     effective_model: str | None = model if model is not None else settings.agent.model
-    effective_max_turns: int = (
-        max_turns if max_turns is not None else settings.agent.max_turns
-    )
 
     if default_provider is not None:
         return _build_api_agent(
             settings=settings,
             default_provider=default_provider,
             model=effective_model,
-            max_turns=effective_max_turns,
         )
 
     provider_name: ProviderName | None = provider
@@ -306,7 +298,6 @@ def _build_agent(
     return resolve_agent_config(
         provider_name=provider_name,
         model=effective_model,
-        max_turns=effective_max_turns,
         cli_path=settings.agent.cli_path,
     )
 
@@ -315,7 +306,6 @@ def _build_api_agent(
     settings: AppSettings,
     default_provider: str,
     model: str | None,
-    max_turns: int,
 ) -> ApiAgentConfig:
     """
     Build an API agent configuration with provider fallback.
@@ -324,7 +314,6 @@ def _build_api_agent(
         settings (AppSettings): The application settings.
         default_provider (str): Fallback provider name.
         model (str | None): Model override.
-        max_turns (int): Max turns.
 
     Returns:
         ApiAgentConfig: The resolved API agent configuration.
@@ -353,10 +342,7 @@ def _build_api_agent(
             update={"model": model},
         )
 
-    return ApiAgentConfig(
-        provider=provider_config,
-        max_turns=max_turns,
-    )
+    return ApiAgentConfig(provider=provider_config)
 
 
 def _resolve_kubernetes(

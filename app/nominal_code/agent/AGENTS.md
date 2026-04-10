@@ -34,15 +34,23 @@ The API runner's default model is resolved from `llm.registry.DEFAULT_MODELS` ba
 
 ## API runner tools
 
-`api/tools.py` provides four tools with local execution:
+`api/tools.py` provides tools with local execution:
 
 - **Read** — reads files with line numbers, supports offset/limit.
 - **Glob** — finds files by pattern, capped at 200 results.
 - **Grep** — runs `grep -rn` as a subprocess, 30s timeout.
 - **Bash** — runs shell commands. When `allowed_tools` contains patterns like `Bash(git clone*)`, commands are validated against those patterns via `fnmatch`. Unrestricted when no patterns are set.
-- **WriteNotes** — appends structured findings to a pre-assigned notes file. Only available to explore sub-agents. Path controlled by the orchestrator, not the agent.
+- **WriteNotes** — appends structured findings to a pre-assigned notes file. Only available to explore sub-agents. Path controlled by the orchestrator, not the agent. Capped at 50,000 characters per file.
+- **submit_review** — structured output tool for the review agent. The API runner intercepts calls and returns the input as JSON output.
 
 Tool definitions use canonical `ToolDefinition` (TypedDict with `name`, `description`, `input_schema`) — provider-agnostic.
+
+## Review flow
+
+The review runs in two phases:
+
+1. **Explore** — parallel sub-agents search the codebase for callers, tests, type definitions, and knock-on effects. Each writes structured findings to a notes file via `WriteNotes`. Notes-based compaction (`compact_with_notes`) keeps long sessions within the context window.
+2. **Review** — a single-turn agent receives annotated diffs (line numbers on every line), exploration notes, guidelines, and existing comments. It calls `submit_review` with the structured JSON review. No file-reading tools — one API call, one output.
 
 ## File tree
 

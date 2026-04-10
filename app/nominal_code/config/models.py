@@ -86,13 +86,11 @@ class AgentSettings(BaseModel):
     Attributes:
         provider (str): LLM provider name (empty for CLI mode).
         model (str): Model name override.
-        max_turns (int): Maximum agentic turns (0 for unlimited).
         cli_path (str): Path to the Claude Code CLI binary.
     """
 
     provider: str | None = None
     model: str | None = None
-    max_turns: int = 0
     cli_path: str | None = None
 
 

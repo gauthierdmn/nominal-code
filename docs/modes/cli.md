@@ -22,7 +22,6 @@ The CLI resolves the PR branch, clones the repository, fetches the diff, runs th
 | `--prompt` | `-p` | — | Custom review instructions |
 | `--platform` | — | `github` | Platform type (`github` or `gitlab`) |
 | `--model` | — | SDK default | Agent model override (e.g. `claude-sonnet-4-6`) |
-| `--max-turns` | — | `0` (unlimited) | Maximum agentic turns |
 | `--dry-run` | — | `false` | Print results to stdout without posting to the PR |
 
 ## Examples
@@ -67,7 +66,7 @@ uv run nominal-code review myorg/myrepo#123 --dry-run --prompt "focus on error h
 ### Model Override
 
 ```bash
-uv run nominal-code review myorg/myrepo#42 --model claude-sonnet-4-6 --max-turns 5
+uv run nominal-code review myorg/myrepo#42 --model claude-sonnet-4-6
 ```
 
 ## Output

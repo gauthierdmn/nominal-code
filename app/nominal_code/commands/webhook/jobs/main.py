@@ -163,9 +163,8 @@ def _build_job_config() -> Config:
     """
     Build a Config suitable for job execution.
 
-    Reads ``AGENT_PROVIDER``, ``AGENT_MODEL``, and ``AGENT_MAX_TURNS``
-    from environment variables. Uses the same ``load_config_for_ci()``
-    pattern as CI mode.
+    Reads ``AGENT_PROVIDER`` and ``AGENT_MODEL`` from environment
+    variables. Uses the same ``load_config_for_ci()`` pattern as CI mode.
 
     Returns:
         Config: The resolved job configuration.

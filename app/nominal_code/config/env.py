@@ -31,7 +31,6 @@ ENV_MAP: list[tuple[str, list[str]]] = [
     ("INLINE_SUGGESTIONS", ["reviewer", "inline_suggestions"]),
     ("AGENT_PROVIDER", ["agent", "provider"]),
     ("AGENT_MODEL", ["agent", "model"]),
-    ("AGENT_MAX_TURNS", ["agent", "max_turns"]),
     ("AGENT_CLI_PATH", ["agent", "cli_path"]),
     ("ALLOWED_USERS", ["access", "allowed_users"]),
     ("ALLOWED_REPOS", ["access", "allowed_repos"]),
@@ -76,7 +75,6 @@ COMMA_LIST_KEYS: frozenset[str] = frozenset(
 INT_KEYS: frozenset[str] = frozenset(
     {
         "WEBHOOK_PORT",
-        "AGENT_MAX_TURNS",
         "REDIS_KEY_TTL_SECONDS",
         "GITHUB_INSTALLATION_ID",
         "K8S_BACKOFF_LIMIT",

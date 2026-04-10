@@ -42,7 +42,6 @@ async def run_api_agent(
     system_prompt: str = "",
     allowed_tools: list[str] | None = None,
     prior_messages: list[Message] | None = None,
-    enable_compaction: bool = False,
     notes_file_path: Path | None = None,
 ) -> AgentResult:
     """
@@ -56,10 +55,9 @@ async def run_api_agent(
     structured-output tool is included. If the model calls it, the tool
     input is serialized as JSON and returned as the agent output.
 
-    When ``enable_compaction`` is True, the messages sent to the LLM
-    are periodically compacted (older messages replaced with a summary)
-    to reduce token usage. The full uncompacted history is always
-    preserved and returned in ``AgentResult.messages``.
+    When ``notes_file_path`` is provided, the agent can write findings
+    via the WriteNotes tool, and messages are periodically compacted
+    using the notes content as the summary.
 
     Args:
         prompt (str): The user's prompt to pass to the agent.
@@ -73,11 +71,9 @@ async def run_api_agent(
         prior_messages (list[Message] | None): Prior conversation messages
             for multi-turn continuity. Prepended before the new user message.
         provider_name (ProviderName): Provider identifier for cost tracking.
-        enable_compaction (bool): When True, enables session-level
-            compaction of older messages to reduce token costs.
         notes_file_path (Path | None): Pre-assigned file path for the
-            WriteNotes tool. When provided, the agent can append findings
-            to this file during execution.
+            WriteNotes tool. When provided, enables both note-writing
+            and notes-based compaction.
 
     Returns:
         AgentResult: The parsed result from the agent.
@@ -87,12 +83,9 @@ async def run_api_agent(
         allowed_tools=allowed_tools,
     )
 
-    initial_messages: list[Message] = prior_messages or []
-    initial_messages.append(Message(role="user", content=[TextBlock(text=prompt)]))
-    initial_messages = truncate_messages(messages=initial_messages)
-
-    full_messages: list[Message] = list(initial_messages)
-    llm_messages: list[Message] = list(initial_messages)
+    messages: list[Message] = prior_messages or []
+    messages.append(Message(role="user", content=[TextBlock(text=prompt)]))
+    messages = truncate_messages(messages=messages)
 
     turns: int = 0
     start_time: int = _now_ms()
@@ -103,7 +96,7 @@ async def run_api_agent(
     try:
         while True:
             response: LLMResponse = await provider.send(
-                messages=llm_messages,
+                messages=messages,
                 system_prompt=system_prompt,
                 tools=tool_definitions,
                 model=model,
@@ -120,18 +113,17 @@ async def run_api_agent(
                     else token_usage + response.usage
                 )
 
-            assistant_message: Message = Message(
-                role="assistant",
-                content=list(response.content),
+            messages.append(
+                Message(
+                    role="assistant",
+                    content=list(response.content),
+                ),
             )
-            full_messages.append(assistant_message)
-            llm_messages.append(assistant_message)
 
             tool_use_blocks: list[ToolUseBlock] = [
                 block for block in response.content if isinstance(block, ToolUseBlock)
             ]
 
-            # handles cases where the model returns text instead of formatted review
             if not tool_use_blocks:
                 output: str = _extract_text(response=response)
                 duration_ms: int = _now_ms() - start_time
@@ -141,7 +133,7 @@ async def run_api_agent(
                     is_error=False,
                     num_turns=turns,
                     duration_ms=duration_ms,
-                    messages=tuple(full_messages),
+                    messages=tuple(messages),
                     conversation_id=conversation_id,
                     cost=build_cost_summary(
                         usage=token_usage,
@@ -152,12 +144,11 @@ async def run_api_agent(
                 )
 
             for block in tool_use_blocks:
-                # a formatted review is returned, we exit the loop
                 if block.name == SUBMIT_REVIEW_TOOL_NAME:
                     if len(tool_use_blocks) > 1:
                         logger.warning(
-                            "submit_review called alongside %d other tool(s); "
-                            "ignoring other calls",
+                            "submit_review called alongside "
+                            "%d other tool(s); ignoring other calls",
                             len(tool_use_blocks) - 1,
                         )
 
@@ -168,7 +159,7 @@ async def run_api_agent(
                         is_error=False,
                         num_turns=turns,
                         duration_ms=duration_ms,
-                        messages=tuple(full_messages),
+                        messages=tuple(messages),
                         conversation_id=conversation_id,
                         cost=build_cost_summary(
                             usage=token_usage,
@@ -212,16 +203,11 @@ async def run_api_agent(
                     ),
                 )
 
-            tool_result_message: Message = Message(
-                role="user",
-                content=tool_results,
-            )
-            full_messages.append(tool_result_message)
-            llm_messages.append(tool_result_message)
+            messages.append(Message(role="user", content=tool_results))
 
             turns += 1
 
-            if enable_compaction and notes_file_path is not None:
+            if notes_file_path is not None:
                 notes_for_compaction: str = ""
 
                 if notes_file_path.exists():
@@ -230,24 +216,22 @@ async def run_api_agent(
                     )
 
                 compaction_result = compact_with_notes(
-                    llm_messages,
+                    messages,
                     notes_for_compaction,
                 )
 
                 if compaction_result.summary_text:
-                    llm_messages = compaction_result.messages
+                    messages = compaction_result.messages
 
                     logger.info("Compacted LLM context using notes")
 
-            # TBI: better handling — e.g. prompt to return
-            # a review on the next turn
             if max_turns > 0 and turns >= max_turns:
                 logger.warning(
                     "Agent reached max turns (%d), stopping",
                     max_turns,
                 )
 
-                output = _extract_last_text(messages=full_messages)
+                output = _extract_last_text(messages=messages)
                 duration_ms = _now_ms() - start_time
 
                 return AgentResult(
@@ -255,7 +239,7 @@ async def run_api_agent(
                     is_error=False,
                     num_turns=turns,
                     duration_ms=duration_ms,
-                    messages=tuple(full_messages),
+                    messages=tuple(messages),
                     conversation_id=conversation_id,
                     cost=build_cost_summary(
                         usage=token_usage,
@@ -327,7 +311,7 @@ def _extract_last_text(messages: list[Message]) -> str:
     Extract text from the last assistant message in the history.
 
     Args:
-        messages (list[Message]): The full message history.
+        messages (list[Message]): The message history.
 
     Returns:
         str: Text from the last assistant message, or empty string.

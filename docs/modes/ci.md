@@ -108,7 +108,6 @@ Or track the latest changes on `main` (may include breaking changes):
 | `github_token` | Yes | — | GitHub token for posting review comments |
 | `provider` | No | `anthropic` | LLM provider to use |
 | `model` | No | Provider default | Model to use |
-| `max_turns` | No | `0` (unlimited) | Maximum agentic turns |
 | `prompt` | No | — | Custom review instructions appended to the default prompt |
 | `coding_guidelines` | No | — | Path to a coding guidelines file (relative to repo root) |
 
@@ -216,7 +215,6 @@ image: ghcr.io/gauthierdmn/nominal-code:latest
 | `provider` | `anthropic` | LLM provider to use |
 | `image` | `ghcr.io/gauthierdmn/nominal-code:latest` | Docker image variant (all-in-one; provider-specific images available for smaller footprint) |
 | `model` | — | Model to use |
-| `max_turns` | `0` (unlimited) | Maximum agentic turns |
 | `prompt` | — | Custom review instructions |
 | `coding_guidelines` | — | Path to a coding guidelines file |
 | `stage` | `test` | Pipeline stage to run in |

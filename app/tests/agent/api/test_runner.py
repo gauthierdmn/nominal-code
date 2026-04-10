@@ -313,7 +313,6 @@ class TestCompactionIntegration:
             model="test-model",
             provider=mock_provider,
             provider_name=ProviderName.GOOGLE,
-            enable_compaction=True,
         )
 
         assert result.is_error is False
@@ -353,14 +352,13 @@ class TestCompactionIntegration:
                 provider=mock_provider,
                 provider_name=ProviderName.GOOGLE,
                 max_turns=10,
-                enable_compaction=True,
                 notes_file_path=notes_file,
             )
 
         assert len(result.messages) >= 9
 
     @pytest.mark.asyncio
-    async def test_full_messages_preserved_after_compaction(self, tmp_path):
+    async def test_messages_compacted_when_notes_present(self, tmp_path):
         notes_file = tmp_path / "notes.md"
         notes_file.write_text("## Callers\nFound a caller.")
 
@@ -394,11 +392,10 @@ class TestCompactionIntegration:
                 provider=mock_provider,
                 provider_name=ProviderName.GOOGLE,
                 max_turns=10,
-                enable_compaction=True,
                 notes_file_path=notes_file,
             )
 
-        assert len(result.messages) >= 9
+        assert len(result.messages) < 13
 
 
 class TestRunAgentApiCost:

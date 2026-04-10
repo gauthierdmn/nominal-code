@@ -44,7 +44,6 @@ async def run_explore(
     provider_name: ProviderName,
     system_prompt: str = "",
     max_turns: int = 0,
-    enable_compaction: bool = False,
 ) -> ParallelExploreResult:
     """
     Run concurrent exploration sub-agents for the given groups.
@@ -71,8 +70,6 @@ async def run_explore(
         max_turns (int): Total turn budget. Divided across groups
             with a minimum of 4 per group. When 0, each group gets
             ``DEFAULT_MAX_TURNS_PER_SUB_AGENT``.
-        enable_compaction (bool): When True, enables session-level
-            compaction of older messages to reduce token costs.
 
     Returns:
         ParallelExploreResult: Aggregated result with per-sub-agent
@@ -116,7 +113,6 @@ async def run_explore(
                 system_prompt=full_system_prompt,
                 max_turns=per_group_turns,
                 agent_type=AgentType.EXPLORE,
-                enable_compaction=enable_compaction,
                 notes_dir=notes_dir,
             )
             for group in groups
@@ -165,7 +161,6 @@ async def run_explore_with_planner(
     planner_model: str = "",
     max_turns: int = 0,
     file_threshold: int = DEFAULT_FILE_THRESHOLD,
-    enable_compaction: bool = False,
 ) -> ParallelExploreResult:
     """
     Run codebase exploration with automatic planning and parallel execution.
@@ -194,8 +189,6 @@ async def run_explore_with_planner(
         max_turns (int): Total turn budget for exploration.
         file_threshold (int): Minimum changed files to trigger
             parallel mode.
-        enable_compaction (bool): When True, enables session-level
-            compaction of older messages to reduce token costs.
 
     Returns:
         ParallelExploreResult: Aggregated result with per-sub-agent
@@ -234,7 +227,6 @@ async def run_explore_with_planner(
         provider_name=provider_name,
         system_prompt=system_prompt,
         max_turns=max_turns,
-        enable_compaction=enable_compaction,
     )
 
 
@@ -326,7 +318,6 @@ async def _run_single_sub_agent(
     system_prompt: str,
     max_turns: int,
     agent_type: AgentType,
-    enable_compaction: bool,
     notes_dir: Path | None = None,
 ) -> SubAgentResult:
     """
@@ -351,7 +342,6 @@ async def _run_single_sub_agent(
         max_turns (int): Maximum agentic turns for this sub-agent.
         agent_type (AgentType): The sub-agent type (determines allowed
             tools).
-        enable_compaction (bool): When True, enables compaction.
         notes_dir (Path | None): Directory for notes files. When
             provided, a notes file is created for this sub-agent.
 
@@ -388,7 +378,6 @@ async def _run_single_sub_agent(
         system_prompt=system_prompt,
         allowed_tools=allowed_tools,
         provider_name=provider_name,
-        enable_compaction=enable_compaction,
         notes_file_path=notes_file_path,
     )
 
