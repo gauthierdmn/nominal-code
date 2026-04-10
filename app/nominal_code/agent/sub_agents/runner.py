@@ -33,13 +33,13 @@ async def run_explore(
     cwd: Path,
     provider: LLMProvider,
     model: str,
-    provider_name: ProviderName = ProviderName.GOOGLE,
+    provider_name: ProviderName,
     system_prompt: str = "",
     max_turns: int = 0,
     enable_compaction: bool = False,
 ) -> ParallelExploreResult:
     """
-    Run parallel exploration sub-agents for the given groups.
+    Run concurrent exploration sub-agents for the given groups.
 
     Each group is assigned its own sub-agent with isolated tool
     restrictions and turn budget. Sub-agents execute concurrently
@@ -147,7 +147,7 @@ async def run_explore_with_planner(
     cwd: Path,
     provider: LLMProvider,
     model: str,
-    provider_name: ProviderName = ProviderName.GOOGLE,
+    provider_name: ProviderName,
     system_prompt: str = "",
     planner_model: str = "",
     max_turns: int = 0,

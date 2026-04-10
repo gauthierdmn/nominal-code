@@ -57,6 +57,7 @@ class TestRunAgentApi:
             cwd=tmp_path,
             model="test-model",
             provider=mock_provider,
+            provider_name=ProviderName.GOOGLE,
         )
 
         assert isinstance(result, AgentResult)
@@ -78,6 +79,7 @@ class TestRunAgentApi:
             cwd=tmp_path,
             model="test-model",
             provider=mock_provider,
+            provider_name=ProviderName.GOOGLE,
         )
 
         assert result.output == "Done, no output."
@@ -104,6 +106,7 @@ class TestRunAgentApi:
             cwd=tmp_path,
             model="test-model",
             provider=mock_provider,
+            provider_name=ProviderName.GOOGLE,
         )
 
         assert result.output == "The file prints hello."
@@ -137,6 +140,7 @@ class TestRunAgentApi:
             cwd=tmp_path,
             model="test-model",
             provider=mock_provider,
+            provider_name=ProviderName.GOOGLE,
             allowed_tools=["Read", "submit_review"],
         )
 
@@ -161,6 +165,7 @@ class TestRunAgentApi:
             cwd=tmp_path,
             model="test-model",
             provider=mock_provider,
+            provider_name=ProviderName.GOOGLE,
             max_turns=2,
         )
 
@@ -181,6 +186,7 @@ class TestRunAgentApi:
             cwd=tmp_path,
             model="test-model",
             provider=mock_provider,
+            provider_name=ProviderName.GOOGLE,
         )
 
         assert result.is_error is True
@@ -198,6 +204,7 @@ class TestRunAgentApi:
             cwd=tmp_path,
             model="test-model",
             provider=mock_provider,
+            provider_name=ProviderName.GOOGLE,
         )
 
         assert result.is_error is True
@@ -225,6 +232,7 @@ class TestRunAgentApi:
             cwd=tmp_path,
             model="test-model",
             provider=mock_provider,
+            provider_name=ProviderName.GOOGLE,
             prior_messages=prior,
         )
 
@@ -246,6 +254,7 @@ class TestRunAgentApi:
             cwd=tmp_path,
             model="test-model",
             provider=mock_provider,
+            provider_name=ProviderName.GOOGLE,
         )
 
         assert len(result.messages) == 2
@@ -266,6 +275,7 @@ class TestRunAgentApi:
             cwd=tmp_path,
             model="test-model",
             provider=mock_provider,
+            provider_name=ProviderName.GOOGLE,
         )
 
         assert result.is_error is True
@@ -285,6 +295,7 @@ class TestCompactionIntegration:
             cwd=tmp_path,
             model="test-model",
             provider=mock_provider,
+            provider_name=ProviderName.GOOGLE,
         )
 
         assert result.is_error is False
@@ -301,6 +312,7 @@ class TestCompactionIntegration:
             cwd=tmp_path,
             model="test-model",
             provider=mock_provider,
+            provider_name=ProviderName.GOOGLE,
             enable_compaction=True,
         )
 
@@ -336,6 +348,7 @@ class TestCompactionIntegration:
                 cwd=tmp_path,
                 model="test-model",
                 provider=mock_provider,
+                provider_name=ProviderName.GOOGLE,
                 max_turns=10,
                 enable_compaction=True,
             )

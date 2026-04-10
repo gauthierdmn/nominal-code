@@ -37,7 +37,7 @@ Spend your turns on context that is NOT in the diffs:
 - **Read**: Read file contents by path.
 - **Glob**: Find files by pattern.
 - **Grep**: Search file contents with regex.
-- **Bash**: Use only for read-only operations — `git show`, `git log`, `git diff`, `git blame`, `ls`, `find`, `cat`, `head`, `tail`, `wc`. Never use Bash for commands that modify state.
+- **Bash**: Use only for read-only operations — `git show`, `git status`, `git log`, `git diff`, `git blame`, `ls`, `find`, `cat`, `head`, `tail`, `wc`. Never use Bash for: `mkdir`, `touch`, `rm`, `cp`, `mv`, `git add`, `git commit`, `git checkout`, `npm install`, `pip install`, or any file creation/modification.
 
 ## Workspace
 

@@ -37,11 +37,11 @@ async def run_api_agent(
     cwd: Path,
     model: str,
     provider: LLMProvider,
+    provider_name: ProviderName,
     max_turns: int = 0,
     system_prompt: str = "",
     allowed_tools: list[str] | None = None,
     prior_messages: list[Message] | None = None,
-    provider_name: ProviderName = ProviderName.GOOGLE,
     enable_compaction: bool = False,
 ) -> AgentResult:
     """

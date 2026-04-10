@@ -17,6 +17,7 @@ from nominal_code.agent.sub_agents.runner import (
 from nominal_code.agent.sub_agents.types import DEFAULT_MAX_TURNS_PER_SUB_AGENT
 from nominal_code.llm.cost import CostSummary
 from nominal_code.llm.messages import LLMResponse, StopReason, TextBlock
+from nominal_code.models import ProviderName
 
 
 def _make_group(label="test", files=None, prompt="explore"):
@@ -140,6 +141,7 @@ class TestRunExplore:
             cwd=tmp_path,
             provider=mock_provider,
             model="test-model",
+            provider_name=ProviderName.GOOGLE,
         )
 
         assert result.sub_results == ()
@@ -159,6 +161,7 @@ class TestRunExplore:
             cwd=tmp_path,
             provider=mock_provider,
             model="test-model",
+            provider_name=ProviderName.GOOGLE,
         )
 
         assert len(result.sub_results) == 1
@@ -183,6 +186,7 @@ class TestRunExplore:
             cwd=tmp_path,
             provider=mock_provider,
             model="test-model",
+            provider_name=ProviderName.GOOGLE,
         )
 
         assert len(result.sub_results) == 2
@@ -216,6 +220,7 @@ class TestRunExplore:
             cwd=tmp_path,
             provider=mock_provider,
             model="test-model",
+            provider_name=ProviderName.GOOGLE,
         )
 
         assert len(result.sub_results) == 1
@@ -234,6 +239,7 @@ class TestRunExplore:
             cwd=tmp_path,
             provider=mock_provider,
             model="test-model",
+            provider_name=ProviderName.GOOGLE,
         )
 
         assert len(result.sub_results) == 0
@@ -251,6 +257,7 @@ class TestRunExplore:
             cwd=tmp_path,
             provider=mock_provider,
             model="test-model",
+            provider_name=ProviderName.GOOGLE,
         )
 
         assert len(result.sub_results) == 1
@@ -268,6 +275,7 @@ class TestRunExploreWithPlanner:
             cwd=tmp_path,
             provider=mock_provider,
             model="test-model",
+            provider_name=ProviderName.GOOGLE,
         )
 
         assert result.sub_results == ()
@@ -287,6 +295,7 @@ class TestRunExploreWithPlanner:
             cwd=tmp_path,
             provider=mock_provider,
             model="test-model",
+            provider_name=ProviderName.GOOGLE,
             file_threshold=DEFAULT_FILE_THRESHOLD,
         )
 
@@ -319,6 +328,7 @@ class TestRunExploreWithPlanner:
             cwd=tmp_path,
             provider=mock_provider,
             model="test-model",
+            provider_name=ProviderName.GOOGLE,
             file_threshold=8,
         )
 
@@ -343,6 +353,7 @@ class TestRunExploreWithPlanner:
             cwd=tmp_path,
             provider=mock_provider,
             model="test-model",
+            provider_name=ProviderName.GOOGLE,
             file_threshold=8,
         )
 
