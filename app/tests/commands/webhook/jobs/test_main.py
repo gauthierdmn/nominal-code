@@ -31,8 +31,15 @@ def _make_reviewer_job():
 
 def _make_review_result():
     mock_result = MagicMock()
+    mock_result.agent_review = MagicMock()
+    mock_result.is_error = False
     mock_result.valid_findings = []
+    mock_result.rejected_findings = []
+    mock_result.raw_output = ""
     mock_result.cost = None
+    mock_result.num_turns = 0
+    mock_result.messages = ()
+    mock_result.input_prompt = ""
 
     return JobResult(
         review_result=mock_result,
@@ -41,20 +48,20 @@ def _make_review_result():
 
 class TestRunJobMain:
     @pytest.mark.asyncio
-    async def test_missing_payload_returns_1(self, monkeypatch):
+    async def test_missing_payload_returns_none(self, monkeypatch):
         monkeypatch.delenv("REVIEW_JOB_PAYLOAD", raising=False)
 
         result = await run_job_main()
 
-        assert result == 1
+        assert result is None
 
     @pytest.mark.asyncio
-    async def test_invalid_json_returns_1(self, monkeypatch):
+    async def test_invalid_json_returns_none(self, monkeypatch):
         monkeypatch.setenv("REVIEW_JOB_PAYLOAD", "not valid json")
 
         result = await run_job_main()
 
-        assert result == 1
+        assert result is None
 
     @pytest.mark.asyncio
     async def test_successful_reviewer_job(self, monkeypatch):
@@ -79,7 +86,8 @@ class TestRunJobMain:
         ):
             result = await run_job_main()
 
-        assert result == 0
+        assert result is not None
+        assert isinstance(result, JobResult)
         mock_execute.assert_called_once()
 
     @pytest.mark.asyncio
@@ -135,7 +143,7 @@ class TestRunJobMain:
         assert call_kwargs["pre_cloned"] is False
 
     @pytest.mark.asyncio
-    async def test_review_exception_returns_1(self, monkeypatch):
+    async def test_review_exception_returns_none(self, monkeypatch):
         job = _make_reviewer_job()
         monkeypatch.setenv("REVIEW_JOB_PAYLOAD", job.serialize())
         monkeypatch.setenv("AGENT_PROVIDER", "anthropic")
@@ -157,7 +165,7 @@ class TestRunJobMain:
         ):
             result = await run_job_main()
 
-        assert result == 1
+        assert result is None
 
 
 class TestPublishCompletion:
@@ -192,7 +200,7 @@ class TestPublishCompletion:
         ):
             result = await run_job_main()
 
-        assert result == 0
+        assert result is not None
         mock_publish.assert_called_once_with(
             redis_url="redis://localhost:6379",
             channel_key="nc:job:github:owner/repo:42",
@@ -230,7 +238,7 @@ class TestPublishCompletion:
         ):
             result = await run_job_main()
 
-        assert result == 1
+        assert result is None
         mock_publish.assert_called_once_with(
             redis_url="redis://localhost:6379",
             channel_key="nc:job:github:owner/repo:42",
@@ -264,5 +272,5 @@ class TestPublishCompletion:
         ):
             result = await run_job_main()
 
-        assert result == 0
+        assert result is not None
         mock_publish.assert_not_called()

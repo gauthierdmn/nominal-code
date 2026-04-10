@@ -507,6 +507,100 @@ class TestBuildReviewerPrompt:
         assert "binary.png" in result
         assert "no patch available" in result
 
+    def test__build_reviewer_prompt_includes_context(self):
+        comment = _make_comment()
+        changed_files = [
+            ChangedFile(
+                file_path="src/main.py",
+                status=FileStatus.MODIFIED,
+                patch="+new",
+            ),
+        ]
+        result = _build_reviewer_prompt(
+            event=comment,
+            user_prompt="",
+            changed_files=changed_files,
+            context="## Exploration\n\nFound 3 callers of changed function.",
+        )
+
+        assert "## Exploration" in result
+        assert "Found 3 callers" in result
+
+    def test__build_reviewer_prompt_empty_context_omitted(self):
+        comment = _make_comment()
+        changed_files = [
+            ChangedFile(
+                file_path="src/main.py",
+                status=FileStatus.MODIFIED,
+                patch="+new",
+            ),
+        ]
+        result = _build_reviewer_prompt(
+            event=comment,
+            user_prompt="",
+            changed_files=changed_files,
+            context="",
+        )
+
+        assert "Exploration" not in result
+
+    def test__build_reviewer_prompt_context_before_review_instruction(self):
+        comment = _make_comment()
+        changed_files = [
+            ChangedFile(
+                file_path="src/main.py",
+                status=FileStatus.MODIFIED,
+                patch="+new",
+            ),
+        ]
+        result = _build_reviewer_prompt(
+            event=comment,
+            user_prompt="",
+            changed_files=changed_files,
+            context="CONTEXT_MARKER",
+        )
+
+        context_pos = result.index("CONTEXT_MARKER")
+        instruction_pos = result.index("Review the above changes")
+        assert context_pos < instruction_pos
+
+    def test__build_reviewer_prompt_inline_suggestions_appended(self):
+        comment = _make_comment()
+        changed_files = [
+            ChangedFile(
+                file_path="src/main.py",
+                status=FileStatus.MODIFIED,
+                patch="+new",
+            ),
+        ]
+        result = _build_reviewer_prompt(
+            event=comment,
+            user_prompt="",
+            changed_files=changed_files,
+            inline_suggestions=True,
+        )
+
+        assert "suggestion" in result
+        assert "replacement code" in result
+
+    def test__build_reviewer_prompt_no_inline_suggestions(self):
+        comment = _make_comment()
+        changed_files = [
+            ChangedFile(
+                file_path="src/main.py",
+                status=FileStatus.MODIFIED,
+                patch="+new",
+            ),
+        ]
+        result = _build_reviewer_prompt(
+            event=comment,
+            user_prompt="",
+            changed_files=changed_files,
+            inline_suggestions=False,
+        )
+
+        assert "replacement code" not in result
+
 
 class TestBuildReviewerPromptWithExistingComments:
     def test__build_reviewer_prompt_includes_existing_comments(self):

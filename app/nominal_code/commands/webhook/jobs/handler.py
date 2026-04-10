@@ -30,6 +30,7 @@ class JobHandler(Protocol):
         platform: Platform,
         conversation_store: ConversationStore | None = None,
         namespace: str = "",
+        context: str = "",
     ) -> ReviewResult:
         """
         Execute a code review and post results.
@@ -42,6 +43,7 @@ class JobHandler(Protocol):
             conversation_store (ConversationStore | None): Conversation store for
                 conversation continuity.
             namespace (str): Logical namespace for conversation key isolation.
+            context (str): Pre-review context to include in the user message.
 
         Returns:
             ReviewResult: The review result with findings and summary.
@@ -63,6 +65,7 @@ class DefaultJobHandler:
         platform: Platform,
         conversation_store: ConversationStore | None = None,
         namespace: str = "",
+        context: str = "",
     ) -> ReviewResult:
         """
         Delegate to ``run_and_post_review``.
@@ -75,6 +78,7 @@ class DefaultJobHandler:
             conversation_store (ConversationStore | None): Conversation store for
                 conversation continuity.
             namespace (str): Logical namespace for conversation key isolation.
+            context (str): Pre-review context to include in the user message.
 
         Returns:
             ReviewResult: The review result with findings and summary.
@@ -89,4 +93,5 @@ class DefaultJobHandler:
             platform=platform,
             conversation_store=conversation_store,
             namespace=namespace,
+            context=context,
         )
