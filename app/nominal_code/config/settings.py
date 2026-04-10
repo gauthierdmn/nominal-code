@@ -61,6 +61,9 @@ class GitLabConfig(BaseModel):
     api_base: str = DEFAULT_GITLAB_API_BASE
 
 
+SUGGESTIONS_PROMPT_PATH: str = "prompts/reviewer_suggestions.md"
+
+
 class ReviewerConfig(BaseModel):
     """
     Reviewer bot configuration.
@@ -68,12 +71,15 @@ class ReviewerConfig(BaseModel):
     Attributes:
         bot_username (str): The @mention name for the reviewer bot.
         system_prompt (str): System prompt text for reviewer bot invocations.
+        suggestions_prompt (str): Prompt section appended to the system prompt
+            when non-empty, enabling one-click-apply code suggestions.
     """
 
     model_config = ConfigDict(frozen=True)
 
     bot_username: str
     system_prompt: str
+    suggestions_prompt: str = ""
 
 
 class PromptsConfig(BaseModel):

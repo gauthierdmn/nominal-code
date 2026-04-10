@@ -15,6 +15,7 @@ from nominal_code.config.models import AppSettings, GitHubSettings, GitLabSettin
 from nominal_code.config.policies import FilteringPolicy, RoutingPolicy
 from nominal_code.config.settings import (
     DEFAULT_GITLAB_API_BASE,
+    SUGGESTIONS_PROMPT_PATH,
     Config,
     GitHubConfig,
     GitLabConfig,
@@ -150,6 +151,11 @@ def _build_reviewer(
         Path(settings.reviewer.system_prompt_path),
     )
 
+    suggestions_prompt: str = ""
+
+    if settings.reviewer.inline_suggestions:
+        suggestions_prompt = load_file_content(Path(SUGGESTIONS_PROMPT_PATH))
+
     if require_webhook:
         if not settings.reviewer.bot_username:
             raise ValueError("REVIEWER_BOT_USERNAME must be set")
@@ -157,11 +163,13 @@ def _build_reviewer(
         return ReviewerConfig(
             bot_username=settings.reviewer.bot_username,
             system_prompt=reviewer_system_prompt,
+            suggestions_prompt=suggestions_prompt,
         )
 
     return ReviewerConfig(
         bot_username="",
         system_prompt=reviewer_system_prompt,
+        suggestions_prompt=suggestions_prompt,
     )
 
 
