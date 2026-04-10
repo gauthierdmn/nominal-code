@@ -151,10 +151,18 @@ The `agent/sub_agents/` package provides first-class support for parallel sub-ag
 
 | Type | Tools | Purpose |
 |---|---|---|
-| `explore` | Read, Glob, Grep, Bash | Read-only codebase exploration |
+| `explore` | Read, Glob, Grep, Bash, WriteNotes | Read-only codebase exploration with structured notes |
 | `plan` | Read, Glob, Grep, Bash | Planning and analysis |
 
 No agent type includes the `submit_review` or `Agent` tool — sub-agents cannot produce reviews or spawn other sub-agents.
+
+### WriteNotes Tool
+
+Explore sub-agents have access to a `WriteNotes` tool that appends structured findings to a pre-assigned markdown notes file. The agent writes findings incrementally as it discovers them — callers, tests, type definitions, knock-on effects — organized under markdown headings. The notes file is the agent's primary deliverable: the analysis agent receives its content, not the raw exploration conversation.
+
+Each sub-agent gets its own notes file (no write conflicts during parallel execution). Files are created in a temporary directory that is cleaned up after notes are read back.
+
+See [Compaction](reference/compaction.md) for how notes files also serve as the compaction summary.
 
 ### Parallel Exploration
 
@@ -315,7 +323,7 @@ Implements the LLM provider API agentic loop with local tool execution. See [LLM
 
 ### API Tools (`agent/api/tools.py`)
 
-Defines and executes tools for the API runner: `Read`, `Glob`, `Grep`, and `Bash`. Bash commands are validated against an allowlist when `allowed_tools` restricts the agent (e.g. the reviewer is limited to `Bash(git clone*)`).
+Defines and executes tools for the API runner: `Read`, `Glob`, `Grep`, `Bash`, and `WriteNotes`. Bash commands are validated against an allowlist when `allowed_tools` restricts the agent (e.g. the reviewer is limited to `Bash(git clone*)`). `WriteNotes` is restricted to a pre-assigned file path controlled by the orchestrator — agents cannot write to arbitrary locations.
 
 ### CLI Runner (`agent/cli/runner.py`)
 
@@ -451,7 +459,7 @@ nominal_code/
 │   ├── result.py        # AgentResult dataclass (output, turns, conversation ID, cost)
 │   ├── prompts.py       # Guideline loading, language detection, system prompt composition
 │   ├── errors.py        # Async context manager for handler error handling
-│   ├── compaction.py    # Deterministic message compaction (no LLM call)
+│   ├── compaction.py    # Notes-based message compaction
 │   ├── api/
 │   │   ├── runner.py    # LLM provider API agentic loop (tool use)
 │   │   └── tools.py     # Tool definitions and execution (Read, Glob, Grep, Bash)

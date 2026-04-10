@@ -11,12 +11,14 @@ from nominal_code.agent.sub_agents.runner import (
     DEFAULT_FILE_THRESHOLD,
     aggregate_metrics,
     allocate_turns,
+    assemble_notes,
     run_explore,
     run_explore_with_planner,
 )
 from nominal_code.agent.sub_agents.types import DEFAULT_MAX_TURNS_PER_SUB_AGENT
 from nominal_code.llm.cost import CostSummary
 from nominal_code.llm.messages import LLMResponse, StopReason, TextBlock
+from nominal_code.models import ProviderName
 
 
 def _make_group(label="test", files=None, prompt="explore"):
@@ -358,3 +360,57 @@ class TestRunExploreWithPlanner:
 
         assert len(result.sub_results) == 1
         assert result.sub_results[0].group.label == "all-files"
+
+
+def _make_noted_result(label="test", notes="", files=None):
+    return SubAgentResult(
+        group=_make_group(label=label, files=files),
+        output="done",
+        is_error=False,
+        num_turns=1,
+        duration_ms=100,
+        notes=notes,
+    )
+
+
+class TestAssembleNotes:
+    def test_combines_results(self):
+        results = (
+            _make_noted_result(label="group-a", notes="## Callers\nFound caller A."),
+            _make_noted_result(label="group-b", notes="## Tests\nFound test B."),
+        )
+
+        combined = assemble_notes(results)
+
+        assert "Codebase Exploration Notes" in combined
+        assert "Found caller A." in combined
+        assert "Found test B." in combined
+
+    def test_empty_when_no_notes(self):
+        results = (
+            _make_noted_result(notes=""),
+            _make_noted_result(notes=""),
+        )
+
+        assert assemble_notes(results) == ""
+
+    def test_skips_empty_notes(self):
+        results = (
+            _make_noted_result(label="empty", notes=""),
+            _make_noted_result(label="has-notes", notes="## Callers\nSomething."),
+        )
+
+        combined = assemble_notes(results)
+
+        assert "Something." in combined
+
+    def test_truncates_at_limit(self):
+        large_notes = "x" * 5000
+        results = (
+            _make_noted_result(label="big", notes=large_notes),
+            _make_noted_result(label="extra", notes="y" * 5000),
+        )
+
+        combined = assemble_notes(results, max_size=6000)
+
+        assert "truncated" in combined

@@ -7,11 +7,14 @@ import pytest
 from nominal_code.agent.api.tools import (
     DEFAULT_ALLOWED_CLONE_HOSTS,
     MAX_LINE_LENGTH,
+    MAX_NOTES_FILE_SIZE,
     SUBMIT_REVIEW_TOOL_NAME,
     TOOL_DEFINITIONS,
+    WRITE_NOTES_TOOL_NAME,
     ToolError,
     _execute_glob,
     _execute_read,
+    _execute_write_notes,
     _parse_bash_patterns,
     _resolve_path,
     _validate_bash_command,
@@ -55,6 +58,18 @@ class TestGetToolDefinitions:
 
         names = [tool["name"] for tool in result]
         assert SUBMIT_REVIEW_TOOL_NAME not in names
+
+    def test_appends_write_notes_tool(self):
+        result = get_tool_definitions([WRITE_NOTES_TOOL_NAME])
+
+        names = [tool["name"] for tool in result]
+        assert WRITE_NOTES_TOOL_NAME in names
+
+    def test_does_not_include_write_notes_by_default(self):
+        result = get_tool_definitions(None)
+
+        names = [tool["name"] for tool in result]
+        assert WRITE_NOTES_TOOL_NAME not in names
 
 
 class TestParseBashPatterns:
@@ -400,6 +415,88 @@ class TestExecuteToolSanitizedEnv:
         assert not is_error
         assert "glpat-" not in result
         assert "[REDACTED]" in result
+
+
+class TestWriteNotes:
+    def test_appends_content(self, tmp_path):
+        notes_file = tmp_path / "notes.md"
+        notes_file.write_text("# Header\n\n")
+
+        result = _execute_write_notes(
+            {"content": "## Callers\nFound a caller."},
+            notes_file,
+        )
+
+        content = notes_file.read_text()
+        assert "## Callers" in content
+        assert "Found a caller." in content
+        assert "Appended" in result
+
+    def test_appends_multiple_times(self, tmp_path):
+        notes_file = tmp_path / "notes.md"
+        notes_file.write_text("")
+
+        _execute_write_notes({"content": "First"}, notes_file)
+        _execute_write_notes({"content": "Second"}, notes_file)
+
+        content = notes_file.read_text()
+        assert "First" in content
+        assert "Second" in content
+
+    def test_raises_without_path(self):
+        with pytest.raises(ToolError, match="not available"):
+            _execute_write_notes({"content": "test"}, None)
+
+    def test_raises_on_empty_content(self, tmp_path):
+        notes_file = tmp_path / "notes.md"
+        notes_file.write_text("")
+
+        with pytest.raises(ToolError, match="not be empty"):
+            _execute_write_notes({"content": "   "}, notes_file)
+
+    def test_rejects_at_size_limit(self, tmp_path):
+        notes_file = tmp_path / "notes.md"
+        notes_file.write_text("x" * MAX_NOTES_FILE_SIZE)
+
+        with pytest.raises(ToolError, match="size limit"):
+            _execute_write_notes({"content": "more content"}, notes_file)
+
+    def test_creates_file_if_missing(self, tmp_path):
+        notes_file = tmp_path / "new_notes.md"
+
+        _execute_write_notes({"content": "First write"}, notes_file)
+
+        assert notes_file.exists()
+        assert "First write" in notes_file.read_text()
+
+
+class TestExecuteToolWriteNotes:
+    @pytest.mark.asyncio
+    async def test_routes_write_notes(self, tmp_path):
+        notes_file = tmp_path / "notes.md"
+        notes_file.write_text("")
+
+        result, is_error = await execute_tool(
+            name="WriteNotes",
+            tool_input={"content": "## Test finding"},
+            cwd=tmp_path,
+            notes_file_path=notes_file,
+        )
+
+        assert not is_error
+        assert "Appended" in result
+        assert "## Test finding" in notes_file.read_text()
+
+    @pytest.mark.asyncio
+    async def test_returns_error_without_path(self, tmp_path):
+        result, is_error = await execute_tool(
+            name="WriteNotes",
+            tool_input={"content": "test"},
+            cwd=tmp_path,
+        )
+
+        assert is_error
+        assert "not available" in result
 
 
 class TestToolError:
