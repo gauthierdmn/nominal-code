@@ -37,7 +37,6 @@ reviewer:
 agent:
   provider: "google"
   model: ""
-  max_turns: 0
   cli_path: ""
 
 access:
@@ -125,7 +124,6 @@ All sections and fields are optional — omitted fields use the defaults shown a
     agent:
       provider: "anthropic"
       model: "claude-sonnet-4-6"
-      max_turns: 10
 
     workspace:
       base_dir: "/tmp/nominal-code"

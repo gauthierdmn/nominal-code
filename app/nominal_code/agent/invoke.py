@@ -76,6 +76,7 @@ async def invoke_agent(
     agent_config: AgentConfig | None = None,
     conversation_id: str | None = None,
     prior_messages: list[Message] | None = None,
+    max_turns: int = 0,
 ) -> AgentResult:
     """
     Run the agent by routing to the CLI or API backend.
@@ -96,6 +97,7 @@ async def invoke_agent(
         conversation_id (str | None): Optional conversation ID to resume.
         prior_messages (list[Message] | None): Prior conversation messages
             for multi-turn continuity (API mode only).
+        max_turns (int): Maximum agentic turns (0 for unlimited).
 
     Returns:
         AgentResult: The parsed result from the agent.
@@ -113,7 +115,7 @@ async def invoke_agent(
                 cwd=cwd,
                 model=agent_config.provider.model,
                 provider=provider,
-                max_turns=agent_config.max_turns,
+                max_turns=max_turns,
                 system_prompt=system_prompt,
                 allowed_tools=allowed_tools,
                 prior_messages=prior_messages,
@@ -126,7 +128,7 @@ async def invoke_agent(
         prompt=prompt,
         cwd=cwd,
         model=agent_config.model,
-        max_turns=agent_config.max_turns,
+        max_turns=max_turns,
         cli_path=agent_config.cli_path,
         conversation_id=conversation_id,
         system_prompt=system_prompt,

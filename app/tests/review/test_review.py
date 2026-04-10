@@ -24,7 +24,6 @@ from nominal_code.models import (
 from nominal_code.platforms.base import CommentEvent, ExistingComment, PlatformName
 from nominal_code.review.handler import (
     MAX_EXISTING_COMMENTS,
-    REVIEWER_ALLOWED_TOOLS,
     ReviewResult,
     _build_reviewer_prompt,
     _format_existing_comments,
@@ -195,7 +194,9 @@ class TestReviewerProcessComment:
             call_kwargs = mock_run.call_args.kwargs
 
             assert "Review code." in call_kwargs["system_prompt"]
-            assert call_kwargs["allowed_tools"] == REVIEWER_ALLOWED_TOOLS
+            assert "Read" in call_kwargs["allowed_tools"]
+            assert "Glob" in call_kwargs["allowed_tools"]
+            assert "Grep" in call_kwargs["allowed_tools"]
 
     @pytest.mark.asyncio
     async def test_reviewer_uses_resolve_coding_guidelines(self):
@@ -454,33 +455,13 @@ class TestBuildReviewerPrompt:
         assert "src/utils.py" in result
         assert "added" in result
         assert "focus on security" in result
-        assert "-old" in result
-        assert "+new" in result
+        assert "-1:old" in result
+        assert "+1:new" in result
         assert f"<{TAG_FILE_PATH}>" in result
         assert f"<{TAG_UNTRUSTED_DIFF}>" in result
         assert f"<{TAG_UNTRUSTED_REQUEST}>" in result
 
-    def test__build_reviewer_prompt_with_deps_path(self):
-        comment = _make_comment()
-        changed_files = [
-            ChangedFile(
-                file_path="src/main.py",
-                status=FileStatus.MODIFIED,
-                patch="+new",
-            ),
-        ]
-        result = _build_reviewer_prompt(
-            event=comment,
-            user_prompt="",
-            changed_files=changed_files,
-            deps_path=Path("/tmp/.deps"),
-        )
-
-        assert "Dependencies directory: /tmp/.deps" in result
-        assert "git clone" in result
-        assert "--depth=1" in result
-
-    def test__build_reviewer_prompt_without_deps_path(self):
+    def test__build_reviewer_prompt_without_context(self):
         comment = _make_comment()
         changed_files = [
             ChangedFile(
@@ -493,7 +474,7 @@ class TestBuildReviewerPrompt:
             event=comment, user_prompt="", changed_files=changed_files
         )
 
-        assert "Dependencies directory" not in result
+        assert "Callers" not in result
 
     def test__build_reviewer_prompt_no_patch(self):
         comment = _make_comment()

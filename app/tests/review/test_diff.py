@@ -6,6 +6,7 @@ from nominal_code.models import (
     ReviewFinding,
 )
 from nominal_code.review.diff import (
+    annotate_diff,
     build_diff_index,
     build_effective_summary,
     filter_findings,
@@ -337,3 +338,76 @@ class TestBuildEffectiveSummary:
 
         assert "**a.py:1**" in result
         assert "Needs change" in result
+
+
+class TestAnnotateDiff:
+    def test_empty_patch(self):
+        assert annotate_diff("") == ""
+        assert annotate_diff("   ") == ""
+
+    def test_single_hunk(self):
+        patch = (
+            "@@ -10,4 +10,5 @@ def foo():\n"
+            "     existing_line\n"
+            "-    old_code\n"
+            "+    new_code\n"
+            "+    added_line\n"
+            "     context_line\n"
+        )
+        result = annotate_diff(patch)
+
+        lines = result.splitlines()
+        assert lines[0] == "@@ -10,4 +10,5 @@ def foo():"
+        assert lines[1] == " 10:    existing_line"
+        assert lines[2] == "-11:    old_code"
+        assert lines[3] == "+11:    new_code"
+        assert lines[4] == "+12:    added_line"
+        assert lines[5] == " 13:    context_line"
+
+    def test_multiple_hunks(self):
+        patch = (
+            "@@ -5,3 +5,3 @@ class A:\n"
+            "     line5\n"
+            "-    old6\n"
+            "+    new6\n"
+            "     line7\n"
+            "@@ -20,3 +20,3 @@ class B:\n"
+            "     line20\n"
+            "-    old21\n"
+            "+    new21\n"
+            "     line22\n"
+        )
+        result = annotate_diff(patch)
+
+        assert "+6:    new6" in result
+        assert "+21:    new21" in result
+
+    def test_additions_only(self):
+        patch = "@@ -0,0 +1,3 @@\n+line_one\n+line_two\n+line_three\n"
+        result = annotate_diff(patch)
+
+        lines = result.splitlines()
+        assert lines[1] == "+1:line_one"
+        assert lines[2] == "+2:line_two"
+        assert lines[3] == "+3:line_three"
+
+    def test_deletions_only(self):
+        patch = "@@ -1,2 +1,0 @@\n-removed_a\n-removed_b\n"
+        result = annotate_diff(patch)
+
+        assert "-1:removed_a" in result
+        assert "-2:removed_b" in result
+
+    def test_preserves_indentation(self):
+        patch = (
+            "@@ -1,3 +1,3 @@\n"
+            "     four_spaces\n"
+            "-        eight_spaces\n"
+            "+        new_eight_spaces\n"
+            "     four_spaces_again\n"
+        )
+        result = annotate_diff(patch)
+
+        assert " 1:    four_spaces" in result
+        assert "-2:        eight_spaces" in result
+        assert "+2:        new_eight_spaces" in result

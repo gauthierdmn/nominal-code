@@ -53,7 +53,7 @@ The following mechanisms limit the impact of a successful prompt injection:
 
 - **`ALLOWED_USERS` gating** — only users listed in `ALLOWED_USERS` can trigger the agent via comments. Unauthorized users are silently ignored, preventing external actors from directly prompting the agent.
 
-- **Turn and token caps** — `AGENT_MAX_TURNS` limits the number of agent loop iterations, and `MAX_RESPONSE_TOKENS` (16,384) caps each LLM response. These prevent runaway agent loops.
+- **Turn caps** — explore sub-agents have a fixed turn budget (default 32 per group). The review agent runs in single-turn mode (one API call). `MAX_RESPONSE_TOKENS` (16,384) caps each LLM response.
 
 - **Diff line validation** — review findings are validated against the actual diff. Findings that reference lines outside the diff are filtered out and appended to the summary instead.
 
@@ -104,8 +104,6 @@ successful prompt injection.
 - **Keep `ALLOWED_USERS` tight** — only grant access to trusted team members. In open-source repos, this prevents external contributors from prompting the agent directly.
 
 - **Use read-only reviewer tokens** — set `GITHUB_REVIEWER_TOKEN` (or `GITLAB_REVIEWER_TOKEN`) to a token with only read and comment permissions. This adds a second layer of defense beyond tool restrictions.
-
-- **Set `AGENT_MAX_TURNS`** — configure a reasonable cap (e.g. 10–20) to limit how many iterations the agent can run, reducing the window for exploitation.
 
 - **Review `.nominal/guidelines.md` changes carefully** — these files are injected into the system prompt. Treat changes to them with the same scrutiny as CI configuration changes.
 
@@ -257,7 +255,9 @@ Output sanitization is applied at two points:
 | Grep timeout | 30 seconds | Prevents expensive searches |
 | HTTP client timeout | 30 seconds | Prevents hanging API calls |
 | Max response tokens | 16,384 | Caps LLM output per response |
-| Max agent turns | Configurable (`AGENT_MAX_TURNS`, default: unlimited) | Limits agent loop iterations |
+| Explore agent turns | 32 per group (default) | Limits exploration loop iterations |
+| Review agent turns | 1 (single-turn) | One API call, no tool loop |
+| Max notes file size | 50,000 characters | Prevents runaway WriteNotes output |
 | Max glob results | 200 | Prevents oversized file listings |
 | Max grep output | 30,000 characters | Truncates large search results |
 | Max read lines | 2,000 | Truncates large file reads |

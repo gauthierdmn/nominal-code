@@ -141,8 +141,8 @@ def _build_ci_config() -> Config:
     """
     Build a CI Config from environment variables.
 
-    Reads ``INPUT_MODEL``, ``INPUT_MAX_TURNS``, ``AGENT_PROVIDER``,
-    and ``INPUT_CODING_GUIDELINES`` from the environment.
+    Reads ``INPUT_MODEL``, ``AGENT_PROVIDER``, and
+    ``INPUT_CODING_GUIDELINES`` from the environment.
 
     Returns:
         Config: The resolved CI configuration.
@@ -154,22 +154,11 @@ def _build_ci_config() -> Config:
     model_env: str = _env.str("INPUT_MODEL", "")
     model: str | None = model_env if model_env else None
 
-    max_turns: int | None = None
-
-    try:
-        max_turns_env: int = _env.int("INPUT_MAX_TURNS", 0)
-
-        if max_turns_env:
-            max_turns = max_turns_env
-    except ValueError:
-        pass
-
     guidelines_env: str = _env.str("INPUT_CODING_GUIDELINES", "")
     guidelines_path: Path | None = Path(guidelines_env) if guidelines_env else None
 
     return load_config(
         default_provider=ProviderName.ANTHROPIC,
         model=model,
-        max_turns=max_turns,
         guidelines_path=guidelines_path,
     )

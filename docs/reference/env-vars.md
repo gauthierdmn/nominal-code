@@ -59,7 +59,6 @@ These can also be set in the YAML config file under `reviewer` and `access`.
 |---|---|---|---|---|
 | `AGENT_PROVIDER` | `agent.provider` | `webhook` `cli` `ci` | — | LLM provider name (`anthropic`, `openai`, `google`, `deepseek`, `groq`, `together`, `fireworks`). When set in webhook/CLI mode, uses the API runner instead of the Claude Code CLI |
 | `AGENT_MODEL` | `agent.model` | `webhook` `cli` `ci` | SDK/provider default | Model override (e.g. `claude-sonnet-4-6`, `gpt-4.1`) |
-| `AGENT_MAX_TURNS` | `agent.max_turns` | `webhook` `cli` `ci` | `0` (unlimited) | Maximum agentic turns per invocation |
 | `AGENT_CLI_PATH` | `agent.cli_path` | `webhook` `cli` | Bundled | Path to the `claude` CLI binary (ignored when `AGENT_PROVIDER` is set) |
 
 ## Prompts and Guidelines

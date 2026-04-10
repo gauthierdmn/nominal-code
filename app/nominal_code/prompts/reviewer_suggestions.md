@@ -3,6 +3,8 @@
 Use the `suggestion` field when you can provide a concrete, self-contained code fix:
 
 - The `suggestion` value must be the **exact replacement code** for the target line(s). No placeholders, no `...`, no ellipsis.
+- Each diff line is annotated with its line number in the new file. Use these numbers directly for `line` and `start_line` — do not guess or count from hunk headers.
+- The annotated diff preserves the exact indentation from the file. Match it precisely in your `suggestion` value.
 - `body` becomes a brief explanation of **why** the change is needed.
 - For single-line replacements, set `line` to the target line and omit `start_line`.
 - For multi-line replacements, set `start_line` to the first line and `line` to the last line of the range **being replaced**. The `start_line..line` range defines exactly which lines in the file will be deleted and substituted with the `suggestion` content. Every line in this range is removed — if your suggestion does not include a line from this range, that line is deleted. If your suggestion adds lines not in this range, they are inserted.

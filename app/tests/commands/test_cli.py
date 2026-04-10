@@ -70,7 +70,6 @@ class TestBuildCliParser:
         assert args.prompt == ""
         assert args.platform == "github"
         assert args.model is None
-        assert args.max_turns is None
         assert args.dry_run is False
 
     def test_parser_review_all_options(self):
@@ -85,8 +84,6 @@ class TestBuildCliParser:
                 "gitlab",
                 "--model",
                 "claude-sonnet-4-6",
-                "--max-turns",
-                "5",
                 "--dry-run",
             ]
         )
@@ -95,7 +92,6 @@ class TestBuildCliParser:
         assert args.prompt == "focus on security"
         assert args.platform == "gitlab"
         assert args.model == "claude-sonnet-4-6"
-        assert args.max_turns == 5
         assert args.dry_run is True
 
     def test_parser_provider_default_empty(self):
@@ -205,7 +201,6 @@ class TestRunReview:
             pr_ref="bad-ref",
             platform="github",
             model="",
-            max_turns=0,
             prompt="",
             provider="",
             dry_run=True,
@@ -220,7 +215,6 @@ class TestRunReview:
             pr_ref="owner/repo#42",
             platform="github",
             model="",
-            max_turns=0,
             prompt="review please",
             provider="",
             dry_run=True,
@@ -261,7 +255,6 @@ class TestRunReview:
             pr_ref="owner/repo#42",
             platform="github",
             model="",
-            max_turns=0,
             prompt="",
             provider="",
             dry_run=False,
@@ -308,7 +301,6 @@ class TestRunReview:
             pr_ref="owner/repo#42",
             platform="github",
             model="",
-            max_turns=0,
             prompt="",
             provider="",
             dry_run=True,
@@ -332,7 +324,6 @@ class TestRunReview:
             pr_ref="owner/repo#42",
             platform="github",
             model="",
-            max_turns=0,
             prompt="",
             provider="",
             dry_run=False,

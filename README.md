@@ -15,11 +15,14 @@
 
 ---
 
-Nominal Code reads your PR diffs, runs an AI agent with read-only access to the repository, and posts structured inline reviews anchored to specific lines of code. It works as a **CI job**, a **CLI command**, or a **self-hosted webhook server** with real-time interaction.
+Nominal Code reads your PR diffs, runs an AI agent with access to the repository, and posts structured inline reviews anchored to specific lines of code. It works as a **CI job**, a **CLI command**, or a **self-hosted webhook server** with real-time interaction.
+
+In **API mode** (CI, or webhook/CLI with a provider key), it uses a two-phase pipeline: parallel exploration agents search the codebase for callers, tests, and knock-on effects, then a single-turn review agent produces findings with full context. In **CLI mode**, it delegates to the Claude Code CLI which handles exploration and review in one conversation.
 
 ## Key Features
 
-- **Inline reviews on real diff lines** — not just a wall of text. Comments land exactly where the issue is, like a human reviewer.
+- **Two-phase review in API mode** — parallel sub-agents gather codebase context (callers, tests, types, knock-on effects), then a single-turn review agent produces findings. No guessing, no hallucinated line numbers. Line-annotated diffs give the agent exact line numbers and indentation.
+- **Inline reviews with code suggestions** — comments land exactly where the issue is, with one-click-apply fixes.
 - **7 LLM providers or Claude Code CLI** — use any provider API (Anthropic, OpenAI, Google Gemini, DeepSeek, Groq, Together, Fireworks), or run via the Claude Code CLI with a Pro/Max subscription — no API key needed.
 - **GitHub + GitLab** — same bot, both platforms simultaneously. GitHub App and PAT authentication supported.
 - **Multi-turn conversations** — mention the bot again and it remembers the full PR discussion (webhook mode).
@@ -28,6 +31,37 @@ Nominal Code reads your PR diffs, runs an AI agent with read-only access to the 
 - **Auto-trigger or `@mention`** — run reviews automatically on PR open, push, reopen, or ready-for-review events, or trigger them on demand by mentioning the bot in a comment.
 - **Scales to any org size** — runs as a single process for small teams, or deploy to Kubernetes where each review runs as an isolated Job with automatic queuing and horizontal scaling.
 - **YAML config** — one structured file for all settings. Environment variables as overrides for secrets and runtime tuning.
+
+## How It Works (API Mode)
+
+```
+PR opened / @mention
+       |
+       v
+  +-----------+     +-----------+     +-----------+
+  |  Explore  |     |  Explore  |     |  Explore  |    Phase 1: parallel sub-agents
+  |  agent 1  |     |  agent 2  |     |  agent N  |    search callers, tests, types
+  +-----+-----+     +-----+-----+     +-----+-----+
+        |                 |                 |
+        v                 v                 v
+     notes.md          notes.md          notes.md       WriteNotes tool
+        |                 |                 |
+        +--------+--------+--------+--------+
+                 |
+                 v
+          +--------------+
+          | Review agent |     Phase 2: single-turn analysis
+          |  (1 turn)    |     annotated diffs + notes + guidelines
+          +------+-------+
+                 |
+                 v
+          submit_review          structured JSON review
+                 |
+                 v
+         GitHub / GitLab         inline comments + suggestions
+```
+
+In **CLI mode**, the Claude Code CLI handles both exploration and review in a single multi-turn conversation with its own tool set.
 
 ## Get Started in 60 Seconds
 
@@ -130,7 +164,7 @@ Full reference: [Configuration](https://gauthierdmn.github.io/nominal-code/refer
 - [Getting Started](https://gauthierdmn.github.io/nominal-code/getting-started/) — from zero to a working review
 - **Modes:** [CI](https://gauthierdmn.github.io/nominal-code/modes/ci/) | [CLI](https://gauthierdmn.github.io/nominal-code/modes/cli/) | [Webhook](https://gauthierdmn.github.io/nominal-code/modes/webhook/)
 - **Platforms:** [GitHub](https://gauthierdmn.github.io/nominal-code/platforms/github/) | [GitLab](https://gauthierdmn.github.io/nominal-code/platforms/gitlab/)
-- [Review Process](https://gauthierdmn.github.io/nominal-code/review/)
+- [Review Process](https://gauthierdmn.github.io/nominal-code/review/) | [Sub-Agents](https://gauthierdmn.github.io/nominal-code/reference/sub-agents/) | [Compaction](https://gauthierdmn.github.io/nominal-code/reference/compaction/)
 - **Reference:** [Configuration](https://gauthierdmn.github.io/nominal-code/reference/configuration/) | [Environment Variables](https://gauthierdmn.github.io/nominal-code/reference/env-vars/)
 - [Architecture](https://gauthierdmn.github.io/nominal-code/architecture/) | [Deployment](https://gauthierdmn.github.io/nominal-code/deployment/) | [Security](https://gauthierdmn.github.io/nominal-code/security/)
 

@@ -109,30 +109,6 @@ class TestBuildCiConfig:
             with pytest.raises(ValueError, match="nonexistent"):
                 _build_ci_config()
 
-    def test_invalid_max_turns_defaults_to_zero(self):
-        env = {
-            "INPUT_MODEL": "",
-            "INPUT_MAX_TURNS": "not-a-number",
-            "INPUT_CODING_GUIDELINES": "",
-        }
-
-        with patch.dict(os.environ, env, clear=False):
-            config = _build_ci_config()
-
-        assert config.agent.max_turns == 0
-
-    def test_custom_max_turns(self):
-        env = {
-            "INPUT_MODEL": "",
-            "INPUT_MAX_TURNS": "5",
-            "INPUT_CODING_GUIDELINES": "",
-        }
-
-        with patch.dict(os.environ, env, clear=False):
-            config = _build_ci_config()
-
-        assert config.agent.max_turns == 5
-
 
 class TestFormatCostSummary:
     def test_none_returns_empty(self):
@@ -301,26 +277,6 @@ class TestRunCiReview:
             exit_code = await run_ci_review("github")
 
         assert exit_code == 1
-
-    @pytest.mark.asyncio
-    async def test_run_ci_review_parses_max_turns(self):
-        result = _make_review_result()
-        env = {**CI_ENV, "INPUT_MAX_TURNS": "invalid"}
-
-        with (
-            _patch_ci_setup(),
-            patch(
-                REVIEW,
-                new_callable=AsyncMock,
-                return_value=result,
-            ) as mock_review,
-            patch.dict(os.environ, env, clear=False),
-        ):
-            exit_code = await run_ci_review("github")
-
-        assert exit_code == 0
-        config = mock_review.call_args.kwargs["config"]
-        assert config.agent.max_turns == 0
 
     @pytest.mark.asyncio
     async def test_run_ci_review_passes_custom_prompt(self):

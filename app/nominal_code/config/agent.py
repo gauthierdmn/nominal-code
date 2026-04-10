@@ -4,8 +4,6 @@ from pydantic import BaseModel, ConfigDict
 
 from nominal_code.models import ProviderName
 
-DEFAULT_AGENT_MAX_TURNS: int = 0
-
 
 class ProviderConfig(BaseModel):
     """
@@ -47,14 +45,12 @@ class CliAgentConfig(BaseModel):
 
     Attributes:
         model (str): Optional model override (empty string uses CLI default).
-        max_turns (int): Maximum agentic turns (0 for unlimited).
         cli_path (str): Path to the Claude Code CLI binary.
     """
 
     model_config = ConfigDict(frozen=True)
 
     model: str | None = None
-    max_turns: int = 0
     cli_path: str | None = None
 
 
@@ -66,13 +62,11 @@ class ApiAgentConfig(BaseModel):
 
     Attributes:
         provider (ProviderConfig): The LLM provider configuration.
-        max_turns (int): Maximum agentic turns (0 for unlimited).
     """
 
     model_config = ConfigDict(frozen=True)
 
     provider: ProviderConfig
-    max_turns: int = 0
 
 
 AgentConfig = CliAgentConfig | ApiAgentConfig
@@ -81,7 +75,6 @@ AgentConfig = CliAgentConfig | ApiAgentConfig
 def resolve_agent_config(
     provider_name: ProviderName | None,
     model: str | None,
-    max_turns: int,
     cli_path: str | None = None,
 ) -> AgentConfig:
     """
@@ -91,7 +84,6 @@ def resolve_agent_config(
         provider_name (ProviderName | None): Provider enum, or ``None``
             for CLI mode.
         model (str): Optional model override.
-        max_turns (int): Maximum agentic turns.
         cli_path (str): Path to CLI binary (only used for CLI mode).
 
     Returns:
@@ -101,7 +93,6 @@ def resolve_agent_config(
     if provider_name is None:
         return CliAgentConfig(
             model=model,
-            max_turns=max_turns,
             cli_path=cli_path,
         )
 
@@ -112,7 +103,4 @@ def resolve_agent_config(
     if model:
         provider_config = provider_config.model_copy(update={"model": model})
 
-    return ApiAgentConfig(
-        provider=provider_config,
-        max_turns=max_turns,
-    )
+    return ApiAgentConfig(provider=provider_config)

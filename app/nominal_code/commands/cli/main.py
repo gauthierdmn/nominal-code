@@ -115,13 +115,6 @@ def _build_cli_parser() -> argparse.ArgumentParser:
     )
 
     review_parser.add_argument(
-        "--max-turns",
-        type=int,
-        default=None,
-        help="Agent max turns.",
-    )
-
-    review_parser.add_argument(
         "--provider",
         default="",
         help="LLM provider (e.g. openai, anthropic) for API runner.",
@@ -195,7 +188,6 @@ async def _run_review(args: argparse.Namespace) -> int:
 
     config: Config = load_config(
         model=args.model,
-        max_turns=args.max_turns,
         provider=provider,
     )
 
