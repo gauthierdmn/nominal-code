@@ -11,18 +11,18 @@ if TYPE_CHECKING:
 @dataclass(frozen=True)
 class ExploreGroup:
     """
-    A group of files to explore together.
+    A concern-based exploration group.
 
-    Created by the planner and consumed by parallel sub-agents.
+    Created by the planner and consumed by parallel sub-agents. Each
+    group represents an investigation concern (e.g., callers, test
+    coverage, type safety), not a file partition.
 
     Args:
-        label (str): Short descriptive label for the group.
-        files (list[str]): File paths in this group.
+        label (str): Short descriptive label for the concern.
         prompt (str): LLM-authored exploration prompt for the sub-agent.
     """
 
     label: str
-    files: list[str]
     prompt: str
 
 

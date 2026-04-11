@@ -3,30 +3,25 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from nominal_code.agent.sub_agents.result import (
-    ExploreGroup,
-    SubAgentResult,
-)
-from nominal_code.agent.sub_agents.runner import (
+from nominal_code.llm.cost import CostSummary
+from nominal_code.llm.messages import LLMResponse, StopReason, TextBlock
+from nominal_code.models import ProviderName
+from nominal_code.review.explore.explorer import (
     DEFAULT_FILE_THRESHOLD,
     aggregate_metrics,
-    allocate_turns,
     assemble_notes,
     run_explore,
     run_explore_with_planner,
 )
-from nominal_code.agent.sub_agents.types import DEFAULT_MAX_TURNS_PER_SUB_AGENT
-from nominal_code.llm.cost import CostSummary
-from nominal_code.llm.messages import LLMResponse, StopReason, TextBlock
-from nominal_code.models import ProviderName
+from nominal_code.review.explore.prompts import load_fallback_explore_prompt
+from nominal_code.review.explore.result import (
+    ExploreGroup,
+    SubAgentResult,
+)
 
 
-def _make_group(label="test", files=None, prompt="explore"):
-    return ExploreGroup(
-        label=label,
-        files=files or ["a.py"],
-        prompt=prompt,
-    )
+def _make_group(label="test", prompt="explore"):
+    return ExploreGroup(label=label, prompt=prompt)
 
 
 def _make_sub_result(
@@ -64,26 +59,6 @@ def _make_text_response(text="Done."):
         content=[TextBlock(text=text)],
         stop_reason=StopReason.END_TURN,
     )
-
-
-class TestAllocateTurns:
-    def test_divides_evenly(self):
-        assert allocate_turns(12, 3) == 4
-
-    def test_minimum_four(self):
-        assert allocate_turns(8, 5) == 4
-
-    def test_zero_returns_default(self):
-        assert allocate_turns(0, 3) == DEFAULT_MAX_TURNS_PER_SUB_AGENT
-
-    def test_negative_returns_default(self):
-        assert allocate_turns(-1, 3) == DEFAULT_MAX_TURNS_PER_SUB_AGENT
-
-    def test_zero_groups_returns_default(self):
-        assert allocate_turns(12, 0) == DEFAULT_MAX_TURNS_PER_SUB_AGENT
-
-    def test_large_budget_single_group(self):
-        assert allocate_turns(100, 1) == 100
 
 
 class TestAggregateMetrics:
@@ -155,7 +130,7 @@ class TestRunExplore:
             return_value=_make_text_response("Found callers."),
         )
 
-        group = _make_group(label="core", files=["src/core.py"])
+        group = _make_group(label="core")
 
         result = await run_explore(
             groups=[group],
@@ -178,8 +153,8 @@ class TestRunExplore:
         )
 
         groups = [
-            _make_group(label="auth", files=["auth.py"]),
-            _make_group(label="api", files=["api.py"]),
+            _make_group(label="auth"),
+            _make_group(label="api"),
         ]
 
         result = await run_explore(
@@ -196,7 +171,7 @@ class TestRunExplore:
         assert labels == {"auth", "api"}
 
     @pytest.mark.asyncio
-    @patch("nominal_code.agent.sub_agents.runner._run_single_sub_agent")
+    @patch("nominal_code.review.explore.explorer._run_single_sub_agent")
     async def test_failed_sub_agent_excluded(self, mock_run, tmp_path):
         success_result = SubAgentResult(
             group=_make_group(label="passing"),
@@ -212,8 +187,8 @@ class TestRunExplore:
 
         mock_provider = AsyncMock()
         groups = [
-            _make_group(label="failing", files=["fail.py"]),
-            _make_group(label="passing", files=["pass.py"]),
+            _make_group(label="failing"),
+            _make_group(label="passing"),
         ]
 
         result = await run_explore(
@@ -228,7 +203,7 @@ class TestRunExplore:
         assert result.sub_results[0].group.label == "passing"
 
     @pytest.mark.asyncio
-    @patch("nominal_code.agent.sub_agents.runner._run_single_sub_agent")
+    @patch("nominal_code.review.explore.explorer._run_single_sub_agent")
     async def test_all_fail_returns_empty(self, mock_run, tmp_path):
         mock_run.side_effect = RuntimeError("coroutine crashed")
 
@@ -302,18 +277,59 @@ class TestRunExploreWithPlanner:
 
         assert len(result.sub_results) == 1
         assert result.sub_results[0].group.label == "all-files"
-        assert set(result.sub_results[0].group.files) == {"a.py", "b.py"}
 
     @pytest.mark.asyncio
-    @patch("nominal_code.agent.sub_agents.runner.plan_exploration_groups")
+    async def test_below_threshold_fallback_has_structured_prompt(self, tmp_path):
+        mock_provider = AsyncMock()
+        mock_provider.send = AsyncMock(
+            return_value=_make_text_response("Explored."),
+        )
+
+        result = await run_explore_with_planner(
+            changed_files=["a.py"],
+            diffs={"a.py": "+new"},
+            cwd=tmp_path,
+            provider=mock_provider,
+            model="test-model",
+            provider_name=ProviderName.GOOGLE,
+        )
+
+        group_prompt = result.sub_results[0].group.prompt
+
+        assert "callers" in group_prompt.lower()
+        assert "test coverage" in group_prompt.lower()
+
+    @pytest.mark.asyncio
+    async def test_below_threshold_fallback_includes_guidelines(self, tmp_path):
+        mock_provider = AsyncMock()
+        mock_provider.send = AsyncMock(
+            return_value=_make_text_response("Explored."),
+        )
+
+        result = await run_explore_with_planner(
+            changed_files=["a.py"],
+            diffs={"a.py": "+new"},
+            cwd=tmp_path,
+            provider=mock_provider,
+            model="test-model",
+            provider_name=ProviderName.GOOGLE,
+            guidelines="Always use type annotations.",
+        )
+
+        group_prompt = result.sub_results[0].group.prompt
+
+        assert "Always use type annotations." in group_prompt
+
+    @pytest.mark.asyncio
+    @patch("nominal_code.review.explore.explorer.plan_exploration_groups")
     async def test_above_threshold_uses_planner(
         self,
         mock_plan,
         tmp_path,
     ):
         mock_plan.return_value = [
-            ExploreGroup(label="group-a", files=["a.py", "b.py"], prompt="explore a"),
-            ExploreGroup(label="group-b", files=["c.py", "d.py"], prompt="explore b"),
+            ExploreGroup(label="group-a", prompt="explore a"),
+            ExploreGroup(label="group-b", prompt="explore b"),
         ]
 
         mock_provider = AsyncMock()
@@ -331,13 +347,18 @@ class TestRunExploreWithPlanner:
             model="test-model",
             provider_name=ProviderName.GOOGLE,
             file_threshold=8,
+            guidelines="Use type annotations.",
         )
 
         mock_plan.assert_called_once()
+
+        plan_kwargs = mock_plan.call_args.kwargs
+
+        assert plan_kwargs["guidelines"] == "Use type annotations."
         assert len(result.sub_results) == 2
 
     @pytest.mark.asyncio
-    @patch("nominal_code.agent.sub_agents.runner.plan_exploration_groups")
+    @patch("nominal_code.review.explore.explorer.plan_exploration_groups")
     async def test_planner_failure_falls_back(self, mock_plan, tmp_path):
         mock_plan.return_value = None
 
@@ -360,11 +381,42 @@ class TestRunExploreWithPlanner:
 
         assert len(result.sub_results) == 1
         assert result.sub_results[0].group.label == "all-files"
+        assert load_fallback_explore_prompt() in result.sub_results[0].group.prompt
+
+    @pytest.mark.asyncio
+    @patch("nominal_code.review.explore.explorer.plan_exploration_groups")
+    async def test_passes_guidelines_to_planner(self, mock_plan, tmp_path):
+        mock_plan.return_value = [
+            ExploreGroup(label="types", prompt="Check types."),
+            ExploreGroup(label="tests", prompt="Check tests."),
+        ]
+
+        mock_provider = AsyncMock()
+        mock_provider.send = AsyncMock(
+            return_value=_make_text_response("Done."),
+        )
+
+        changed_files = [f"file{index}.py" for index in range(10)]
+
+        await run_explore_with_planner(
+            changed_files=changed_files,
+            diffs={file_path: "+x" for file_path in changed_files},
+            cwd=tmp_path,
+            provider=mock_provider,
+            model="test-model",
+            provider_name=ProviderName.GOOGLE,
+            file_threshold=8,
+            guidelines="Annotate all functions.",
+        )
+
+        plan_kwargs = mock_plan.call_args.kwargs
+
+        assert plan_kwargs["guidelines"] == "Annotate all functions."
 
 
-def _make_noted_result(label="test", notes="", files=None):
+def _make_noted_result(label="test", notes=""):
     return SubAgentResult(
-        group=_make_group(label=label, files=files),
+        group=_make_group(label=label),
         output="done",
         is_error=False,
         num_turns=1,

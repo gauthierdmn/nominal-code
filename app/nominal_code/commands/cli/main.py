@@ -15,7 +15,7 @@ from nominal_code.platforms.base import (
     PlatformName,
     PullRequestEvent,
 )
-from nominal_code.review.handler import ReviewResult, post_review_result, review
+from nominal_code.review.reviewer import ReviewResult, post_review_result, review
 
 PR_REF_PATTERN: re.Pattern[str] = re.compile(
     r"^(?P<repo>[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+)#(?P<number>\d+)$",

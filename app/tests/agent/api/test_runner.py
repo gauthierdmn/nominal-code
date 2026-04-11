@@ -518,7 +518,7 @@ def _make_event():
 def _make_api_config():
     config = MagicMock()
     config.agent = ApiAgentConfig(
-        provider=ProviderConfig(name=ProviderName.OPENAI, model="gpt-4.1"),
+        reviewer=ProviderConfig(name=ProviderName.OPENAI, model="gpt-4.1"),
     )
 
     return config

@@ -33,9 +33,9 @@ You need an **LLM provider API key** (unless using Claude Code CLI):
 
 | Variable | Description |
 |---|---|
-| `GOOGLE_API_KEY` | Google AI API key (if `agent.provider: "google"` in config) |
-| `ANTHROPIC_API_KEY` | Anthropic API key (if `agent.provider: "anthropic"`) |
-| `OPENAI_API_KEY` | OpenAI API key (if `agent.provider: "openai"`) |
+| `GOOGLE_API_KEY` | Google AI API key (if `agent.reviewer.provider: "google"` in config) |
+| `ANTHROPIC_API_KEY` | Anthropic API key (if `agent.reviewer.provider: "anthropic"`) |
+| `OPENAI_API_KEY` | OpenAI API key (if `agent.reviewer.provider: "openai"`) |
 
 ### Optional
 
@@ -136,7 +136,7 @@ agent:
 
 This file controls non-secret settings: which bot username to respond to, which events auto-trigger reviews, and which LLM provider to use. Edit it to match your setup. See [Configuration](../reference/configuration.md) for the full YAML schema.
 
-Environment variables override any value in the YAML file. For example, setting `AGENT_PROVIDER=anthropic` overrides `agent.provider: "google"` from the config.
+Environment variables override any value in the YAML file. For example, setting `AGENT_PROVIDER=anthropic` overrides `agent.reviewer.provider: "google"` from the config.
 
 ## Verify the Server
 

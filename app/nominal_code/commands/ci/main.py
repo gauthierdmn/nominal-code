@@ -10,7 +10,7 @@ from nominal_code.llm.cost import format_cost_summary
 from nominal_code.models import ProviderName
 from nominal_code.platforms import build_platform
 from nominal_code.platforms.base import PlatformName, PullRequestEvent
-from nominal_code.review.handler import ReviewResult, run_and_post_review
+from nominal_code.review.reviewer import ReviewResult, run_and_post_review
 
 _env: Env = Env()
 logger: logging.Logger = logging.getLogger(__name__)

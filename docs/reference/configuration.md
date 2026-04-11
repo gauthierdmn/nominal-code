@@ -35,9 +35,16 @@ reviewer:
     - pr_opened
 
 agent:
-  provider: "google"
-  model: ""
   cli_path: ""
+  reviewer:
+    provider: "google"
+    model: ""
+  planner:                    # optional, falls back to reviewer
+    provider: ""
+    model: ""
+  explorer:                   # optional, falls back to reviewer
+    provider: ""
+    model: ""
 
 access:
   allowed_users:
@@ -94,7 +101,8 @@ All sections and fields are optional — omitted fields use the defaults shown a
         - bob
 
     agent:
-      provider: "google"
+      reviewer:
+        provider: "google"
     ```
 
 === "Webhook + Kubernetes"
@@ -106,7 +114,8 @@ All sections and fields are optional — omitted fields use the defaults shown a
         - pr_opened
 
     agent:
-      provider: "google"
+      reviewer:
+        provider: "google"
 
     redis:
       url: "redis://redis:6379/0"
@@ -122,8 +131,9 @@ All sections and fields are optional — omitted fields use the defaults shown a
 
     ```yaml
     agent:
-      provider: "anthropic"
-      model: "claude-sonnet-4-6"
+      reviewer:
+        provider: "anthropic"
+        model: "claude-sonnet-4-6"
 
     workspace:
       base_dir: "/tmp/nominal-code"

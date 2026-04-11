@@ -79,18 +79,41 @@ class ReviewerSettings(BaseModel):
     inline_suggestions: bool = True
 
 
-class AgentSettings(BaseModel):
+class ProviderSettings(BaseModel):
     """
-    Agent runner settings.
+    LLM provider and model selection for a single agent role.
+
+    Mirrors ``ProviderConfig`` on the frozen config side. When fields
+    are ``None``, the loader falls back to the reviewer's values.
 
     Attributes:
-        provider (str): LLM provider name (empty for CLI mode).
-        model (str): Model name override.
-        cli_path (str): Path to the Claude Code CLI binary.
+        provider (str | None): LLM provider name.
+        model (str | None): Model name override.
     """
 
     provider: str | None = None
     model: str | None = None
+
+
+class AgentSettings(BaseModel):
+    """
+    Agent runner settings with per-role provider and model configuration.
+
+    Each role (reviewer, planner, explorer) can specify its own provider
+    and model. When planner or explorer fields are omitted, they inherit
+    from the reviewer's provider and model.
+
+    Attributes:
+        reviewer (ProviderSettings): Reviewer agent provider and model.
+        planner (ProviderSettings): Planner agent provider and model.
+        explorer (ProviderSettings): Explorer agent provider and model.
+        cli_path (str | None): Path to the Claude Code CLI binary
+            (reviewer CLI mode only).
+    """
+
+    reviewer: ProviderSettings = ProviderSettings()
+    planner: ProviderSettings = ProviderSettings()
+    explorer: ProviderSettings = ProviderSettings()
     cli_path: str | None = None
 
 

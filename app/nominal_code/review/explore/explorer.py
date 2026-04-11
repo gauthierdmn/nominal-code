@@ -9,15 +9,7 @@ import time
 from pathlib import Path
 
 from nominal_code.agent.api.runner import run_api_agent
-from nominal_code.agent.sub_agents.planner import plan_exploration_groups
-from nominal_code.agent.sub_agents.prompts import load_explore_system_prompt
-from nominal_code.agent.sub_agents.result import (
-    AggregatedMetrics,
-    ExploreGroup,
-    ParallelExploreResult,
-    SubAgentResult,
-)
-from nominal_code.agent.sub_agents.types import (
+from nominal_code.agent.types import (
     AGENT_TYPE_TOOLS,
     DEFAULT_MAX_TURNS_PER_SUB_AGENT,
     SUB_AGENT_SYSTEM_SUFFIX,
@@ -25,15 +17,24 @@ from nominal_code.agent.sub_agents.types import (
 )
 from nominal_code.llm.provider import LLMProvider
 from nominal_code.models import ProviderName
+from nominal_code.review.explore.planner import plan_exploration_groups
+from nominal_code.review.explore.prompts import (
+    load_explore_system_prompt,
+    load_fallback_explore_prompt,
+)
+from nominal_code.review.explore.result import (
+    AggregatedMetrics,
+    ExploreGroup,
+    ParallelExploreResult,
+    SubAgentResult,
+)
 
 logger: logging.Logger = logging.getLogger(__name__)
 
 DEFAULT_FILE_THRESHOLD: int = 8
 MAX_COMBINED_NOTES_SIZE: int = 100_000
 
-NOTES_HEADER_TEMPLATE: str = (
-    "# Exploration Notes: {label}\n\n**Files:** {files}\n\n---\n\n"
-)
+NOTES_HEADER_TEMPLATE: str = "# Exploration Notes: {label}\n\n---\n\n"
 
 
 async def run_explore(
@@ -43,7 +44,6 @@ async def run_explore(
     model: str,
     provider_name: ProviderName,
     system_prompt: str = "",
-    max_turns: int = 0,
 ) -> ParallelExploreResult:
     """
     Run concurrent exploration sub-agents for the given groups.
@@ -67,9 +67,6 @@ async def run_explore(
         system_prompt (str): Base system prompt for sub-agents. The
             sub-agent suffix is appended automatically. Uses the
             bundled explore prompt when empty.
-        max_turns (int): Total turn budget. Divided across groups
-            with a minimum of 4 per group. When 0, each group gets
-            ``DEFAULT_MAX_TURNS_PER_SUB_AGENT``.
 
     Returns:
         ParallelExploreResult: Aggregated result with per-sub-agent
@@ -90,12 +87,10 @@ async def run_explore(
         )
     )
 
-    per_group_turns: int = allocate_turns(max_turns, len(groups))
-
     logger.info(
         "Parallel explore: %d groups, %d turns each (%s)",
         len(groups),
-        per_group_turns,
+        DEFAULT_MAX_TURNS_PER_SUB_AGENT,
         ", ".join(group.label for group in groups),
     )
 
@@ -111,7 +106,7 @@ async def run_explore(
                 model=model,
                 provider_name=provider_name,
                 system_prompt=full_system_prompt,
-                max_turns=per_group_turns,
+                max_turns=DEFAULT_MAX_TURNS_PER_SUB_AGENT,
                 agent_type=AgentType.EXPLORE,
                 notes_dir=notes_dir,
             )
@@ -150,6 +145,27 @@ async def run_explore(
     )
 
 
+def build_fallback_prompt(guidelines: str = "") -> str:
+    """
+    Build the fallback exploration prompt with optional coding guidelines.
+
+    Used when the planner is skipped (below file threshold) or fails.
+
+    Args:
+        guidelines (str): Resolved coding guidelines. Appended when non-empty.
+
+    Returns:
+        str: The fallback prompt, optionally with guidelines.
+    """
+
+    base_prompt: str = load_fallback_explore_prompt()
+
+    if not guidelines:
+        return base_prompt
+
+    return f"{base_prompt}\n\nCoding guidelines for reference:\n\n{guidelines}"
+
+
 async def run_explore_with_planner(
     changed_files: list[str],
     diffs: dict[str, str],
@@ -159,16 +175,20 @@ async def run_explore_with_planner(
     provider_name: ProviderName,
     system_prompt: str = "",
     planner_model: str = "",
-    max_turns: int = 0,
     file_threshold: int = DEFAULT_FILE_THRESHOLD,
+    guidelines: str = "",
 ) -> ParallelExploreResult:
     """
     Run codebase exploration with automatic planning and parallel execution.
 
     When the number of changed files meets or exceeds ``file_threshold``,
-    an LLM planner partitions them into groups and parallel sub-agents
-    explore each group concurrently. Below the threshold, a single
-    agent explores all files.
+    an LLM planner partitions them into concern-based groups and parallel
+    sub-agents explore each concern concurrently. Below the threshold, a
+    single agent explores all files with a generic exploration prompt.
+
+    The planner uses the project's coding guidelines to derive
+    investigation concerns. When no guidelines are provided, default
+    concerns (callers, tests, types, knock-on effects) are used.
 
     The provider instance is shared and is NOT closed by this function.
 
@@ -186,9 +206,10 @@ async def run_explore_with_planner(
             explore prompt when empty.
         planner_model (str): Model for the planner call. Defaults to
             ``model`` when empty.
-        max_turns (int): Total turn budget for exploration.
         file_threshold (int): Minimum changed files to trigger
             parallel mode.
+        guidelines (str): Resolved coding guidelines for the project.
+            Passed to the planner to derive investigation concerns.
 
     Returns:
         ParallelExploreResult: Aggregated result with per-sub-agent
@@ -208,14 +229,14 @@ async def run_explore_with_planner(
             diffs=diffs,
             provider=provider,
             model=effective_planner_model,
+            guidelines=guidelines,
         )
 
     if groups is None or len(groups) < 2:
         groups = [
             ExploreGroup(
                 label="all-files",
-                files=list(changed_files),
-                prompt="Explore all changed files.",
+                prompt=build_fallback_prompt(guidelines),
             ),
         ]
 
@@ -226,31 +247,7 @@ async def run_explore_with_planner(
         model=model,
         provider_name=provider_name,
         system_prompt=system_prompt,
-        max_turns=max_turns,
     )
-
-
-def allocate_turns(total_turns: int, num_groups: int) -> int:
-    """
-    Calculate per-group turn budget.
-
-    When ``total_turns`` is 0 (unlimited), each group gets
-    ``DEFAULT_MAX_TURNS_PER_SUB_AGENT``. Otherwise the budget
-    is divided across groups with a minimum of 4 per group.
-
-    Args:
-        total_turns (int): Total turn budget. When 0, returns the
-            default.
-        num_groups (int): Number of groups to divide among.
-
-    Returns:
-        int: Turns per group, minimum 4.
-    """
-
-    if total_turns <= 0 or num_groups <= 0:
-        return DEFAULT_MAX_TURNS_PER_SUB_AGENT
-
-    return max(4, total_turns // num_groups)
 
 
 def aggregate_metrics(
@@ -356,16 +353,12 @@ async def _run_single_sub_agent(
         safe_label: str = re.sub(r"[^a-zA-Z0-9_-]", "_", group.label)
         notes_file_path = notes_dir / f"{safe_label}.md"
 
-        header: str = NOTES_HEADER_TEMPLATE.format(
-            label=group.label,
-            files=", ".join(group.files),
-        )
+        header: str = NOTES_HEADER_TEMPLATE.format(label=group.label)
         notes_file_path.write_text(header, encoding="utf-8")
 
     logger.info(
-        "Starting sub-agent '%s': %d files, %d turns",
+        "Starting sub-agent '%s': %d turns",
         group.label,
-        len(group.files),
         max_turns,
     )
 
@@ -452,8 +445,7 @@ def assemble_notes(
     return (
         "## Codebase Exploration Notes\n\n"
         "The following findings were gathered by exploration agents that "
-        "searched the repository for callers, tests, type definitions, "
-        "and knock-on effects related to the changed files.\n\n"
+        "investigated different concerns across the changed files.\n\n"
         f"{combined}"
     )
 

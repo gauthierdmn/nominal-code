@@ -8,7 +8,7 @@ from nominal_code.agent.api.runner import run_api_agent
 from nominal_code.agent.cli.runner import run_cli_agent
 from nominal_code.agent.result import AgentResult
 from nominal_code.config import AgentConfig, ApiAgentConfig, CliAgentConfig
-from nominal_code.llm.messages import Message
+from nominal_code.llm.messages import Message, ToolChoice
 from nominal_code.llm.registry import create_provider
 from nominal_code.platforms.base import PullRequestEvent
 
@@ -77,6 +77,7 @@ async def invoke_agent(
     conversation_id: str | None = None,
     prior_messages: list[Message] | None = None,
     max_turns: int = 0,
+    tool_choice: ToolChoice | None = None,
 ) -> AgentResult:
     """
     Run the agent by routing to the CLI or API backend.
@@ -98,6 +99,8 @@ async def invoke_agent(
         prior_messages (list[Message] | None): Prior conversation messages
             for multi-turn continuity (API mode only).
         max_turns (int): Maximum agentic turns (0 for unlimited).
+        tool_choice (ToolChoice | None): Controls whether the model must
+            use tools (API mode only, ignored in CLI mode).
 
     Returns:
         AgentResult: The parsed result from the agent.
@@ -107,19 +110,20 @@ async def invoke_agent(
         agent_config = CliAgentConfig()
 
     if isinstance(agent_config, ApiAgentConfig):
-        provider = create_provider(name=agent_config.provider.name)
+        provider = create_provider(name=agent_config.reviewer.name)
 
         try:
             return await run_api_agent(
                 prompt=prompt,
                 cwd=cwd,
-                model=agent_config.provider.model,
+                model=agent_config.reviewer.model,
                 provider=provider,
                 max_turns=max_turns,
                 system_prompt=system_prompt,
                 allowed_tools=allowed_tools,
                 prior_messages=prior_messages,
-                provider_name=agent_config.provider.name,
+                provider_name=agent_config.reviewer.name,
+                tool_choice=tool_choice,
             )
         finally:
             await provider.close()

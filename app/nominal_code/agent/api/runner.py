@@ -20,6 +20,7 @@ from nominal_code.llm.messages import (
     Message,
     TextBlock,
     TokenUsage,
+    ToolChoice,
     ToolDefinition,
     ToolResultBlock,
     ToolUseBlock,
@@ -43,6 +44,7 @@ async def run_api_agent(
     allowed_tools: list[str] | None = None,
     prior_messages: list[Message] | None = None,
     notes_file_path: Path | None = None,
+    tool_choice: ToolChoice | None = None,
 ) -> AgentResult:
     """
     Run the agent using an LLM provider with tool use.
@@ -74,6 +76,9 @@ async def run_api_agent(
         notes_file_path (Path | None): Pre-assigned file path for the
             WriteNotes tool. When provided, enables both note-writing
             and notes-based compaction.
+        tool_choice (ToolChoice | None): Controls whether the model must
+            use tools. When ``REQUIRED``, the model must call a tool on
+            its first response.
 
     Returns:
         AgentResult: The parsed result from the agent.
@@ -95,6 +100,10 @@ async def run_api_agent(
 
     try:
         while True:
+            effective_tool_choice: ToolChoice | None = (
+                tool_choice if turns == 0 else None
+            )
+
             response: LLMResponse = await provider.send(
                 messages=messages,
                 system_prompt=system_prompt,
@@ -102,6 +111,7 @@ async def run_api_agent(
                 model=model,
                 max_tokens=MAX_RESPONSE_TOKENS,
                 previous_response_id=conversation_id,
+                tool_choice=effective_tool_choice,
             )
             conversation_id = response.response_id
             api_call_count += 1

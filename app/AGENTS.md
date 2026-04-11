@@ -26,7 +26,7 @@ The call chain follows four conceptual layers:
 
 1. **Receive** — `commands/webhook/main.py` (webhooks), `commands/` (CLI/CI).
 2. **Prepare** — `workspace/setup.py::prepare_job_event()` resolves clone URLs and branches; `commands/webhook/jobs/runner/process.py` wraps with error handling and queue management.
-3. **Orchestrate** — `review/handler.py` (business logic: diff fetching, prompt building, output parsing).
+3. **Orchestrate** — `review/reviewer.py` (business logic: diff fetching, prompt building, output parsing).
 4. **Invoke** — `agent/invoke.py` provides agent execution with explicit conversation lifecycle (`prepare_conversation`, `invoke_agent`, `save_conversation`).
 
 ## Agent runner selection
@@ -69,7 +69,10 @@ The dispatcher in `agent/invoke.py` routes based on the agent config type (`CliA
 - `GITHUB_REVIEWER_TOKEN` / `GITLAB_REVIEWER_TOKEN` — read-only token for reviewer clones (PAT mode only; App mode scopes via installation permissions).
 - `GITHUB_INSTALLATION_ID` — required for CLI mode with App auth; webhook mode extracts it from the payload.
 - `WORKSPACE_BASE_DIR` — workspace root (default: `/tmp/nominal-code`).
-- `AGENT_MODEL`, `AGENT_MAX_TURNS`, `AGENT_CLI_PATH` — agent configuration.
+- `AGENT_PROVIDER`, `AGENT_MODEL` — reviewer provider and model (also default for planner/explorer).
+- `AGENT_PLANNER_PROVIDER`, `AGENT_PLANNER_MODEL` — planner provider and model override.
+- `AGENT_EXPLORER_PROVIDER`, `AGENT_EXPLORER_MODEL` — explorer provider and model override.
+- `AGENT_CLI_PATH` — path to the Claude Code CLI binary.
 - `ALLOWED_REPOS` — comma-separated repository full names to process (e.g. `owner/repo-a,owner/repo-b`). When unset, all repos are accepted.
 - `REVIEWER_TRIGGERS` — comma-separated lifecycle events that auto-trigger the reviewer (e.g. `pr_opened,pr_push`).
 - `LOG_LEVEL` — logging verbosity (default: `INFO`).
@@ -99,7 +102,7 @@ nominal_code/
 ├── llm/                 # LLM provider abstraction, cost tracking, canonical message types
 ├── agent/               # Agent invocation (invoke.py), dual runners, prompt composition, error handling
 ├── conversation/        # Conversation persistence (memory + Redis stores)
-├── review/            # Review handler (structured review with inline comments)
+├── review/            # Review pipeline (reviewer, exploration, diff utilities)
 ├── platforms/           # Platform protocol + GitHub/GitLab implementations, build_platforms(config)
 └── workspace/           # Git workspace management
 ```

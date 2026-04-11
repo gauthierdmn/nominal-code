@@ -13,7 +13,7 @@ from nominal_code.config import ApiAgentConfig
 from nominal_code.llm.cost import CostSummary, format_cost_summary
 from nominal_code.models import AgentReview, EventType, ProviderName, ReviewFinding
 from nominal_code.platforms.base import PlatformName, PullRequestEvent
-from nominal_code.review.handler import ReviewResult
+from nominal_code.review.reviewer import ReviewResult
 
 DUMMY_EVENT = PullRequestEvent(
     platform=PlatformName.GITHUB,
@@ -81,7 +81,7 @@ class TestBuildCiConfig:
             config = _build_ci_config()
 
         assert isinstance(config.agent, ApiAgentConfig)
-        assert config.agent.provider.name == ProviderName.ANTHROPIC
+        assert config.agent.reviewer.name == ProviderName.ANTHROPIC
 
     def test_custom_provider(self):
         env = {
@@ -95,7 +95,7 @@ class TestBuildCiConfig:
             config = _build_ci_config()
 
         assert isinstance(config.agent, ApiAgentConfig)
-        assert config.agent.provider.name == ProviderName.OPENAI
+        assert config.agent.reviewer.name == ProviderName.OPENAI
 
     def test_invalid_provider_raises(self):
         env = {

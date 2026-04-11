@@ -11,7 +11,12 @@ from nominal_code.config.agent import (
 )
 from nominal_code.config.env import load_app_settings
 from nominal_code.config.kubernetes import KubernetesConfig
-from nominal_code.config.models import AppSettings, GitHubSettings, GitLabSettings
+from nominal_code.config.models import (
+    AppSettings,
+    GitHubSettings,
+    GitLabSettings,
+    ProviderSettings,
+)
 from nominal_code.config.policies import FilteringPolicy, RoutingPolicy
 from nominal_code.config.settings import (
     DEFAULT_GITLAB_API_BASE,
@@ -28,6 +33,7 @@ from nominal_code.config.settings import (
     parse_reviewer_triggers,
     parse_title_tags,
 )
+from nominal_code.llm.registry import PROVIDERS
 from nominal_code.models import EventType, ProviderName
 from nominal_code.prompts import load_bundled_language_guidelines, load_prompt
 
@@ -273,7 +279,9 @@ def _build_agent(
         ValueError: If the provider name is not recognised.
     """
 
-    effective_model: str | None = model if model is not None else settings.agent.model
+    effective_model: str | None = (
+        model if model is not None else settings.agent.reviewer.model
+    )
 
     if default_provider is not None:
         return _build_api_agent(
@@ -284,14 +292,14 @@ def _build_agent(
 
     provider_name: ProviderName | None = provider
 
-    if provider_name is None and settings.agent.provider:
+    if provider_name is None and settings.agent.reviewer.provider:
         try:
-            provider_name = ProviderName(settings.agent.provider)
+            provider_name = ProviderName(settings.agent.reviewer.provider)
         except ValueError:
             available: str = ", ".join(p.value for p in ProviderName)
 
             raise ValueError(
-                f"Unknown AGENT_PROVIDER: {settings.agent.provider!r}. "
+                f"Unknown AGENT_PROVIDER: {settings.agent.reviewer.provider!r}. "
                 f"Available: {available}",
             ) from None
 
@@ -310,21 +318,23 @@ def _build_api_agent(
     """
     Build an API agent configuration with provider fallback.
 
+    Resolves provider configs for reviewer, planner, and explorer.
+    Planner and explorer inherit from the reviewer when not explicitly
+    configured.
+
     Args:
         settings (AppSettings): The application settings.
         default_provider (str): Fallback provider name.
-        model (str | None): Model override.
+        model (str | None): Model override for the reviewer.
 
     Returns:
         ApiAgentConfig: The resolved API agent configuration.
 
     Raises:
-        ValueError: If the provider name is not recognised.
+        ValueError: If a provider name is not recognised.
     """
 
-    from nominal_code.llm.registry import PROVIDERS
-
-    provider_name_str: str = settings.agent.provider or default_provider
+    provider_name_str: str = settings.agent.reviewer.provider or default_provider
 
     try:
         provider_name: ProviderName = ProviderName(provider_name_str)
@@ -335,14 +345,72 @@ def _build_api_agent(
             f"Unknown AGENT_PROVIDER: {provider_name_str!r}. Available: {available}",
         ) from None
 
-    provider_config: ProviderConfig = PROVIDERS[provider_name]
+    reviewer_config: ProviderConfig = PROVIDERS[provider_name]
 
     if model:
-        provider_config = provider_config.model_copy(
+        reviewer_config = reviewer_config.model_copy(
             update={"model": model},
         )
 
-    return ApiAgentConfig(provider=provider_config)
+    planner_config: ProviderConfig | None = _resolve_provider(
+        settings.agent.planner,
+        reviewer_config,
+    )
+    explorer_config: ProviderConfig | None = _resolve_provider(
+        settings.agent.explorer,
+        reviewer_config,
+    )
+
+    return ApiAgentConfig(
+        reviewer=reviewer_config,
+        planner=planner_config,
+        explorer=explorer_config,
+    )
+
+
+def _resolve_provider(
+    settings: ProviderSettings,
+    fallback: ProviderConfig,
+) -> ProviderConfig | None:
+    """
+    Resolve a provider config from per-role settings with fallback.
+
+    When the settings have no overrides (both provider and model are
+    empty), returns ``None`` — the caller should use the fallback.
+    When only the model is set, uses the fallback's provider name.
+    When only the provider is set, uses that provider's default model.
+
+    Args:
+        settings (ProviderSettings): Per-role provider and model settings.
+        fallback (ProviderConfig): The reviewer's resolved config to
+            inherit from.
+
+    Returns:
+        ProviderConfig | None: Resolved config, or ``None`` when the
+            role has no overrides.
+    """
+
+    if not settings.provider and not settings.model:
+        return None
+
+    if settings.provider:
+        try:
+            provider_name: ProviderName = ProviderName(settings.provider)
+        except ValueError:
+            available: str = ", ".join(p.value for p in ProviderName)
+
+            raise ValueError(
+                f"Unknown provider: {settings.provider!r}. Available: {available}",
+            ) from None
+
+        config: ProviderConfig = PROVIDERS[provider_name]
+    else:
+        config = fallback
+
+    if settings.model:
+        config = config.model_copy(update={"model": settings.model})
+
+    return config
 
 
 def _resolve_kubernetes(
