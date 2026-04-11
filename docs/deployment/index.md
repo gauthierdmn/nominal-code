@@ -5,7 +5,7 @@ Nominal Code can be deployed as a **standalone server** or on **Kubernetes**. Bo
 | | Standalone | Kubernetes |
 |---|---|---|
 | Job execution | Same process, asyncio queue | Separate K8s Job pod per event |
-| Agent runner | Claude Code CLI (default) or LLM provider API | LLM provider API (requires `agent.provider`) |
+| Agent runner | Claude Code CLI (default) or LLM provider API | LLM provider API (requires `agent.reviewer.provider`) |
 | Conversation store | In-memory | Redis (required) |
 | Scaling | Single process | Unlimited concurrent Jobs |
 | Dependencies | Claude Code CLI on `PATH`, or an LLM provider API key | K8s cluster, container image, LLM provider API key |

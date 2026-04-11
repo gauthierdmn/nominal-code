@@ -13,7 +13,7 @@ from nominal_code.commands.cli.main import (
     cli_main,
 )
 from nominal_code.models import AgentReview, ReviewFinding
-from nominal_code.review.handler import ReviewResult
+from nominal_code.review.reviewer import ReviewResult
 
 
 class TestParsePrRef:

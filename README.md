@@ -17,11 +17,11 @@
 
 Nominal Code reads your PR diffs, runs an AI agent with access to the repository, and posts structured inline reviews anchored to specific lines of code. It works as a **CI job**, a **CLI command**, or a **self-hosted webhook server** with real-time interaction.
 
-In **API mode** (CI, or webhook/CLI with a provider key), it uses a two-phase pipeline: parallel exploration agents search the codebase for callers, tests, and knock-on effects, then a single-turn review agent produces findings with full context. In **CLI mode**, it delegates to the Claude Code CLI which handles exploration and review in one conversation.
+In **API mode** (CI, or webhook/CLI with a provider key), it uses a two-phase pipeline: concern-partitioned exploration agents investigate the codebase (callers, test coverage, type safety, knock-on effects), then a single-turn review agent produces findings with full context. Concerns are derived from your project's coding guidelines. In **CLI mode**, it delegates to the Claude Code CLI which handles exploration and review in one conversation.
 
 ## Key Features
 
-- **Two-phase review in API mode** — parallel sub-agents gather codebase context (callers, tests, types, knock-on effects), then a single-turn review agent produces findings. No guessing, no hallucinated line numbers. Line-annotated diffs give the agent exact line numbers and indentation.
+- **Two-phase review in API mode** — concern-partitioned sub-agents gather codebase context guided by your project's coding guidelines (callers, tests, types, knock-on effects), then a single-turn review agent produces findings. No guessing, no hallucinated line numbers. Line-annotated diffs give the agent exact line numbers and indentation.
 - **Inline reviews with code suggestions** — comments land exactly where the issue is, with one-click-apply fixes.
 - **7 LLM providers or Claude Code CLI** — use any provider API (Anthropic, OpenAI, Google Gemini, DeepSeek, Groq, Together, Fireworks), or run via the Claude Code CLI with a Pro/Max subscription — no API key needed.
 - **GitHub + GitLab** — same bot, both platforms simultaneously. GitHub App and PAT authentication supported.
@@ -38,9 +38,15 @@ In **API mode** (CI, or webhook/CLI with a provider key), it uses a two-phase pi
 PR opened / @mention
        |
        v
+  +-----------+
+  |  Planner  |     Stage 1: read guidelines + changed files
+  |  (1 turn) |     partition into investigation concerns
+  +-----+-----+
+        |
+        v
   +-----------+     +-----------+     +-----------+
-  |  Explore  |     |  Explore  |     |  Explore  |    Phase 1: parallel sub-agents
-  |  agent 1  |     |  agent 2  |     |  agent N  |    search callers, tests, types
+  |  Explorer |     |  Explorer |     |  Explorer |    Stage 2: concern-partitioned agents
+  |  agent 1  |     |  agent 2  |     |  agent N  |    (callers, tests, types...)
   +-----+-----+     +-----+-----+     +-----+-----+
         |                 |                 |
         v                 v                 v
@@ -50,8 +56,8 @@ PR opened / @mention
                  |
                  v
           +--------------+
-          | Review agent |     Phase 2: single-turn analysis
-          |  (1 turn)    |     annotated diffs + notes + guidelines
+          |   Reviewer   |     Stage 3: single-turn analysis
+          |   (1 turn)   |     annotated diffs + notes + guidelines
           +------+-------+
                  |
                  v

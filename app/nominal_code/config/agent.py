@@ -59,14 +59,22 @@ class ApiAgentConfig(BaseModel):
     Agent configuration for API-based modes (CI, webhook, CLI).
 
     Calls the LLM provider API directly. Requires a provider API key.
+    Each agent role (reviewer, planner, explorer) can use a different
+    provider and model. When ``planner`` or ``explorer`` is ``None``,
+    they fall back to ``reviewer``.
 
     Attributes:
-        provider (ProviderConfig): The LLM provider configuration.
+        reviewer (ProviderConfig): Reviewer provider and model (also the
+            default for planner and explorer).
+        planner (ProviderConfig | None): Planner provider and model override.
+        explorer (ProviderConfig | None): Explorer provider and model override.
     """
 
     model_config = ConfigDict(frozen=True)
 
-    provider: ProviderConfig
+    reviewer: ProviderConfig
+    planner: ProviderConfig | None = None
+    explorer: ProviderConfig | None = None
 
 
 AgentConfig = CliAgentConfig | ApiAgentConfig
@@ -76,6 +84,8 @@ def resolve_agent_config(
     provider_name: ProviderName | None,
     model: str | None,
     cli_path: str | None = None,
+    planner: ProviderConfig | None = None,
+    explorer: ProviderConfig | None = None,
 ) -> AgentConfig:
     """
     Build either a CLI or API agent config based on provider selection.
@@ -85,6 +95,10 @@ def resolve_agent_config(
             for CLI mode.
         model (str): Optional model override.
         cli_path (str): Path to CLI binary (only used for CLI mode).
+        planner (ProviderConfig | None): Planner provider override
+            (API mode only).
+        explorer (ProviderConfig | None): Explorer provider override
+            (API mode only).
 
     Returns:
         AgentConfig: Either ``CliAgentConfig`` or ``ApiAgentConfig``.
@@ -103,4 +117,8 @@ def resolve_agent_config(
     if model:
         provider_config = provider_config.model_copy(update={"model": model})
 
-    return ApiAgentConfig(provider=provider_config)
+    return ApiAgentConfig(
+        reviewer=provider_config,
+        planner=planner,
+        explorer=explorer,
+    )

@@ -1,7 +1,7 @@
 # type: ignore
 import pytest
 
-from nominal_code.agent.sub_agents.result import (
+from nominal_code.review.explore.result import (
     AggregatedMetrics,
     ExploreGroup,
     ParallelExploreResult,
@@ -12,17 +12,15 @@ from nominal_code.agent.sub_agents.result import (
 class TestExploreGroup:
     def test_construction(self):
         group = ExploreGroup(
-            label="auth-models",
-            files=["src/auth.py", "src/models.py"],
-            prompt="Explore auth changes.",
+            label="callers",
+            prompt="Search for callers of changed functions.",
         )
 
-        assert group.label == "auth-models"
-        assert group.files == ["src/auth.py", "src/models.py"]
-        assert group.prompt == "Explore auth changes."
+        assert group.label == "callers"
+        assert group.prompt == "Search for callers of changed functions."
 
     def test_frozen(self):
-        group = ExploreGroup(label="test", files=[], prompt="test")
+        group = ExploreGroup(label="test", prompt="test")
 
         with pytest.raises(AttributeError):
             group.label = "changed"
@@ -30,7 +28,7 @@ class TestExploreGroup:
 
 class TestSubAgentResult:
     def test_construction_minimal(self):
-        group = ExploreGroup(label="test", files=["a.py"], prompt="explore")
+        group = ExploreGroup(label="test", prompt="explore")
         result = SubAgentResult(
             group=group,
             output="Done.",
@@ -48,7 +46,7 @@ class TestSubAgentResult:
         assert result.cost is None
 
     def test_frozen(self):
-        group = ExploreGroup(label="test", files=[], prompt="test")
+        group = ExploreGroup(label="test", prompt="test")
         result = SubAgentResult(
             group=group,
             output="",

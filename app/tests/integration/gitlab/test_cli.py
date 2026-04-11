@@ -8,7 +8,7 @@ from nominal_code.config import load_config
 from nominal_code.models import EventType
 from nominal_code.platforms.base import CommentReply, PlatformName, PullRequestEvent
 from nominal_code.platforms.gitlab import GitLabPlatform
-from nominal_code.review.handler import review
+from nominal_code.review.reviewer import review
 from tests.integration.conftest import PrInfo
 from tests.integration.gitlab.api import (
     fetch_mr_discussions,

@@ -18,7 +18,7 @@ def load_prompt(name: str) -> str:
 
     Args:
         name (str): Relative path within the prompts package
-            (e.g. ``"reviewer_prompt.md"`` or ``"sub_agents/explore.md"``).
+            (e.g. ``"reviewer_prompt.md"`` or ``"explore/explore.md"``).
 
     Returns:
         str: The prompt text, stripped of leading/trailing whitespace.

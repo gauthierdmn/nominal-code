@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from nominal_code.config import Config
     from nominal_code.conversation.base import ConversationStore
     from nominal_code.platforms.base import Platform
-    from nominal_code.review.handler import ReviewResult
+    from nominal_code.review.reviewer import ReviewResult
 
 
 logger: logging.Logger = logging.getLogger(__name__)

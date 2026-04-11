@@ -26,6 +26,6 @@ AGENT_TYPE_TOOLS: dict[AgentType, list[str]] = {
     AgentType.PLAN: ["Read", "Glob", "Grep", "Bash"],
 }
 
-SUB_AGENT_SYSTEM_SUFFIX: str = load_prompt("sub_agents/suffix.md")
+SUB_AGENT_SYSTEM_SUFFIX: str = load_prompt("explore/suffix.md")
 
 DEFAULT_MAX_TURNS_PER_SUB_AGENT: int = 32

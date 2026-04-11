@@ -8,7 +8,7 @@ The call chain follows four conceptual layers:
 
 1. **Receive** — `commands/webhook/main.py` receives webhooks, `commands/` handles CLI/CI entry points.
 2. **Prepare** — `workspace/setup.py::prepare_job_event()` resolves clone URLs and branches. `jobs/runner/process.py` wraps execution with error handling and queue management.
-3. **Orchestrate** — `review/handler.py` contains business logic (diff fetching, prompt building, output parsing).
+3. **Orchestrate** — `review/reviewer.py` contains business logic (diff fetching, prompt building, output parsing). `review/explore/` implements Phase 1 exploration.
 4. **Invoke** — `agent/invoke.py` provides agent execution with explicit conversation lifecycle.
 
 ## Agent invocation
@@ -47,10 +47,11 @@ Tool definitions use canonical `ToolDefinition` (TypedDict with `name`, `descrip
 
 ## Review flow
 
-The review runs in two phases:
+The review runs in three stages:
 
-1. **Explore** — parallel sub-agents search the codebase for callers, tests, type definitions, and knock-on effects. Each writes structured findings to a notes file via `WriteNotes`. Notes-based compaction (`compact_with_notes`) keeps long sessions within the context window.
-2. **Review** — a single-turn agent receives annotated diffs (line numbers on every line), exploration notes, guidelines, and existing comments. It calls `submit_review` with the structured JSON review. No file-reading tools — one API call, one output.
+1. **Plan** — a single-turn planner reads the changed file list and the project's coding guidelines, then partitions the work into concern-based exploration groups via the `submit_plan` tool. Skipped when the PR has fewer than 8 changed files.
+2. **Explore** — concern-partitioned parallel explorer agents investigate the codebase. Each agent focuses on a different concern (e.g., callers, test coverage, type safety) and writes structured findings to a notes file via `WriteNotes`. Agents discover diffs and file lists through their tools (`git diff`, Read, Grep). Notes-based compaction (`compact_with_notes`) keeps long sessions within the context window.
+3. **Review** — a single-turn reviewer agent receives annotated diffs (line numbers on every line), exploration notes, guidelines, and existing comments. It calls `submit_review` with the structured JSON review. No file-reading tools — one API call, one output.
 
 ## File tree
 
@@ -62,12 +63,15 @@ agent/
 ├── prompts.py       # Guideline loading (.nominal/ overrides), language detection, system prompt composition
 ├── compaction.py    # Notes-based message compaction: compact_with_notes()
 ├── errors.py        # handle_agent_errors(): async context manager that catches and posts error replies
+├── types.py         # AgentType enum, AGENT_TYPE_TOOLS, SUB_AGENT_SYSTEM_SUFFIX
 ├── api/
 │   ├── runner.py    # Provider-agnostic agentic loop: run_api_agent()
 │   └── tools.py     # Tool definitions and local execution (Read, Glob, Grep, Bash, WriteNotes)
 └── cli/
     └── runner.py    # Claude Code CLI wrapper: run_cli_agent() (claude_agent_sdk.query + SDK monkey-patch)
 ```
+
+The exploration pipeline (planner + parallel explore agents) lives in `review/explore/`, not here. This package provides the generic agent infrastructure that the exploration pipeline builds on.
 
 ## Non-obvious details
 

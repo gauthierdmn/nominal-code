@@ -31,7 +31,7 @@ GitHub/GitLab webhook
 | | Standalone | Kubernetes |
 |---|---|---|
 | Job execution | Same process, asyncio queue | Separate K8s Job pod per event |
-| Agent runner | Claude Code CLI (default) or LLM provider API | LLM provider API (requires `agent.provider`) |
+| Agent runner | Claude Code CLI (default) or LLM provider API | LLM provider API (requires `agent.reviewer.provider`) |
 | Conversation store | In-memory | Redis (required) |
 | Scaling | Single process | Unlimited concurrent Jobs |
 

@@ -25,6 +25,7 @@ from nominal_code.agent.prompts import (
 )
 from nominal_code.agent.sandbox import sanitize_output
 from nominal_code.config import ApiAgentConfig
+from nominal_code.llm.messages import ToolChoice
 from nominal_code.models import (
     ChangedFile,
     ReviewFinding,
@@ -299,11 +300,12 @@ async def review(
 
     effective_allowed_tools: list[str]
 
+    effective_tool_choice: ToolChoice | None = None
+
     if isinstance(config.agent, ApiAgentConfig):
         effective_allowed_tools = [SUBMIT_REVIEW_TOOL_NAME]
-        # just needs to analyze output from explore step
-        # and return a review
         effective_max_turns: int = 1
+        effective_tool_choice = ToolChoice.REQUIRED
     else:
         effective_allowed_tools = [
             "Read",
@@ -329,6 +331,7 @@ async def review(
         conversation_id=conversation_id,
         prior_messages=prior_messages,
         max_turns=effective_max_turns,
+        tool_choice=effective_tool_choice,
     )
 
     save_conversation(

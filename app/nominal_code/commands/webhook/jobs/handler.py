@@ -9,7 +9,7 @@ if TYPE_CHECKING:
         Platform,
         PullRequestEvent,
     )
-    from nominal_code.review.handler import ReviewResult
+    from nominal_code.review.reviewer import ReviewResult
 
 
 class JobHandler(Protocol):
@@ -84,7 +84,7 @@ class DefaultJobHandler:
             ReviewResult: The review result with findings and summary.
         """
 
-        from nominal_code.review.handler import run_and_post_review
+        from nominal_code.review.reviewer import run_and_post_review
 
         return await run_and_post_review(
             event=event,

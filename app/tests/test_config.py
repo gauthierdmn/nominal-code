@@ -223,7 +223,7 @@ class TestFromEnv:
             config = Config.from_env(require_webhook=True)
 
         assert isinstance(config.agent, ApiAgentConfig)
-        assert config.agent.provider.name == ProviderName.OPENAI
+        assert config.agent.reviewer.name == ProviderName.OPENAI
 
     def test_from_env_agent_provider_with_model_override(self, _reviewer_only_env):
         with patch.dict(
@@ -233,7 +233,7 @@ class TestFromEnv:
             config = Config.from_env(require_webhook=True)
 
         assert isinstance(config.agent, ApiAgentConfig)
-        assert config.agent.provider.model == "claude-opus-4-6"
+        assert config.agent.reviewer.model == "claude-opus-4-6"
 
     def test_from_env_unknown_agent_provider_raises(self, _reviewer_only_env):
         with patch.dict(os.environ, {"AGENT_PROVIDER": "unknown"}):
@@ -426,15 +426,15 @@ class TestConfigForCli:
             config = load_config(provider=ProviderName.OPENAI)
 
         assert isinstance(config.agent, ApiAgentConfig)
-        assert config.agent.provider.name == ProviderName.OPENAI
-        assert config.agent.provider.model == "gpt-4.1"
+        assert config.agent.reviewer.name == ProviderName.OPENAI
+        assert config.agent.reviewer.model == "gpt-4.1"
 
     def test_config_for_cli_provider_with_model_override(self, tmp_path):
         with patch.dict(os.environ, {"WORKSPACE_BASE_DIR": str(tmp_path)}, clear=True):
             config = load_config(provider=ProviderName.OPENAI, model="gpt-4o")
 
         assert isinstance(config.agent, ApiAgentConfig)
-        assert config.agent.provider.model == "gpt-4o"
+        assert config.agent.reviewer.model == "gpt-4o"
 
     def test_config_for_cli_provider_from_env(self, tmp_path):
         with patch.dict(
@@ -445,7 +445,7 @@ class TestConfigForCli:
             config = load_config()
 
         assert isinstance(config.agent, ApiAgentConfig)
-        assert config.agent.provider.name == ProviderName.ANTHROPIC
+        assert config.agent.reviewer.name == ProviderName.ANTHROPIC
 
 
 class TestParseTitleTags:

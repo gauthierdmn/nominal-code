@@ -1,5 +1,5 @@
 # type: ignore
-from nominal_code.agent.sub_agents.types import AGENT_TYPE_TOOLS, AgentType
+from nominal_code.agent.types import AGENT_TYPE_TOOLS, AgentType
 
 
 class TestAgentType:

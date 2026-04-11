@@ -327,7 +327,7 @@ class TestRunAgentApiDispatch:
                 prompt="test",
                 cwd="/tmp",
                 agent_config=ApiAgentConfig(
-                    provider=ProviderConfig(
+                    reviewer=ProviderConfig(
                         name=ProviderName.ANTHROPIC,
                         model="test",
                     ),

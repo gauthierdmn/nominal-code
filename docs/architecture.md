@@ -142,7 +142,7 @@ The dispatcher in `agent/invoke.py` routes to the appropriate backend based on w
 
 ## Sub-Agents
 
-The `agent/sub_agents/` package provides first-class support for parallel sub-agent execution. Sub-agents are lightweight, isolated agent instances that compose on top of `run_api_agent()`.
+The `review/explore/` package provides concern-partitioned parallel sub-agent execution. A planner reads the project's coding guidelines and partitions the review into investigation concerns. Each concern is assigned to an isolated explore sub-agent that composes on top of `run_api_agent()`.
 
 ### Agent Types
 
@@ -163,18 +163,20 @@ Each sub-agent gets its own notes file (no write conflicts during parallel execu
 
 See [Compaction](reference/compaction.md) for how notes files also serve as the compaction summary.
 
-### Parallel Exploration
+### Concern-Based Exploration
 
-The primary entry point is `run_explore_with_planner()`:
+The primary entry point is `run_explore_with_planner()`. The planner receives the changed file list, diff line counts, and the project's coding guidelines. It derives investigation concerns from the guidelines (or falls back to defaults: callers, test coverage, type safety, knock-on effects) and creates groups where each agent focuses on a different concern. The same file may appear in multiple groups.
+
+Explore agents receive only the planner's concern-focused prompt — no diffs or file lists. They discover everything through their tools (`git diff`, Read, Grep).
 
 ```
-changed_files + diffs
+changed_files + diffs + guidelines
         │
         ├─ if len(files) >= file_threshold (default 8):
         │       ▼
-        │   plan_exploration_groups()
+        │   plan_exploration_groups(guidelines=...)
         │       │
-        │       ├─ build_planner_user_message() → file paths + line counts
+        │       ├─ build_planner_user_message() → file paths + line counts + guidelines
         │       ├─ provider.send() → single LLM call (no tools, JSON output)
         │       └─ parse_planner_response() → list[ExploreGroup]
         │
@@ -191,27 +193,27 @@ changed_files + diffs
         │
         └─ else (fallback):
                 ▼
-            Single agent with all files in one group
+            Single agent with generic exploration prompt
 ```
 
 Each sub-agent receives:
 - A system prompt with the sub-agent suffix ("You are a background sub-agent...")
 - Tool restrictions from `AGENT_TYPE_TOOLS[AgentType.EXPLORE]`
-- The group's exploration prompt (authored by the planner)
+- The group's concern-focused exploration prompt (authored by the planner)
 - An isolated turn budget
 
 ### Key Types
 
-- `ExploreGroup(label, files, prompt)` — a partition of changed files with a focused exploration prompt.
+- `ExploreGroup(label, files, prompt)` — a concern-based exploration group with a focused investigation prompt. Files may overlap across groups.
 - `SubAgentResult(group, output, is_error, num_turns, duration_ms, messages, cost)` — result from one sub-agent.
 - `AggregatedMetrics` — summed token counts, API calls, and costs across sub-agents with wall-clock duration.
 - `ParallelExploreResult(sub_results, metrics)` — aggregated result from parallel execution.
 
 ### Prompts
 
-Bundled prompt files in `prompts/sub_agents/`:
-- `explore.md` — system prompt for exploration sub-agents (read-only context gathering).
-- `planner.md` — system prompt for the planner (file grouping into JSON).
+Bundled prompt files in `prompts/explore/`:
+- `explorer.md` — system prompt for exploration sub-agents (read-only context gathering via tools).
+- `planner.md` — system prompt for the planner (concern-based grouping into JSON).
 
 ## Policies
 
@@ -341,7 +343,7 @@ The reviewer prompt is composed from multiple sources across two layers:
 1. Branch header and user prompt (wrapped in `<untrusted-request>`)
 2. Changed files with annotated diffs (wrapped in `<untrusted-diff>`) — each line prefixed with its actual line number
 3. Existing PR comments (wrapped in `<untrusted-comment>`)
-4. Exploration notes — structured findings from sub-agents (callers, tests, types, knock-on effects)
+4. Exploration notes — structured findings from concern-partitioned sub-agents
 5. Review instruction (use annotated line numbers, call `submit_review`)
 
 The review agent runs in single-turn mode with only the `submit_review` tool — one API call, no file reading. All context is provided upfront.
@@ -466,20 +468,20 @@ nominal_code/
 │   │   └── tools.py     # Tool definitions and execution (Read, Glob, Grep, Bash, WriteNotes, submit_review)
 │   ├── cli/
 │   │   └── runner.py    # Claude Code CLI subprocess wrapper (SDK integration)
-│   └── sub_agents/      # Parallel sub-agent orchestration
-│       ├── types.py     # AgentType enum, per-type tool mappings
-│       ├── result.py    # ExploreGroup, SubAgentResult, AggregatedMetrics
-│       ├── planner.py   # LLM-based file grouping planner
-│       ├── runner.py    # run_explore(), run_explore_with_planner()
-│       └── prompts.py   # Bundled prompt loading
+│   └── types.py         # AgentType enum, per-type tool mappings
 ├── conversation/
 │   ├── base.py          # Conversation store protocol
 │   ├── memory.py        # In-memory conversation store
 │   └── redis.py         # Redis-backed conversation store
 ├── review/
-│   ├── handler.py       # Review orchestration: diff fetching, prompt building, output parsing
+│   ├── reviewer.py      # Review orchestration: diff fetching, prompt building, output parsing
 │   ├── diff.py          # Diff handling utilities
-│   └── output.py        # Output parsing and JSON repair
+│   ├── output.py        # Output parsing and JSON repair
+│   └── explore/         # Phase 1: concern-partitioned exploration pipeline
+│       ├── planner.py   # LLM-based concern partitioning planner
+│       ├── explorer.py  # run_explore(), run_explore_with_planner()
+│       ├── result.py    # ExploreGroup, SubAgentResult, AggregatedMetrics
+│       └── prompts.py   # Bundled prompt loading
 ├── platforms/
 │   ├── base.py          # Platform protocol and shared dataclasses
 │   ├── http.py          # request_with_retry(): HTTP request helper with transient error retries

@@ -22,7 +22,8 @@ from nominal_code.models import (
     FileStatus,
 )
 from nominal_code.platforms.base import CommentEvent, ExistingComment, PlatformName
-from nominal_code.review.handler import (
+from nominal_code.review.output import FALLBACK_MESSAGE
+from nominal_code.review.reviewer import (
     MAX_EXISTING_COMMENTS,
     ReviewResult,
     _build_reviewer_prompt,
@@ -30,7 +31,6 @@ from nominal_code.review.handler import (
     review,
     run_and_post_review,
 )
-from nominal_code.review.output import FALLBACK_MESSAGE
 
 
 def _make_config(allowed_users=None):
@@ -853,7 +853,7 @@ class TestBotCommentFiltering:
                 mock_ws_class.return_value = mock_ws
 
                 with patch(
-                    "nominal_code.review.handler.asyncio.gather",
+                    "nominal_code.review.reviewer.asyncio.gather",
                     wraps=asyncio.gather,
                 ) as mock_gather:
                     await run_and_post_review(
