@@ -82,6 +82,7 @@ def _note_payload(
         "merge_request": {
             "iid": iid,
             "source_branch": source_branch,
+            "target_branch": "main",
         },
     }
 
@@ -127,6 +128,7 @@ class TestParseWebhook:
         assert result.pr_branch == "feature"
         assert result.comment_id == 500
         assert result.author_username == "alice"
+        assert result.base_branch == "main"
         assert result.body == "@claude-bot fix this"
         assert result.event_type == EventType.NOTE
         assert result.discussion_id == "abc123def456"
@@ -187,6 +189,7 @@ class TestParseMergeRequest:
                 "iid": 5,
                 "action": "open",
                 "source_branch": "feature",
+                "target_branch": "main",
                 "title": "New feature",
                 "work_in_progress": False,
             },
@@ -199,6 +202,7 @@ class TestParseMergeRequest:
         assert result.event_type == EventType.PR_OPENED
         assert result.pr_number == 5
         assert result.pr_branch == "feature"
+        assert result.base_branch == "main"
         assert result.pr_title == "New feature"
         assert result.pr_author == "alice"
         assert isinstance(result, LifecycleEvent)

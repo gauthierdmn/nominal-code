@@ -166,6 +166,7 @@ class TestParseWebhook:
             "pull_request": {
                 "number": 10,
                 "head": {"ref": "feature-branch"},
+                "base": {"ref": "main"},
             },
             "repository": {"full_name": "owner/repo"},
         }
@@ -178,6 +179,7 @@ class TestParseWebhook:
         assert result is not None
         assert result.pr_number == 10
         assert result.pr_branch == "feature-branch"
+        assert result.base_branch == "main"
         assert result.diff_hunk == "@@ -1,3 +1,5 @@"
         assert result.file_path == "src/main.py"
         assert result.event_type == EventType.REVIEW_COMMENT
@@ -193,6 +195,7 @@ class TestParseWebhook:
             "pull_request": {
                 "number": 5,
                 "head": {"ref": "fix-branch"},
+                "base": {"ref": "develop"},
             },
             "repository": {"full_name": "owner/repo"},
         }
@@ -202,6 +205,7 @@ class TestParseWebhook:
 
         assert result is not None
         assert result.pr_number == 5
+        assert result.base_branch == "develop"
         assert result.body == "@claude-bot looks good but fix the typo"
         assert result.event_type == EventType.REVIEW
 
@@ -257,6 +261,7 @@ class TestParsePullRequest:
                 "title": "Add new feature",
                 "draft": False,
                 "head": {"ref": "feature-branch"},
+                "base": {"ref": "main"},
                 "user": {"login": "alice"},
             },
             "repository": {"full_name": "owner/repo"},
@@ -269,6 +274,7 @@ class TestParsePullRequest:
         assert result.event_type == EventType.PR_OPENED
         assert result.pr_number == 99
         assert result.pr_branch == "feature-branch"
+        assert result.base_branch == "main"
         assert result.pr_title == "Add new feature"
         assert result.pr_author == "alice"
         assert isinstance(result, LifecycleEvent)

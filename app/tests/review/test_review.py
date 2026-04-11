@@ -582,6 +582,50 @@ class TestBuildReviewerPrompt:
 
         assert "replacement code" not in result
 
+    def test__build_reviewer_prompt_includes_base_branch(self):
+        comment = CommentEvent(
+            platform=PlatformName.GITHUB,
+            repo_full_name="owner/repo",
+            pr_number=42,
+            pr_branch="feature",
+            base_branch="main",
+            event_type=EventType.ISSUE_COMMENT,
+            comment_id=1,
+            author_username="alice",
+            body="review",
+        )
+        changed_files = [
+            ChangedFile(
+                file_path="src/main.py",
+                status=FileStatus.MODIFIED,
+                patch="+new",
+            ),
+        ]
+        result = _build_reviewer_prompt(
+            event=comment,
+            user_prompt="",
+            changed_files=changed_files,
+        )
+
+        assert "Base branch: main" in result
+
+    def test__build_reviewer_prompt_omits_base_branch_when_empty(self):
+        comment = _make_comment()
+        changed_files = [
+            ChangedFile(
+                file_path="src/main.py",
+                status=FileStatus.MODIFIED,
+                patch="+new",
+            ),
+        ]
+        result = _build_reviewer_prompt(
+            event=comment,
+            user_prompt="",
+            changed_files=changed_files,
+        )
+
+        assert "Base branch" not in result
+
 
 class TestBuildReviewerPromptWithExistingComments:
     def test__build_reviewer_prompt_includes_existing_comments(self):
@@ -1238,3 +1282,236 @@ class TestPromptBoundaryTags:
         result = _format_existing_comments(comments=comments)
 
         assert f"<{TAG_FILE_PATH}>src/main.py</{TAG_FILE_PATH}>" in result
+
+
+class TestExploreIntegration:
+    @pytest.mark.asyncio
+    async def test_explore_runs_for_api_agent(self):
+        from nominal_code.config import ApiAgentConfig, ProviderConfig
+        from nominal_code.models import ProviderName
+        from nominal_code.review.explore.result import (
+            AggregatedMetrics,
+            ParallelExploreResult,
+        )
+        from nominal_code.review.reviewer import _run_explore_for_review
+
+        config = _make_config()
+        config.agent = ApiAgentConfig(
+            reviewer=ProviderConfig(name=ProviderName.GOOGLE, model="gemini-2.5-pro"),
+        )
+
+        ctx = MagicMock()
+        ctx.repo_path = Path("/tmp/repo")
+        ctx.changed_files = [
+            ChangedFile(
+                file_path="src/main.py",
+                status=FileStatus.MODIFIED,
+                patch="+new line",
+            ),
+        ]
+
+        mock_result = ParallelExploreResult(
+            sub_results=(),
+            metrics=AggregatedMetrics(
+                total_turns=4,
+                total_api_calls=2,
+                total_input_tokens=1000,
+                total_output_tokens=500,
+                num_groups=1,
+            ),
+        )
+        mock_provider = AsyncMock()
+        mock_provider.close = AsyncMock()
+
+        event = _make_comment()
+
+        with (
+            patch(
+                "nominal_code.review.reviewer.create_provider",
+                return_value=mock_provider,
+            ),
+            patch(
+                "nominal_code.review.reviewer.run_explore_with_planner",
+                new_callable=AsyncMock,
+                return_value=mock_result,
+            ) as mock_explore,
+            patch(
+                "nominal_code.review.reviewer.assemble_notes",
+                return_value="## Exploration notes",
+            ),
+        ):
+            context, metrics = await _run_explore_for_review(
+                ctx=ctx,
+                config=config,
+                event=event,
+            )
+
+        assert context == "## Exploration notes"
+        assert metrics is not None
+        assert metrics.total_turns == 4
+        mock_explore.assert_called_once()
+        mock_provider.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_explore_skipped_for_no_changed_files(self):
+        from nominal_code.config import ApiAgentConfig, ProviderConfig
+        from nominal_code.models import ProviderName
+        from nominal_code.review.reviewer import _run_explore_for_review
+
+        config = _make_config()
+        config.agent = ApiAgentConfig(
+            reviewer=ProviderConfig(name=ProviderName.GOOGLE, model="gemini-2.5-pro"),
+        )
+
+        ctx = MagicMock()
+        ctx.repo_path = Path("/tmp/repo")
+        ctx.changed_files = []
+
+        event = _make_comment()
+        context, metrics = await _run_explore_for_review(
+            ctx=ctx,
+            config=config,
+            event=event,
+        )
+
+        assert context == ""
+        assert metrics is None
+
+    @pytest.mark.asyncio
+    async def test_explore_uses_explorer_config_when_set(self):
+        from nominal_code.config import ApiAgentConfig, ProviderConfig
+        from nominal_code.models import ProviderName
+        from nominal_code.review.explore.result import ParallelExploreResult
+        from nominal_code.review.reviewer import _run_explore_for_review
+
+        explorer_config = ProviderConfig(
+            name=ProviderName.GOOGLE,
+            model="gemini-2.5-flash",
+        )
+        planner_config = ProviderConfig(
+            name=ProviderName.GOOGLE,
+            model="gemini-2.5-flash",
+        )
+        config = _make_config()
+        config.agent = ApiAgentConfig(
+            reviewer=ProviderConfig(name=ProviderName.GOOGLE, model="gemini-2.5-pro"),
+            explorer=explorer_config,
+            planner=planner_config,
+        )
+
+        ctx = MagicMock()
+        ctx.repo_path = Path("/tmp/repo")
+        ctx.changed_files = [
+            ChangedFile(
+                file_path="src/main.py",
+                status=FileStatus.MODIFIED,
+                patch="+new",
+            ),
+        ]
+
+        mock_provider = AsyncMock()
+        mock_provider.close = AsyncMock()
+
+        event = _make_comment()
+
+        with (
+            patch(
+                "nominal_code.review.reviewer.create_provider",
+                return_value=mock_provider,
+            ) as mock_create,
+            patch(
+                "nominal_code.review.reviewer.run_explore_with_planner",
+                new_callable=AsyncMock,
+                return_value=ParallelExploreResult(),
+            ) as mock_explore,
+            patch(
+                "nominal_code.review.reviewer.assemble_notes",
+                return_value="",
+            ),
+        ):
+            await _run_explore_for_review(
+                ctx=ctx,
+                config=config,
+                event=event,
+            )
+
+        mock_create.assert_called_once_with(name=ProviderName.GOOGLE)
+        call_kwargs = mock_explore.call_args.kwargs
+
+        assert call_kwargs["model"] == "gemini-2.5-flash"
+        assert call_kwargs["planner_model"] == "gemini-2.5-flash"
+
+    @pytest.mark.asyncio
+    async def test_review_populates_explore_metrics_for_api_agent(self):
+        from nominal_code.config import ApiAgentConfig, ProviderConfig
+        from nominal_code.models import ProviderName
+        from nominal_code.review.explore.result import (
+            AggregatedMetrics,
+            ParallelExploreResult,
+        )
+
+        config = _make_config()
+        config.agent = ApiAgentConfig(
+            reviewer=ProviderConfig(name=ProviderName.GOOGLE, model="gemini-2.5-pro"),
+        )
+
+        mock_explore_result = ParallelExploreResult(
+            sub_results=(),
+            metrics=AggregatedMetrics(total_turns=3, num_groups=2),
+        )
+
+        mock_agent_result = MagicMock()
+        mock_agent_result.output = '{"summary": "LGTM", "findings": []}'
+        mock_agent_result.cost = None
+        mock_agent_result.num_turns = 1
+        mock_agent_result.duration_ms = 100
+        mock_agent_result.messages = ()
+        mock_agent_result.is_error = False
+        mock_agent_result.conversation_id = None
+
+        mock_provider = AsyncMock()
+        mock_provider.close = AsyncMock()
+
+        event = _make_comment()
+        platform = _make_platform()
+        platform.fetch_pr_diff = AsyncMock(
+            return_value=[
+                ChangedFile(
+                    file_path="a.py",
+                    status=FileStatus.MODIFIED,
+                    patch="+new",
+                ),
+            ],
+        )
+
+        with (
+            patch(
+                "nominal_code.review.reviewer.create_provider",
+                return_value=mock_provider,
+            ),
+            patch(
+                "nominal_code.review.reviewer.run_explore_with_planner",
+                new_callable=AsyncMock,
+                return_value=mock_explore_result,
+            ),
+            patch(
+                "nominal_code.review.reviewer.assemble_notes",
+                return_value="notes",
+            ),
+            patch(
+                "nominal_code.review.reviewer.invoke_agent",
+                new_callable=AsyncMock,
+                return_value=mock_agent_result,
+            ),
+        ):
+            result = await review(
+                event=event,
+                prompt="",
+                config=config,
+                platform=platform,
+                workspace_path="/tmp/repo",
+            )
+
+        assert result.explore_metrics is not None
+        assert result.explore_metrics.total_turns == 3
+        assert result.explore_metrics.num_groups == 2

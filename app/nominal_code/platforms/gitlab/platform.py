@@ -659,6 +659,7 @@ class GitLabPlatform:
             pr_branch=merge_request.get("source_branch", ""),
             event_type=EventType.NOTE,
             pr_title=merge_request.get("title", ""),
+            base_branch=merge_request.get("target_branch", ""),
             comment_id=object_attributes.get("id", 0),
             author_username=user.get("username", ""),
             body=object_attributes.get("note", ""),
@@ -711,6 +712,7 @@ class GitLabPlatform:
             pr_branch=object_attributes.get("source_branch", ""),
             event_type=event_type,
             pr_title=object_attributes.get("title", ""),
+            base_branch=object_attributes.get("target_branch", ""),
             pr_author=payload.get("user", {}).get("username", ""),
         )
 
