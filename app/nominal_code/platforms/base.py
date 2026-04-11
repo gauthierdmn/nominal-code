@@ -39,6 +39,8 @@ class PullRequestEvent:
             webhook handler or CLI.
         pr_title (str): Pull request or merge request title. Defaults to
             empty; populated by webhook parsers.
+        base_branch (str): The target/base branch of the PR/MR (e.g.
+            ``main``). Defaults to empty; populated by webhook parsers.
     """
 
     platform: PlatformName
@@ -48,6 +50,7 @@ class PullRequestEvent:
     event_type: EventType
     clone_url: str = ""
     pr_title: str = ""
+    base_branch: str = ""
 
 
 @dataclass(frozen=True)

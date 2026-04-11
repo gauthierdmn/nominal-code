@@ -697,6 +697,7 @@ class GitHubPlatform:
             pr_branch=pull_request.get("head", {}).get("ref", ""),
             event_type=EventType.REVIEW_COMMENT,
             pr_title=pull_request.get("title", ""),
+            base_branch=pull_request.get("base", {}).get("ref", ""),
             comment_id=comment.get("id", 0),
             author_username=comment.get("user", {}).get("login", ""),
             body=comment.get("body", ""),
@@ -740,6 +741,7 @@ class GitHubPlatform:
             pr_branch=pull_request.get("head", {}).get("ref", ""),
             event_type=EventType.REVIEW,
             pr_title=pull_request.get("title", ""),
+            base_branch=pull_request.get("base", {}).get("ref", ""),
             comment_id=review.get("id", 0),
             author_username=review.get("user", {}).get("login", ""),
             body=review_body,
@@ -784,6 +786,7 @@ class GitHubPlatform:
             pr_branch=pull_request.get("head", {}).get("ref", ""),
             event_type=event_type,
             pr_title=pull_request.get("title", ""),
+            base_branch=pull_request.get("base", {}).get("ref", ""),
             pr_author=pull_request.get("user", {}).get("login", ""),
         )
 

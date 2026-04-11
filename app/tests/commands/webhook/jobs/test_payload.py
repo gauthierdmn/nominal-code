@@ -144,6 +144,70 @@ class TestExtraEnv:
         assert payload.extra_env == {}
 
 
+class TestBaseBranchSerialization:
+    def test_roundtrip_comment_event_preserves_base_branch(self):
+        event = CommentEvent(
+            platform=PlatformName.GITHUB,
+            repo_full_name="owner/repo",
+            pr_number=42,
+            pr_branch="feature",
+            base_branch="main",
+            event_type=EventType.ISSUE_COMMENT,
+        )
+        payload = JobPayload(event=event)
+        deserialized = JobPayload.deserialize(payload.serialize())
+
+        assert deserialized.event.base_branch == "main"
+
+    def test_roundtrip_lifecycle_event_preserves_base_branch(self):
+        event = LifecycleEvent(
+            platform=PlatformName.GITLAB,
+            repo_full_name="group/repo",
+            pr_number=10,
+            pr_branch="feature",
+            base_branch="develop",
+            event_type=EventType.PR_OPENED,
+            pr_author="alice",
+        )
+        payload = JobPayload(event=event)
+        deserialized = JobPayload.deserialize(payload.serialize())
+
+        assert deserialized.event.base_branch == "develop"
+
+    def test_base_branch_in_serialized_json(self):
+        event = LifecycleEvent(
+            platform=PlatformName.GITHUB,
+            repo_full_name="owner/repo",
+            pr_number=1,
+            pr_branch="feature",
+            base_branch="main",
+            event_type=EventType.PR_OPENED,
+        )
+        payload = JobPayload(event=event)
+        data = json.loads(payload.serialize())
+
+        assert data["event"]["base_branch"] == "main"
+
+    def test_deserialize_without_base_branch_defaults_empty(self):
+        data = json.dumps(
+            {
+                "event": {
+                    "platform": "github",
+                    "repo_full_name": "owner/repo",
+                    "pr_number": 1,
+                    "pr_branch": "feature",
+                    "event_type": "pr_opened",
+                    "is_comment_event": False,
+                },
+                "namespace": "",
+                "extra_env": {},
+            }
+        )
+        payload = JobPayload.deserialize(data)
+
+        assert payload.event.base_branch == ""
+
+
 class TestJobPayloadDeserialize:
     def test_invalid_json_raises(self):
         with pytest.raises(json.JSONDecodeError):

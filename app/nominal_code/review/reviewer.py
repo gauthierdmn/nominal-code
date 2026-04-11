@@ -24,8 +24,9 @@ from nominal_code.agent.prompts import (
     wrap_tag,
 )
 from nominal_code.agent.sandbox import sanitize_output
-from nominal_code.config import ApiAgentConfig
+from nominal_code.config import ApiAgentConfig, ProviderConfig
 from nominal_code.llm.messages import ToolChoice
+from nominal_code.llm.registry import create_provider
 from nominal_code.models import (
     ChangedFile,
     ReviewFinding,
@@ -40,6 +41,8 @@ from nominal_code.review.diff import (
     build_effective_summary,
     filter_findings,
 )
+from nominal_code.review.explore import assemble_notes, run_explore_with_planner
+from nominal_code.review.explore.result import AggregatedMetrics
 from nominal_code.review.output import (
     build_fallback_comment,
     parse_review_output,
@@ -79,6 +82,8 @@ class ReviewResult:
         num_turns (int): Number of agentic turns taken by the LLM.
         messages (tuple[Message, ...]): Full LLM conversation transcript.
         input_prompt (str): Full prompt sent to the LLM.
+        explore_metrics (AggregatedMetrics | None): Metrics from the
+            pre-review exploration step, or None if explore was skipped.
     """
 
     agent_review: AgentReview | None
@@ -90,6 +95,7 @@ class ReviewResult:
     num_turns: int = 0
     messages: tuple[Message, ...] = ()
     input_prompt: str = ""
+    explore_metrics: AggregatedMetrics | None = None
 
 
 @dataclass(frozen=True)
@@ -206,6 +212,80 @@ async def _prepare_review_context(
     )
 
 
+async def _run_explore_for_review(
+    ctx: ReviewContext,
+    config: Config,
+    event: PullRequestEvent,
+) -> tuple[str, AggregatedMetrics | None]:
+    """
+    Run codebase exploration before the review agent.
+
+    Uses the explorer and planner provider configs from ``ApiAgentConfig``,
+    falling back to the reviewer config when not set. Resolves project
+    guidelines from the workspace and passes them to the planner.
+
+    Args:
+        ctx (ReviewContext): Prepared workspace and PR data.
+        config (Config): Application configuration with ``ApiAgentConfig``.
+        event (PullRequestEvent): The PR event for logging.
+
+    Returns:
+        tuple[str, AggregatedMetrics | None]: Assembled exploration notes
+            and aggregated metrics, or empty string and None on failure.
+    """
+
+    agent_config: ApiAgentConfig = config.agent  # type: ignore[assignment]
+
+    explorer_config: ProviderConfig = agent_config.explorer or agent_config.reviewer
+    planner_config: ProviderConfig = agent_config.planner or agent_config.reviewer
+
+    changed_files: list[str] = [cf.file_path for cf in ctx.changed_files]
+    diffs: dict[str, str] = {
+        cf.file_path: cf.patch for cf in ctx.changed_files if cf.patch
+    }
+
+    if not changed_files:
+        return "", None
+
+    file_paths: list[Path] = [Path(fp) for fp in changed_files]
+
+    guidelines: str = resolve_guidelines(
+        repo_path=ctx.repo_path,
+        default_guidelines=config.prompts.coding_guidelines,
+        language_guidelines=config.prompts.language_guidelines,
+        file_paths=file_paths,
+    )
+
+    provider = create_provider(name=explorer_config.name)
+
+    try:
+        result = await run_explore_with_planner(
+            changed_files=changed_files,
+            diffs=diffs,
+            cwd=ctx.repo_path,
+            provider=provider,
+            model=explorer_config.model,
+            provider_name=explorer_config.name,
+            planner_model=planner_config.model,
+            guidelines=guidelines,
+        )
+    finally:
+        await provider.close()
+
+    context: str = assemble_notes(result.sub_results)
+
+    if context:
+        logger.info(
+            "Explore complete for %s#%d: %d groups, %d chars",
+            event.repo_full_name,
+            event.pr_number,
+            result.metrics.num_groups,
+            len(context),
+        )
+
+    return context, result.metrics
+
+
 async def review(
     event: PullRequestEvent,
     prompt: str,
@@ -258,13 +338,32 @@ async def review(
 
     reviewer_config = config.reviewer
 
+    explore_context: str = context
+    explore_metrics: AggregatedMetrics | None = None
+
+    if isinstance(config.agent, ApiAgentConfig) and not context:
+        try:
+            explore_context, explore_metrics = await _run_explore_for_review(
+                ctx=ctx,
+                config=config,
+                event=event,
+            )
+        except Exception:
+            logger.exception(
+                "Explore failed for %s#%d, continuing without context",
+                event.repo_full_name,
+                event.pr_number,
+            )
+
+            explore_context = ""
+
     full_prompt: str = _build_reviewer_prompt(
         event=event,
         user_prompt=prompt,
         changed_files=ctx.changed_files,
         existing_comments=ctx.existing_comments,
         inline_suggestions=bool(reviewer_config.suggestions_prompt),
-        context=context,
+        context=explore_context,
     )
     base_system_prompt: str = reviewer_config.system_prompt
 
@@ -376,6 +475,7 @@ async def review(
             num_turns=result.num_turns,
             messages=result.messages,
             input_prompt=full_prompt,
+            explore_metrics=explore_metrics,
         )
 
     valid_findings, rejected_findings = filter_findings(
@@ -426,6 +526,7 @@ async def review(
         num_turns=result.num_turns,
         messages=result.messages,
         input_prompt=full_prompt,
+        explore_metrics=explore_metrics,
     )
 
 
@@ -570,10 +671,15 @@ def _build_reviewer_prompt(
         str: The full prompt to send to the agent.
     """
 
-    parts: list[str] = [
+    branch_info: str = (
         f"Branch: <{TAG_BRANCH_NAME}>{event.pr_branch}</{TAG_BRANCH_NAME}>"
-        f" (PR #{event.pr_number} on {event.repo_full_name})",
-    ]
+        f" (PR #{event.pr_number} on {event.repo_full_name})"
+    )
+
+    if event.base_branch:
+        branch_info += f"\nBase branch: {event.base_branch}"
+
+    parts: list[str] = [branch_info]
 
     if user_prompt:
         parts.append(
