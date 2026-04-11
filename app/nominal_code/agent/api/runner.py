@@ -29,6 +29,7 @@ from nominal_code.llm.provider import LLMProvider, ProviderError
 from nominal_code.models import ProviderName
 
 MAX_RESPONSE_TOKENS: int = 16384
+COMPACTION_TOKEN_THRESHOLD: int = 100_000
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -217,7 +218,19 @@ async def run_api_agent(
 
             turns += 1
 
-            if notes_file_path is not None:
+            context_window_tokens: int = (
+                response.usage.input_tokens
+                + response.usage.output_tokens
+                + response.usage.cache_creation_input_tokens
+                + response.usage.cache_read_input_tokens
+                if response.usage
+                else 0
+            )
+
+            if (
+                notes_file_path is not None
+                and context_window_tokens >= COMPACTION_TOKEN_THRESHOLD
+            ):
                 notes_for_compaction: str = ""
 
                 if notes_file_path.exists():
@@ -233,7 +246,10 @@ async def run_api_agent(
                 if compaction_result.summary_text:
                     messages = compaction_result.messages
 
-                    logger.info("Compacted LLM context using notes")
+                    logger.info(
+                        "Compacted LLM context at %d context tokens",
+                        context_window_tokens,
+                    )
 
             if max_turns > 0 and turns >= max_turns:
                 logger.warning(

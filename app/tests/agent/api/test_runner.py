@@ -358,11 +358,12 @@ class TestCompactionIntegration:
         assert len(result.messages) >= 9
 
     @pytest.mark.asyncio
-    async def test_messages_compacted_when_notes_present(self, tmp_path):
+    async def test_messages_compacted_when_token_threshold_exceeded(self, tmp_path):
         notes_file = tmp_path / "notes.md"
         notes_file.write_text("## Callers\nFound a caller.")
 
         call_count = 0
+        large_usage = TokenUsage(input_tokens=95_000, output_tokens=6_000)
 
         async def side_effect(**kwargs):
             nonlocal call_count
@@ -373,9 +374,10 @@ class TestCompactionIntegration:
                     f"t{call_count}",
                     "Read",
                     {"file_path": "test.py"},
+                    usage=large_usage,
                 )
 
-            return _make_text_response("Done.")
+            return _make_text_response("Done.", usage=large_usage)
 
         mock_provider = AsyncMock()
         mock_provider.send = AsyncMock(side_effect=side_effect)
@@ -396,6 +398,48 @@ class TestCompactionIntegration:
             )
 
         assert len(result.messages) < 13
+
+    @pytest.mark.asyncio
+    async def test_no_compaction_below_token_threshold(self, tmp_path):
+        notes_file = tmp_path / "notes.md"
+        notes_file.write_text("## Callers\nFound a caller.")
+
+        call_count = 0
+        small_usage = TokenUsage(input_tokens=5_000, output_tokens=200)
+
+        async def side_effect(**kwargs):
+            nonlocal call_count
+            call_count += 1
+
+            if call_count <= 3:
+                return _make_tool_use_response(
+                    f"t{call_count}",
+                    "Read",
+                    {"file_path": "test.py"},
+                    usage=small_usage,
+                )
+
+            return _make_text_response("Done.", usage=small_usage)
+
+        mock_provider = AsyncMock()
+        mock_provider.send = AsyncMock(side_effect=side_effect)
+
+        with patch(
+            "nominal_code.agent.api.runner.execute_tool",
+            new_callable=AsyncMock,
+            return_value=("content", False),
+        ):
+            result = await run_api_agent(
+                prompt="test",
+                cwd=tmp_path,
+                model="test-model",
+                provider=mock_provider,
+                provider_name=ProviderName.GOOGLE,
+                max_turns=10,
+                notes_file_path=notes_file,
+            )
+
+        assert len(result.messages) == 8
 
 
 class TestRunAgentApiCost:
