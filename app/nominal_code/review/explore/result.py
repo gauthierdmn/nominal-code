@@ -5,7 +5,22 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from nominal_code.llm.cost import CostSummary
-    from nominal_code.llm.messages import Message
+    from nominal_code.llm.messages import Message, TokenUsage
+
+
+@dataclass(frozen=True)
+class PlannerResult:
+    """
+    Result from the planner LLM call.
+
+    Attributes:
+        groups (list[ExploreGroup]): The exploration groups produced
+            by the planner.
+        usage (TokenUsage | None): Token usage for the planner call.
+    """
+
+    groups: list[ExploreGroup]
+    usage: TokenUsage | None = None
 
 
 @dataclass(frozen=True)

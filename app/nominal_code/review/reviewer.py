@@ -421,6 +421,21 @@ async def review(
         namespace=namespace,
     )
 
+    logger.info(
+        "Reviewer system prompt for %s#%d (%d chars):\n%s",
+        event.repo_full_name,
+        event.pr_number,
+        len(combined_system_prompt),
+        combined_system_prompt,
+    )
+    logger.info(
+        "Reviewer user prompt for %s#%d (%d chars):\n%s",
+        event.repo_full_name,
+        event.pr_number,
+        len(full_prompt),
+        full_prompt,
+    )
+
     result: AgentResult = await invoke_agent(
         prompt=full_prompt,
         cwd=ctx.repo_path,
@@ -496,24 +511,13 @@ async def review(
         rejected_findings=rejected_findings,
     )
 
-    cost_str: str = ""
-
-    if result.cost is not None and result.cost.total_cost_usd is not None:
-        cost_usd: float = result.cost.total_cost_usd
-        tokens_in: int = result.cost.total_input_tokens
-        tokens_out: int = result.cost.total_output_tokens
-        cost_str = (
-            f", cost=${cost_usd:.4f}, tokens_in={tokens_in}, tokens_out={tokens_out}"
-        )
-
-    logger.info(
-        "Reviewer finished for %s#%d (findings=%d, turns=%d, duration=%dms%s)",
-        event.repo_full_name,
-        event.pr_number,
-        len(review_result.findings),
-        result.num_turns,
-        result.duration_ms,
-        cost_str,
+    _log_review_costs(
+        event=event,
+        reviewer_cost=result.cost,
+        explore_metrics=explore_metrics,
+        findings_count=len(review_result.findings),
+        num_turns=result.num_turns,
+        duration_ms=result.duration_ms,
     )
 
     return ReviewResult(
@@ -639,6 +643,73 @@ async def run_and_post_review(
     )
 
     return review_result
+
+
+def _log_review_costs(
+    event: PullRequestEvent,
+    reviewer_cost: CostSummary | None,
+    explore_metrics: AggregatedMetrics | None,
+    findings_count: int,
+    num_turns: int,
+    duration_ms: int,
+) -> None:
+    """
+    Log the reviewer step cost and the aggregated total.
+
+    The planner and explore steps log their own costs. This function
+    logs the reviewer step and a final total line.
+
+    Args:
+        event (PullRequestEvent): The PR event for log context.
+        reviewer_cost (CostSummary | None): Cost from the reviewer step.
+        explore_metrics (AggregatedMetrics | None): Metrics from
+            planner + explore steps.
+        findings_count (int): Number of findings produced.
+        num_turns (int): Number of reviewer turns.
+        duration_ms (int): Wall-clock duration of the reviewer step.
+    """
+
+    pr_ref: str = f"{event.repo_full_name}#{event.pr_number}"
+
+    reviewer_tokens_in: int = 0
+    reviewer_tokens_out: int = 0
+    reviewer_cost_usd: float = 0.0
+
+    if reviewer_cost is not None:
+        reviewer_tokens_in = reviewer_cost.total_input_tokens
+        reviewer_tokens_out = reviewer_cost.total_output_tokens
+        reviewer_cost_usd = reviewer_cost.total_cost_usd or 0.0
+
+    logger.info(
+        "Step cost [reviewer] for %s: tokens_in=%d, tokens_out=%d, "
+        "api_calls=%d, cost=$%.4f",
+        pr_ref,
+        reviewer_tokens_in,
+        reviewer_tokens_out,
+        reviewer_cost.num_api_calls if reviewer_cost else 0,
+        reviewer_cost_usd,
+    )
+
+    total_tokens_in: int = reviewer_tokens_in
+    total_tokens_out: int = reviewer_tokens_out
+    total_cost: float = reviewer_cost_usd
+
+    if explore_metrics is not None:
+        total_tokens_in += explore_metrics.total_input_tokens
+        total_tokens_out += explore_metrics.total_output_tokens
+        total_cost += explore_metrics.total_cost_usd or 0.0
+
+    logger.info(
+        "Review complete for %s (findings=%d, turns=%d, duration=%dms, "
+        "total_tokens_in=%d, total_tokens_out=%d, total_cost=$%.4f)",
+        pr_ref,
+        findings_count,
+        num_turns,
+        duration_ms,
+        total_tokens_in,
+        total_tokens_out,
+        total_cost,
+    )
 
 
 def _build_reviewer_prompt(

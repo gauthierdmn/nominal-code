@@ -15,6 +15,8 @@ from nominal_code.agent.types import (
     SUB_AGENT_SYSTEM_SUFFIX,
     AgentType,
 )
+from nominal_code.llm.cost import compute_cost
+from nominal_code.llm.messages import TokenUsage
 from nominal_code.llm.provider import LLMProvider
 from nominal_code.models import ProviderName
 from nominal_code.review.explore.planner import plan_exploration_groups
@@ -26,6 +28,7 @@ from nominal_code.review.explore.result import (
     AggregatedMetrics,
     ExploreGroup,
     ParallelExploreResult,
+    PlannerResult,
     SubAgentResult,
 )
 
@@ -139,6 +142,16 @@ async def run_explore(
     duration_ms: int = _now_ms() - start_ms
     metrics: AggregatedMetrics = aggregate_metrics(successful, duration_ms)
 
+    logger.info(
+        "Step cost [explore]: tokens_in=%d, tokens_out=%d, "
+        "api_calls=%d, groups=%d, cost=$%.4f",
+        metrics.total_input_tokens,
+        metrics.total_output_tokens,
+        metrics.total_api_calls,
+        metrics.num_groups,
+        metrics.total_cost_usd or 0.0,
+    )
+
     return ParallelExploreResult(
         sub_results=tuple(successful),
         metrics=metrics,
@@ -220,17 +233,20 @@ async def run_explore_with_planner(
         return ParallelExploreResult()
 
     groups: list[ExploreGroup] | None = None
+    planner_result: PlannerResult | None = None
+    effective_planner_model: str = planner_model or model
 
     if len(changed_files) >= file_threshold:
-        effective_planner_model: str = planner_model or model
-
-        groups = await plan_exploration_groups(
+        planner_result = await plan_exploration_groups(
             changed_files=changed_files,
             diffs=diffs,
             provider=provider,
             model=effective_planner_model,
             guidelines=guidelines,
         )
+
+        if planner_result is not None:
+            groups = planner_result.groups
 
     if groups is None or len(groups) < 2:
         groups = [
@@ -240,7 +256,7 @@ async def run_explore_with_planner(
             ),
         ]
 
-    return await run_explore(
+    result: ParallelExploreResult = await run_explore(
         groups=groups,
         cwd=cwd,
         provider=provider,
@@ -248,6 +264,15 @@ async def run_explore_with_planner(
         provider_name=provider_name,
         system_prompt=system_prompt,
     )
+
+    if planner_result is not None and planner_result.usage is not None:
+        result = _add_planner_usage(
+            result=result,
+            usage=planner_result.usage,
+            model=effective_planner_model,
+        )
+
+    return result
 
 
 def aggregate_metrics(
@@ -447,6 +472,53 @@ def assemble_notes(
         "The following findings were gathered by exploration agents that "
         "investigated different concerns across the changed files.\n\n"
         f"{combined}"
+    )
+
+
+def _add_planner_usage(
+    result: ParallelExploreResult,
+    usage: TokenUsage,
+    model: str,
+) -> ParallelExploreResult:
+    """
+    Fold planner token usage into the aggregated explore metrics.
+
+    Args:
+        result (ParallelExploreResult): The explore result to augment.
+        usage (TokenUsage): Token usage from the planner call.
+        model (str): Model identifier for cost estimation.
+
+    Returns:
+        ParallelExploreResult: New result with planner cost included.
+    """
+
+    old_metrics: AggregatedMetrics = result.metrics
+    planner_cost: float | None = compute_cost(usage=usage, model=model)
+    new_cost: float | None = old_metrics.total_cost_usd
+
+    if planner_cost is not None:
+        new_cost = (new_cost or 0.0) + planner_cost
+
+    updated_metrics: AggregatedMetrics = AggregatedMetrics(
+        total_turns=old_metrics.total_turns,
+        total_api_calls=old_metrics.total_api_calls + 1,
+        total_input_tokens=old_metrics.total_input_tokens + usage.input_tokens,
+        total_output_tokens=old_metrics.total_output_tokens + usage.output_tokens,
+        total_cache_creation_tokens=(
+            old_metrics.total_cache_creation_tokens + usage.cache_creation_input_tokens
+        ),
+        total_cache_read_tokens=(
+            old_metrics.total_cache_read_tokens + usage.cache_read_input_tokens
+        ),
+        total_cost_usd=new_cost,
+        duration_ms=old_metrics.duration_ms,
+        num_groups=old_metrics.num_groups,
+        group_labels=old_metrics.group_labels,
+    )
+
+    return ParallelExploreResult(
+        sub_results=result.sub_results,
+        metrics=updated_metrics,
     )
 
 

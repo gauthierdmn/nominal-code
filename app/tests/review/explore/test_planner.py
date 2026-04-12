@@ -145,7 +145,7 @@ class TestPlanExplorationGroups:
             ),
         )
 
-        groups = await plan_exploration_groups(
+        result = await plan_exploration_groups(
             changed_files=["src/core.py"],
             diffs={"src/core.py": "+new line"},
             provider=mock_provider,
@@ -153,9 +153,9 @@ class TestPlanExplorationGroups:
             guidelines="",
         )
 
-        assert groups is not None
-        assert len(groups) == 1
-        assert groups[0].label == "core"
+        assert result is not None
+        assert len(result.groups) == 1
+        assert result.groups[0].label == "core"
         mock_provider.send.assert_called_once()
 
     @pytest.mark.asyncio

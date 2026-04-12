@@ -3,16 +3,18 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from nominal_code.llm.cost import compute_cost
 from nominal_code.llm.messages import (
     Message,
     TextBlock,
+    TokenUsage,
     ToolChoice,
     ToolDefinition,
     ToolUseBlock,
 )
 from nominal_code.llm.provider import LLMProvider
 from nominal_code.review.explore.prompts import load_planner_system_prompt
-from nominal_code.review.explore.result import ExploreGroup
+from nominal_code.review.explore.result import ExploreGroup, PlannerResult
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -64,7 +66,7 @@ async def plan_exploration_groups(
     guidelines: str,
     system_prompt: str = "",
     max_tokens: int = DEFAULT_PLANNER_MAX_TOKENS,
-) -> list[ExploreGroup] | None:
+) -> PlannerResult | None:
     """
     Partition review work into concern-based exploration groups using an LLM.
 
@@ -89,14 +91,25 @@ async def plan_exploration_groups(
         max_tokens (int): Maximum tokens in the planner response.
 
     Returns:
-        list[ExploreGroup] | None: Parsed groups, or ``None`` if
-            planning failed or produced invalid output.
+        PlannerResult | None: Parsed groups with token usage, or
+            ``None`` if planning failed or produced invalid output.
     """
 
     if not system_prompt:
         system_prompt = load_planner_system_prompt()
 
     user_message: str = build_planner_user_message(changed_files, diffs, guidelines)
+
+    logger.info(
+        "Planner system prompt (%d chars):\n%s",
+        len(system_prompt),
+        system_prompt,
+    )
+    logger.info(
+        "Planner user prompt (%d chars):\n%s",
+        len(user_message),
+        user_message,
+    )
 
     try:
         response = await provider.send(
@@ -120,6 +133,18 @@ async def plan_exploration_groups(
 
             break
 
+    usage: TokenUsage | None = response.usage
+
+    if usage is not None:
+        planner_cost: float | None = compute_cost(usage=usage, model=model)
+
+        logger.info(
+            "Step cost [planner]: tokens_in=%d, tokens_out=%d, api_calls=1, cost=$%.4f",
+            usage.input_tokens,
+            usage.output_tokens,
+            planner_cost or 0.0,
+        )
+
     if tool_use_block is None:
         logger.warning("Planner did not call submit_plan tool")
 
@@ -127,7 +152,12 @@ async def plan_exploration_groups(
 
     logger.info("Planner response: %s", tool_use_block.input)
 
-    return parse_plan_tool_input(tool_use_block.input)
+    groups: list[ExploreGroup] | None = parse_plan_tool_input(tool_use_block.input)
+
+    if groups is None:
+        return None
+
+    return PlannerResult(groups=groups, usage=usage)
 
 
 def build_planner_user_message(

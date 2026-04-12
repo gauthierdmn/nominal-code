@@ -16,6 +16,7 @@ from nominal_code.review.explore.explorer import (
 from nominal_code.review.explore.prompts import load_fallback_explore_prompt
 from nominal_code.review.explore.result import (
     ExploreGroup,
+    PlannerResult,
     SubAgentResult,
 )
 
@@ -327,10 +328,12 @@ class TestRunExploreWithPlanner:
         mock_plan,
         tmp_path,
     ):
-        mock_plan.return_value = [
-            ExploreGroup(label="group-a", prompt="explore a"),
-            ExploreGroup(label="group-b", prompt="explore b"),
-        ]
+        mock_plan.return_value = PlannerResult(
+            groups=[
+                ExploreGroup(label="group-a", prompt="explore a"),
+                ExploreGroup(label="group-b", prompt="explore b"),
+            ],
+        )
 
         mock_provider = AsyncMock()
         mock_provider.send = AsyncMock(
@@ -386,10 +389,12 @@ class TestRunExploreWithPlanner:
     @pytest.mark.asyncio
     @patch("nominal_code.review.explore.explorer.plan_exploration_groups")
     async def test_passes_guidelines_to_planner(self, mock_plan, tmp_path):
-        mock_plan.return_value = [
-            ExploreGroup(label="types", prompt="Check types."),
-            ExploreGroup(label="tests", prompt="Check tests."),
-        ]
+        mock_plan.return_value = PlannerResult(
+            groups=[
+                ExploreGroup(label="types", prompt="Check types."),
+                ExploreGroup(label="tests", prompt="Check tests."),
+            ],
+        )
 
         mock_provider = AsyncMock()
         mock_provider.send = AsyncMock(
