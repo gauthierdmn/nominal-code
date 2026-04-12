@@ -9,13 +9,14 @@ import time
 from pathlib import Path
 
 from nominal_code.agent.api.runner import run_api_agent
-from nominal_code.llm.messages import TokenUsage
 from nominal_code.agent.types import (
     AGENT_TYPE_TOOLS,
     DEFAULT_MAX_TURNS_PER_SUB_AGENT,
     SUB_AGENT_SYSTEM_SUFFIX,
     AgentType,
 )
+from nominal_code.llm.cost import compute_cost
+from nominal_code.llm.messages import TokenUsage
 from nominal_code.llm.provider import LLMProvider
 from nominal_code.models import ProviderName
 from nominal_code.review.explore.planner import plan_exploration_groups
