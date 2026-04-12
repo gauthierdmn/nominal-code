@@ -139,8 +139,7 @@ async def plan_exploration_groups(
         planner_cost: float | None = compute_cost(usage=usage, model=model)
 
         logger.info(
-            "Step cost [planner]: tokens_in=%d, tokens_out=%d, "
-            "api_calls=1, cost=$%.4f",
+            "Step cost [planner]: tokens_in=%d, tokens_out=%d, api_calls=1, cost=$%.4f",
             usage.input_tokens,
             usage.output_tokens,
             planner_cost or 0.0,
