@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 
 from nominal_code.agent.api.runner import run_api_agent
+from nominal_code.llm.messages import TokenUsage
 from nominal_code.agent.types import (
     AGENT_TYPE_TOOLS,
     DEFAULT_MAX_TURNS_PER_SUB_AGENT,
