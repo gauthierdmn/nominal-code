@@ -99,20 +99,18 @@ class AgentSettings(BaseModel):
     """
     Agent runner settings with per-role provider and model configuration.
 
-    Each role (reviewer, planner, explorer) can specify its own provider
-    and model. When planner or explorer fields are omitted, they inherit
-    from the reviewer's provider and model.
+    Each role (reviewer, explorer) can specify its own provider and model.
+    When the explorer field is omitted, it inherits from the reviewer's
+    provider and model.
 
     Attributes:
         reviewer (ProviderSettings): Reviewer agent provider and model.
-        planner (ProviderSettings): Planner agent provider and model.
         explorer (ProviderSettings): Explorer agent provider and model.
         cli_path (str | None): Path to the Claude Code CLI binary
             (reviewer CLI mode only).
     """
 
     reviewer: ProviderSettings = ProviderSettings()
-    planner: ProviderSettings = ProviderSettings()
     explorer: ProviderSettings = ProviderSettings()
     cli_path: str | None = None
 

@@ -442,6 +442,293 @@ class TestCompactionIntegration:
         assert len(result.messages) == 8
 
 
+class TestLastTurnWarning:
+    @pytest.mark.asyncio
+    async def test_last_turn_injects_warning_message(self, tmp_path):
+        call_count = 0
+
+        async def mock_send(**kwargs):
+            nonlocal call_count
+            call_count += 1
+
+            if call_count == 1:
+                return _make_tool_use_response(
+                    tool_id="t1",
+                    name="Glob",
+                    tool_input={"pattern": "*.py"},
+                )
+
+            return _make_tool_use_response(
+                tool_id="t2",
+                name="submit_review",
+                tool_input={"summary": "ok", "comments": []},
+            )
+
+        mock_provider = AsyncMock()
+        mock_provider.send = AsyncMock(side_effect=mock_send)
+
+        await run_api_agent(
+            prompt="Review",
+            cwd=tmp_path,
+            model="test",
+            provider=mock_provider,
+            provider_name=ProviderName.GOOGLE,
+            max_turns=2,
+            allowed_tools=["Glob", "submit_review"],
+        )
+
+        last_call_messages = mock_provider.send.call_args_list[-1].kwargs["messages"]
+        user_texts = [
+            block.text
+            for msg in last_call_messages
+            if msg.role == "user"
+            for block in msg.content
+            if hasattr(block, "text")
+        ]
+
+        assert any("last turn" in text.lower() for text in user_texts)
+
+    @pytest.mark.asyncio
+    async def test_exhausted_without_review_flag_set(self, tmp_path):
+        mock_provider = AsyncMock()
+        mock_provider.send = AsyncMock(
+            return_value=_make_tool_use_response(
+                tool_id="t1",
+                name="Glob",
+                tool_input={"pattern": "*.py"},
+            ),
+        )
+
+        result = await run_api_agent(
+            prompt="Review",
+            cwd=tmp_path,
+            model="test",
+            provider=mock_provider,
+            provider_name=ProviderName.GOOGLE,
+            max_turns=2,
+            allowed_tools=["Glob", "submit_review"],
+        )
+
+        assert result.exhausted_without_review is True
+
+    @pytest.mark.asyncio
+    async def test_exhausted_flag_false_without_submit_review(self, tmp_path):
+        mock_provider = AsyncMock()
+        mock_provider.send = AsyncMock(
+            return_value=_make_tool_use_response(
+                tool_id="t1",
+                name="Glob",
+                tool_input={"pattern": "*.py"},
+            ),
+        )
+
+        result = await run_api_agent(
+            prompt="Find files",
+            cwd=tmp_path,
+            model="test",
+            provider=mock_provider,
+            provider_name=ProviderName.GOOGLE,
+            max_turns=1,
+        )
+
+        assert result.exhausted_without_review is False
+
+
+class TestAgentToolDispatch:
+    @pytest.mark.asyncio
+    async def test_agent_tool_spawns_sub_agent(self, tmp_path):
+        from nominal_code.agent.sub_agent import SubAgentConfig
+
+        call_count = 0
+
+        async def mock_send(**kwargs):
+            nonlocal call_count
+            call_count += 1
+
+            if call_count == 1:
+                return _make_tool_use_response(
+                    tool_id="t1",
+                    name="Agent",
+                    tool_input={
+                        "subagent_type": "explore",
+                        "prompt": "find callers",
+                    },
+                )
+
+            return _make_tool_use_response(
+                tool_id="t2",
+                name="submit_review",
+                tool_input={"summary": "ok", "comments": []},
+            )
+
+        mock_provider = AsyncMock()
+        mock_provider.send = AsyncMock(side_effect=mock_send)
+
+        sub_provider = AsyncMock()
+        sub_provider.send = AsyncMock(
+            return_value=_make_text_response("done"),
+        )
+
+        sub_configs = {
+            "explore": SubAgentConfig(
+                provider=sub_provider,
+                model="cheap-model",
+                provider_name=ProviderName.GOOGLE,
+                system_prompt="You are an explorer.",
+                max_turns=2,
+                allowed_tools=["Read", "Grep"],
+                description="Fast explorer",
+            ),
+        }
+
+        result = await run_api_agent(
+            prompt="Review",
+            cwd=tmp_path,
+            model="test",
+            provider=mock_provider,
+            provider_name=ProviderName.GOOGLE,
+            allowed_tools=["submit_review"],
+            sub_agent_configs=sub_configs,
+        )
+
+        assert result.is_error is False
+        sub_provider.send.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_unknown_agent_type_returns_error(self, tmp_path):
+        from nominal_code.agent.sub_agent import SubAgentConfig
+
+        call_count = 0
+
+        async def mock_send(**kwargs):
+            nonlocal call_count
+            call_count += 1
+
+            if call_count == 1:
+                return _make_tool_use_response(
+                    tool_id="t1",
+                    name="Agent",
+                    tool_input={
+                        "subagent_type": "nonexistent",
+                        "prompt": "do stuff",
+                    },
+                )
+
+            return _make_text_response("done")
+
+        mock_provider = AsyncMock()
+        mock_provider.send = AsyncMock(side_effect=mock_send)
+
+        sub_configs = {
+            "explore": SubAgentConfig(
+                provider=AsyncMock(),
+                model="m",
+                provider_name=ProviderName.GOOGLE,
+                system_prompt="",
+                description="",
+            ),
+        }
+
+        result = await run_api_agent(
+            prompt="test",
+            cwd=tmp_path,
+            model="test",
+            provider=mock_provider,
+            provider_name=ProviderName.GOOGLE,
+            max_turns=3,
+            sub_agent_configs=sub_configs,
+        )
+
+        assert result.is_error is False
+
+    @pytest.mark.asyncio
+    async def test_parallel_agent_calls_run_concurrently(self, tmp_path):
+        import asyncio
+
+        from nominal_code.agent.sub_agent import SubAgentConfig
+
+        call_count = 0
+        concurrent_high_water = 0
+        active_count = 0
+
+        async def tracking_handle_agent(*args, **kwargs):
+            nonlocal active_count, concurrent_high_water
+
+            active_count += 1
+
+            if active_count > concurrent_high_water:
+                concurrent_high_water = active_count
+
+            await asyncio.sleep(0.01)
+            active_count -= 1
+
+            return "## Found something", False, None
+
+        async def mock_send(**kwargs):
+            nonlocal call_count
+            call_count += 1
+
+            if call_count == 1:
+                return LLMResponse(
+                    content=[
+                        ToolUseBlock(
+                            id="t1",
+                            name="Agent",
+                            input={
+                                "subagent_type": "explore",
+                                "prompt": "find callers",
+                            },
+                        ),
+                        ToolUseBlock(
+                            id="t2",
+                            name="Agent",
+                            input={
+                                "subagent_type": "explore",
+                                "prompt": "check tests",
+                            },
+                        ),
+                    ],
+                    stop_reason=StopReason.TOOL_USE,
+                )
+
+            return _make_tool_use_response(
+                tool_id="t3",
+                name="submit_review",
+                tool_input={"summary": "ok", "comments": []},
+            )
+
+        mock_provider = AsyncMock()
+        mock_provider.send = AsyncMock(side_effect=mock_send)
+
+        sub_configs = {
+            "explore": SubAgentConfig(
+                provider=AsyncMock(),
+                model="m",
+                provider_name=ProviderName.GOOGLE,
+                system_prompt="",
+                allowed_tools=["Read"],
+                description="Fast explorer",
+            ),
+        }
+
+        with patch(
+            "nominal_code.agent.api.runner._handle_agent_tool",
+            side_effect=tracking_handle_agent,
+        ):
+            result = await run_api_agent(
+                prompt="Review",
+                cwd=tmp_path,
+                model="test",
+                provider=mock_provider,
+                provider_name=ProviderName.GOOGLE,
+                allowed_tools=["submit_review"],
+                sub_agent_configs=sub_configs,
+            )
+
+        assert result.is_error is False
+        assert concurrent_high_water == 2
+
+
 class TestRunAgentApiCost:
     @pytest.mark.asyncio
     async def test_cost_summary_present_on_simple_response(self, tmp_path):
@@ -563,6 +850,7 @@ def _make_api_config():
     config = MagicMock()
     config.agent = ApiAgentConfig(
         reviewer=ProviderConfig(name=ProviderName.OPENAI, model="gpt-4.1"),
+        explorer=ProviderConfig(name=ProviderName.OPENAI, model="gpt-4.1-mini"),
     )
 
     return config

@@ -23,11 +23,13 @@ from nominal_code.models import (
 )
 from nominal_code.platforms.base import CommentEvent, ExistingComment, PlatformName
 from nominal_code.review.output import FALLBACK_MESSAGE
+from nominal_code.review.prompts import (
+    build_reviewer_prompt,
+    format_existing_comments,
+)
 from nominal_code.review.reviewer import (
     MAX_EXISTING_COMMENTS,
     ReviewResult,
-    _build_reviewer_prompt,
-    _format_existing_comments,
     review,
     run_and_post_review,
 )
@@ -432,7 +434,7 @@ class TestReviewerProcessComment:
 
 
 class TestBuildReviewerPrompt:
-    def test__build_reviewer_prompt_includes_changed_files(self):
+    def test_build_reviewer_prompt_includes_changed_files(self):
         comment = _make_comment()
         changed_files = [
             ChangedFile(
@@ -446,7 +448,7 @@ class TestBuildReviewerPrompt:
                 patch="@@ -0,0 +1 @@\n+line",
             ),
         ]
-        result = _build_reviewer_prompt(
+        result = build_reviewer_prompt(
             event=comment, user_prompt="focus on security", changed_files=changed_files
         )
 
@@ -461,7 +463,7 @@ class TestBuildReviewerPrompt:
         assert f"<{TAG_UNTRUSTED_DIFF}>" in result
         assert f"<{TAG_UNTRUSTED_REQUEST}>" in result
 
-    def test__build_reviewer_prompt_without_context(self):
+    def test_build_reviewer_prompt_without_context(self):
         comment = _make_comment()
         changed_files = [
             ChangedFile(
@@ -470,25 +472,25 @@ class TestBuildReviewerPrompt:
                 patch="+new",
             ),
         ]
-        result = _build_reviewer_prompt(
+        result = build_reviewer_prompt(
             event=comment, user_prompt="", changed_files=changed_files
         )
 
         assert "Callers" not in result
 
-    def test__build_reviewer_prompt_no_patch(self):
+    def test_build_reviewer_prompt_no_patch(self):
         comment = _make_comment()
         changed_files = [
             ChangedFile(file_path="binary.png", status=FileStatus.ADDED, patch=""),
         ]
-        result = _build_reviewer_prompt(
+        result = build_reviewer_prompt(
             event=comment, user_prompt="", changed_files=changed_files
         )
 
         assert "binary.png" in result
         assert "no patch available" in result
 
-    def test__build_reviewer_prompt_includes_context(self):
+    def test_build_reviewer_prompt_includes_context(self):
         comment = _make_comment()
         changed_files = [
             ChangedFile(
@@ -497,7 +499,7 @@ class TestBuildReviewerPrompt:
                 patch="+new",
             ),
         ]
-        result = _build_reviewer_prompt(
+        result = build_reviewer_prompt(
             event=comment,
             user_prompt="",
             changed_files=changed_files,
@@ -507,7 +509,7 @@ class TestBuildReviewerPrompt:
         assert "## Exploration" in result
         assert "Found 3 callers" in result
 
-    def test__build_reviewer_prompt_empty_context_omitted(self):
+    def test_build_reviewer_prompt_empty_context_omitted(self):
         comment = _make_comment()
         changed_files = [
             ChangedFile(
@@ -516,7 +518,7 @@ class TestBuildReviewerPrompt:
                 patch="+new",
             ),
         ]
-        result = _build_reviewer_prompt(
+        result = build_reviewer_prompt(
             event=comment,
             user_prompt="",
             changed_files=changed_files,
@@ -525,7 +527,7 @@ class TestBuildReviewerPrompt:
 
         assert "Exploration" not in result
 
-    def test__build_reviewer_prompt_context_before_review_instruction(self):
+    def test_build_reviewer_prompt_context_before_review_instruction(self):
         comment = _make_comment()
         changed_files = [
             ChangedFile(
@@ -534,7 +536,7 @@ class TestBuildReviewerPrompt:
                 patch="+new",
             ),
         ]
-        result = _build_reviewer_prompt(
+        result = build_reviewer_prompt(
             event=comment,
             user_prompt="",
             changed_files=changed_files,
@@ -545,7 +547,7 @@ class TestBuildReviewerPrompt:
         instruction_pos = result.index("Review the above changes")
         assert context_pos < instruction_pos
 
-    def test__build_reviewer_prompt_inline_suggestions_appended(self):
+    def test_build_reviewer_prompt_inline_suggestions_appended(self):
         comment = _make_comment()
         changed_files = [
             ChangedFile(
@@ -554,7 +556,7 @@ class TestBuildReviewerPrompt:
                 patch="+new",
             ),
         ]
-        result = _build_reviewer_prompt(
+        result = build_reviewer_prompt(
             event=comment,
             user_prompt="",
             changed_files=changed_files,
@@ -564,7 +566,7 @@ class TestBuildReviewerPrompt:
         assert "suggestion" in result
         assert "replacement code" in result
 
-    def test__build_reviewer_prompt_no_inline_suggestions(self):
+    def test_build_reviewer_prompt_no_inline_suggestions(self):
         comment = _make_comment()
         changed_files = [
             ChangedFile(
@@ -573,7 +575,7 @@ class TestBuildReviewerPrompt:
                 patch="+new",
             ),
         ]
-        result = _build_reviewer_prompt(
+        result = build_reviewer_prompt(
             event=comment,
             user_prompt="",
             changed_files=changed_files,
@@ -582,7 +584,7 @@ class TestBuildReviewerPrompt:
 
         assert "replacement code" not in result
 
-    def test__build_reviewer_prompt_includes_base_branch(self):
+    def test_build_reviewer_prompt_includes_base_branch(self):
         comment = CommentEvent(
             platform=PlatformName.GITHUB,
             repo_full_name="owner/repo",
@@ -601,7 +603,7 @@ class TestBuildReviewerPrompt:
                 patch="+new",
             ),
         ]
-        result = _build_reviewer_prompt(
+        result = build_reviewer_prompt(
             event=comment,
             user_prompt="",
             changed_files=changed_files,
@@ -609,7 +611,7 @@ class TestBuildReviewerPrompt:
 
         assert "Base branch: main" in result
 
-    def test__build_reviewer_prompt_omits_base_branch_when_empty(self):
+    def test_build_reviewer_prompt_omits_base_branch_when_empty(self):
         comment = _make_comment()
         changed_files = [
             ChangedFile(
@@ -618,7 +620,7 @@ class TestBuildReviewerPrompt:
                 patch="+new",
             ),
         ]
-        result = _build_reviewer_prompt(
+        result = build_reviewer_prompt(
             event=comment,
             user_prompt="",
             changed_files=changed_files,
@@ -628,7 +630,7 @@ class TestBuildReviewerPrompt:
 
 
 class TestBuildReviewerPromptWithExistingComments:
-    def test__build_reviewer_prompt_includes_existing_comments(self):
+    def test_build_reviewer_prompt_includes_existing_comments(self):
         comment = _make_comment()
         changed_files = [
             ChangedFile(file_path="a.py", status=FileStatus.MODIFIED, patch="+new"),
@@ -642,7 +644,7 @@ class TestBuildReviewerPromptWithExistingComments:
                 created_at="2026-01-01T10:00:00Z",
             ),
         ]
-        result = _build_reviewer_prompt(
+        result = build_reviewer_prompt(
             event=comment,
             user_prompt="",
             changed_files=changed_files,
@@ -655,23 +657,23 @@ class TestBuildReviewerPromptWithExistingComments:
         assert "Bug on this line" in result
         assert f"<{TAG_UNTRUSTED_COMMENT}>" in result
 
-    def test__build_reviewer_prompt_no_existing_comments_omits_section(self):
+    def test_build_reviewer_prompt_no_existing_comments_omits_section(self):
         comment = _make_comment()
         changed_files = [
             ChangedFile(file_path="a.py", status=FileStatus.MODIFIED, patch="+new"),
         ]
-        result = _build_reviewer_prompt(
+        result = build_reviewer_prompt(
             event=comment, user_prompt="", changed_files=changed_files
         )
 
         assert "Existing discussions" not in result
 
-    def test__build_reviewer_prompt_empty_existing_comments_omits_section(self):
+    def test_build_reviewer_prompt_empty_existing_comments_omits_section(self):
         comment = _make_comment()
         changed_files = [
             ChangedFile(file_path="a.py", status=FileStatus.MODIFIED, patch="+new"),
         ]
-        result = _build_reviewer_prompt(
+        result = build_reviewer_prompt(
             event=comment,
             user_prompt="",
             changed_files=changed_files,
@@ -680,7 +682,7 @@ class TestBuildReviewerPromptWithExistingComments:
 
         assert "Existing discussions" not in result
 
-    def test__build_reviewer_prompt_resolved_comment_tagged(self):
+    def test_build_reviewer_prompt_resolved_comment_tagged(self):
         comment = _make_comment()
         changed_files = [
             ChangedFile(file_path="a.py", status=FileStatus.MODIFIED, patch="+new"),
@@ -693,7 +695,7 @@ class TestBuildReviewerPromptWithExistingComments:
                 created_at="2026-01-01T10:00:00Z",
             ),
         ]
-        result = _build_reviewer_prompt(
+        result = build_reviewer_prompt(
             event=comment,
             user_prompt="",
             changed_files=changed_files,
@@ -702,7 +704,7 @@ class TestBuildReviewerPromptWithExistingComments:
 
         assert "(resolved)" in result
 
-    def test__build_reviewer_prompt_top_level_comment_no_location(self):
+    def test_build_reviewer_prompt_top_level_comment_no_location(self):
         comment = _make_comment()
         changed_files = [
             ChangedFile(file_path="a.py", status=FileStatus.MODIFIED, patch="+new"),
@@ -714,7 +716,7 @@ class TestBuildReviewerPromptWithExistingComments:
                 created_at="2026-01-01T10:00:00Z",
             ),
         ]
-        result = _build_reviewer_prompt(
+        result = build_reviewer_prompt(
             event=comment,
             user_prompt="",
             changed_files=changed_files,
@@ -1133,22 +1135,22 @@ class TestReview:
 
 
 class TestFormatExistingComments:
-    def test_format_existing_comments_empty_list(self):
+    def testformat_existing_comments_empty_list(self):
 
-        result = _format_existing_comments(comments=[])
+        result = format_existing_comments(comments=[])
 
         assert "## Existing discussions" in result
 
-    def test_format_existing_comments_includes_author(self):
+    def testformat_existing_comments_includes_author(self):
         comments = [ExistingComment(author="alice", body="Looks good!", created_at="")]
 
-        result = _format_existing_comments(comments=comments)
+        result = format_existing_comments(comments=comments)
 
         assert "alice" in result
         assert "Looks good!" in result
         assert f"<{TAG_UNTRUSTED_COMMENT}>" in result
 
-    def test_format_existing_comments_includes_file_path(self):
+    def testformat_existing_comments_includes_file_path(self):
         comments = [
             ExistingComment(
                 author="bob",
@@ -1159,12 +1161,12 @@ class TestFormatExistingComments:
             )
         ]
 
-        result = _format_existing_comments(comments=comments)
+        result = format_existing_comments(comments=comments)
 
         assert "src/main.py" in result
         assert "10" in result
 
-    def test_format_existing_comments_marks_resolved(self):
+    def testformat_existing_comments_marks_resolved(self):
         comments = [
             ExistingComment(
                 author="alice",
@@ -1174,23 +1176,23 @@ class TestFormatExistingComments:
             )
         ]
 
-        result = _format_existing_comments(comments=comments)
+        result = format_existing_comments(comments=comments)
 
         assert "resolved" in result
 
-    def test_format_existing_comments_top_level_comment_no_file_shown(self):
+    def testformat_existing_comments_top_level_comment_no_file_shown(self):
         comments = [
             ExistingComment(author="alice", body="LGTM", file_path="", created_at="")
         ]
 
-        result = _format_existing_comments(comments=comments)
+        result = format_existing_comments(comments=comments)
 
         assert "alice" in result
         assert "LGTM" in result
 
 
 class TestPromptBoundaryTags:
-    def test__build_reviewer_prompt_wraps_diff_in_boundary_tags(self):
+    def test_build_reviewer_prompt_wraps_diff_in_boundary_tags(self):
         comment = _make_comment()
         changed_files = [
             ChangedFile(
@@ -1200,14 +1202,14 @@ class TestPromptBoundaryTags:
             ),
         ]
 
-        result = _build_reviewer_prompt(
+        result = build_reviewer_prompt(
             event=comment, user_prompt="", changed_files=changed_files
         )
 
         assert f"<{TAG_UNTRUSTED_DIFF}>" in result
         assert f"</{TAG_UNTRUSTED_DIFF}>" in result
 
-    def test__build_reviewer_prompt_wraps_user_prompt_in_boundary_tags(self):
+    def test_build_reviewer_prompt_wraps_user_prompt_in_boundary_tags(self):
         comment = _make_comment()
         changed_files = [
             ChangedFile(
@@ -1217,7 +1219,7 @@ class TestPromptBoundaryTags:
             ),
         ]
 
-        result = _build_reviewer_prompt(
+        result = build_reviewer_prompt(
             event=comment, user_prompt="check security", changed_files=changed_files
         )
 
@@ -1225,7 +1227,7 @@ class TestPromptBoundaryTags:
         assert f"</{TAG_UNTRUSTED_REQUEST}>" in result
         assert "check security" in result
 
-    def test__build_reviewer_prompt_wraps_branch_in_boundary_tags(self):
+    def test_build_reviewer_prompt_wraps_branch_in_boundary_tags(self):
         comment = _make_comment(branch="feat/evil-branch")
         changed_files = [
             ChangedFile(
@@ -1235,13 +1237,13 @@ class TestPromptBoundaryTags:
             ),
         ]
 
-        result = _build_reviewer_prompt(
+        result = build_reviewer_prompt(
             event=comment, user_prompt="", changed_files=changed_files
         )
 
         assert f"<{TAG_BRANCH_NAME}>feat/evil-branch</{TAG_BRANCH_NAME}>" in result
 
-    def test__build_reviewer_prompt_wraps_file_paths_in_boundary_tags(self):
+    def test_build_reviewer_prompt_wraps_file_paths_in_boundary_tags(self):
         comment = _make_comment()
         changed_files = [
             ChangedFile(
@@ -1251,24 +1253,24 @@ class TestPromptBoundaryTags:
             ),
         ]
 
-        result = _build_reviewer_prompt(
+        result = build_reviewer_prompt(
             event=comment, user_prompt="", changed_files=changed_files
         )
 
         assert f"<{TAG_FILE_PATH}>src/main.py</{TAG_FILE_PATH}>" in result
 
-    def test__format_existing_comments_wraps_body_in_boundary_tags(self):
+    def test_format_existing_comments_wraps_body_in_boundary_tags(self):
         comments = [
             ExistingComment(author="alice", body="Nice work!", created_at=""),
         ]
 
-        result = _format_existing_comments(comments=comments)
+        result = format_existing_comments(comments=comments)
 
         assert f"<{TAG_UNTRUSTED_COMMENT}>" in result
         assert f"</{TAG_UNTRUSTED_COMMENT}>" in result
         assert "Nice work!" in result
 
-    def test__format_existing_comments_wraps_file_path_in_boundary_tags(self):
+    def test_format_existing_comments_wraps_file_path_in_boundary_tags(self):
         comments = [
             ExistingComment(
                 author="bob",
@@ -1279,195 +1281,38 @@ class TestPromptBoundaryTags:
             ),
         ]
 
-        result = _format_existing_comments(comments=comments)
+        result = format_existing_comments(comments=comments)
 
         assert f"<{TAG_FILE_PATH}>src/main.py</{TAG_FILE_PATH}>" in result
 
 
-class TestExploreIntegration:
+class TestAgenticReviewer:
     @pytest.mark.asyncio
-    async def test_explore_runs_for_api_agent(self):
+    async def test_review_uses_agentic_flow_for_api_agent(self):
         from nominal_code.config import ApiAgentConfig, ProviderConfig
         from nominal_code.models import ProviderName
-        from nominal_code.review.explore.result import (
-            AggregatedMetrics,
-            ParallelExploreResult,
-        )
-        from nominal_code.review.reviewer import _run_explore_for_review
 
         config = _make_config()
         config.agent = ApiAgentConfig(
-            reviewer=ProviderConfig(name=ProviderName.GOOGLE, model="gemini-2.5-pro"),
-        )
-
-        ctx = MagicMock()
-        ctx.repo_path = Path("/tmp/repo")
-        ctx.changed_files = [
-            ChangedFile(
-                file_path="src/main.py",
-                status=FileStatus.MODIFIED,
-                patch="+new line",
+            reviewer=ProviderConfig(
+                name=ProviderName.GOOGLE,
+                model="gemini-2.5-pro",
             ),
-        ]
-
-        mock_result = ParallelExploreResult(
-            sub_results=(),
-            metrics=AggregatedMetrics(
-                total_turns=4,
-                total_api_calls=2,
-                total_input_tokens=1000,
-                total_output_tokens=500,
-                num_groups=1,
+            explorer=ProviderConfig(
+                name=ProviderName.GOOGLE,
+                model="gemini-2.5-flash",
             ),
-        )
-        mock_provider = AsyncMock()
-        mock_provider.close = AsyncMock()
-
-        event = _make_comment()
-
-        with (
-            patch(
-                "nominal_code.review.reviewer.create_provider",
-                return_value=mock_provider,
-            ),
-            patch(
-                "nominal_code.review.reviewer.run_explore_with_planner",
-                new_callable=AsyncMock,
-                return_value=mock_result,
-            ) as mock_explore,
-            patch(
-                "nominal_code.review.reviewer.assemble_notes",
-                return_value="## Exploration notes",
-            ),
-        ):
-            context, metrics = await _run_explore_for_review(
-                ctx=ctx,
-                config=config,
-                event=event,
-            )
-
-        assert context == "## Exploration notes"
-        assert metrics is not None
-        assert metrics.total_turns == 4
-        mock_explore.assert_called_once()
-        mock_provider.close.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_explore_skipped_for_no_changed_files(self):
-        from nominal_code.config import ApiAgentConfig, ProviderConfig
-        from nominal_code.models import ProviderName
-        from nominal_code.review.reviewer import _run_explore_for_review
-
-        config = _make_config()
-        config.agent = ApiAgentConfig(
-            reviewer=ProviderConfig(name=ProviderName.GOOGLE, model="gemini-2.5-pro"),
-        )
-
-        ctx = MagicMock()
-        ctx.repo_path = Path("/tmp/repo")
-        ctx.changed_files = []
-
-        event = _make_comment()
-        context, metrics = await _run_explore_for_review(
-            ctx=ctx,
-            config=config,
-            event=event,
-        )
-
-        assert context == ""
-        assert metrics is None
-
-    @pytest.mark.asyncio
-    async def test_explore_uses_explorer_config_when_set(self):
-        from nominal_code.config import ApiAgentConfig, ProviderConfig
-        from nominal_code.models import ProviderName
-        from nominal_code.review.explore.result import ParallelExploreResult
-        from nominal_code.review.reviewer import _run_explore_for_review
-
-        explorer_config = ProviderConfig(
-            name=ProviderName.GOOGLE,
-            model="gemini-2.5-flash",
-        )
-        planner_config = ProviderConfig(
-            name=ProviderName.GOOGLE,
-            model="gemini-2.5-flash",
-        )
-        config = _make_config()
-        config.agent = ApiAgentConfig(
-            reviewer=ProviderConfig(name=ProviderName.GOOGLE, model="gemini-2.5-pro"),
-            explorer=explorer_config,
-            planner=planner_config,
-        )
-
-        ctx = MagicMock()
-        ctx.repo_path = Path("/tmp/repo")
-        ctx.changed_files = [
-            ChangedFile(
-                file_path="src/main.py",
-                status=FileStatus.MODIFIED,
-                patch="+new",
-            ),
-        ]
-
-        mock_provider = AsyncMock()
-        mock_provider.close = AsyncMock()
-
-        event = _make_comment()
-
-        with (
-            patch(
-                "nominal_code.review.reviewer.create_provider",
-                return_value=mock_provider,
-            ) as mock_create,
-            patch(
-                "nominal_code.review.reviewer.run_explore_with_planner",
-                new_callable=AsyncMock,
-                return_value=ParallelExploreResult(),
-            ) as mock_explore,
-            patch(
-                "nominal_code.review.reviewer.assemble_notes",
-                return_value="",
-            ),
-        ):
-            await _run_explore_for_review(
-                ctx=ctx,
-                config=config,
-                event=event,
-            )
-
-        mock_create.assert_called_once_with(name=ProviderName.GOOGLE)
-        call_kwargs = mock_explore.call_args.kwargs
-
-        assert call_kwargs["model"] == "gemini-2.5-flash"
-        assert call_kwargs["planner_model"] == "gemini-2.5-flash"
-
-    @pytest.mark.asyncio
-    async def test_review_populates_explore_metrics_for_api_agent(self):
-        from nominal_code.config import ApiAgentConfig, ProviderConfig
-        from nominal_code.models import ProviderName
-        from nominal_code.review.explore.result import (
-            AggregatedMetrics,
-            ParallelExploreResult,
-        )
-
-        config = _make_config()
-        config.agent = ApiAgentConfig(
-            reviewer=ProviderConfig(name=ProviderName.GOOGLE, model="gemini-2.5-pro"),
-        )
-
-        mock_explore_result = ParallelExploreResult(
-            sub_results=(),
-            metrics=AggregatedMetrics(total_turns=3, num_groups=2),
         )
 
         mock_agent_result = MagicMock()
         mock_agent_result.output = '{"summary": "LGTM", "findings": []}'
         mock_agent_result.cost = None
-        mock_agent_result.num_turns = 1
-        mock_agent_result.duration_ms = 100
+        mock_agent_result.num_turns = 3
+        mock_agent_result.duration_ms = 5000
         mock_agent_result.messages = ()
         mock_agent_result.is_error = False
         mock_agent_result.conversation_id = None
+        mock_agent_result.exhausted_without_review = False
 
         mock_provider = AsyncMock()
         mock_provider.close = AsyncMock()
@@ -1490,15 +1335,6 @@ class TestExploreIntegration:
                 return_value=mock_provider,
             ),
             patch(
-                "nominal_code.review.reviewer.run_explore_with_planner",
-                new_callable=AsyncMock,
-                return_value=mock_explore_result,
-            ),
-            patch(
-                "nominal_code.review.reviewer.assemble_notes",
-                return_value="notes",
-            ),
-            patch(
                 "nominal_code.review.reviewer.invoke_agent",
                 new_callable=AsyncMock,
                 return_value=mock_agent_result,
@@ -1512,6 +1348,81 @@ class TestExploreIntegration:
                 workspace_path="/tmp/repo",
             )
 
-        assert result.explore_metrics is not None
-        assert result.explore_metrics.total_turns == 3
-        assert result.explore_metrics.num_groups == 2
+        assert result.agent_review is not None
+        assert result.agent_review.summary == "LGTM"
+        assert result.num_turns == 3
+
+    @pytest.mark.asyncio
+    async def test_fallback_review_on_exhausted_turns(self):
+        from nominal_code.config import ApiAgentConfig, ProviderConfig
+        from nominal_code.models import ProviderName
+
+        config = _make_config()
+        config.agent = ApiAgentConfig(
+            reviewer=ProviderConfig(
+                name=ProviderName.GOOGLE,
+                model="gemini-2.5-pro",
+            ),
+            explorer=ProviderConfig(
+                name=ProviderName.GOOGLE,
+                model="gemini-2.5-flash",
+            ),
+        )
+
+        exhausted_result = MagicMock()
+        exhausted_result.output = "Max turns reached."
+        exhausted_result.cost = None
+        exhausted_result.num_turns = 8
+        exhausted_result.duration_ms = 10000
+        exhausted_result.messages = ()
+        exhausted_result.is_error = False
+        exhausted_result.conversation_id = None
+        exhausted_result.exhausted_without_review = True
+
+        fallback_result = MagicMock()
+        fallback_result.output = '{"summary": "Fallback review", "findings": []}'
+        fallback_result.cost = None
+        fallback_result.num_turns = 1
+        fallback_result.duration_ms = 2000
+        fallback_result.messages = ()
+        fallback_result.is_error = False
+        fallback_result.conversation_id = None
+        fallback_result.exhausted_without_review = False
+
+        mock_provider = AsyncMock()
+        mock_provider.close = AsyncMock()
+
+        event = _make_comment()
+        platform = _make_platform()
+        platform.fetch_pr_diff = AsyncMock(
+            return_value=[
+                ChangedFile(
+                    file_path="a.py",
+                    status=FileStatus.MODIFIED,
+                    patch="+new",
+                ),
+            ],
+        )
+
+        with (
+            patch(
+                "nominal_code.review.reviewer.create_provider",
+                return_value=mock_provider,
+            ),
+            patch(
+                "nominal_code.review.reviewer.invoke_agent",
+                new_callable=AsyncMock,
+                side_effect=[exhausted_result, fallback_result],
+            ) as mock_invoke,
+        ):
+            result = await review(
+                event=event,
+                prompt="",
+                config=config,
+                platform=platform,
+                workspace_path="/tmp/repo",
+            )
+
+        assert mock_invoke.call_count == 2
+        assert result.agent_review is not None
+        assert result.agent_review.summary == "Fallback review"

@@ -24,6 +24,10 @@ class AgentResult:
         messages (tuple[Message, ...]): Full message history from the API
             runner. Empty for CLI runner.
         cost (CostSummary | None): Cost information for the invocation.
+        exhausted_without_review (bool): True when max_turns was reached
+            without the model calling ``submit_review``.
+        sub_agent_costs (tuple[CostSummary, ...]): Cost summaries from
+            sub-agents spawned via the Agent tool during this run.
     """
 
     output: str
@@ -33,3 +37,5 @@ class AgentResult:
     conversation_id: str | None = None
     messages: tuple[Message, ...] = ()
     cost: CostSummary | None = None
+    exhausted_without_review: bool = False
+    sub_agent_costs: tuple[CostSummary, ...] = ()

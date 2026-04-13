@@ -331,6 +331,10 @@ class TestRunAgentApiDispatch:
                         name=ProviderName.ANTHROPIC,
                         model="test",
                     ),
+                    explorer=ProviderConfig(
+                        name=ProviderName.ANTHROPIC,
+                        model="test",
+                    ),
                 ),
                 prior_messages=prior,
             )

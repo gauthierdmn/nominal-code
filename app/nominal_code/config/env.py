@@ -32,8 +32,6 @@ ENV_MAP: list[tuple[str, list[str]]] = [
     ("AGENT_PROVIDER", ["agent", "reviewer", "provider"]),
     ("AGENT_MODEL", ["agent", "reviewer", "model"]),
     ("AGENT_CLI_PATH", ["agent", "cli_path"]),
-    ("AGENT_PLANNER_PROVIDER", ["agent", "planner", "provider"]),
-    ("AGENT_PLANNER_MODEL", ["agent", "planner", "model"]),
     ("AGENT_EXPLORER_PROVIDER", ["agent", "explorer", "provider"]),
     ("AGENT_EXPLORER_MODEL", ["agent", "explorer", "model"]),
     ("ALLOWED_USERS", ["access", "allowed_users"]),

@@ -37,6 +37,7 @@ WRITE_NOTES_TOOL_NAME: str = "WriteNotes"
 MAX_NOTES_FILE_SIZE: int = 50_000
 
 SUBMIT_REVIEW_TOOL_NAME: str = "submit_review"
+AGENT_TOOL_NAME: str = "Agent"
 
 SUBMIT_REVIEW_TOOL: ToolDefinition = {
     "name": SUBMIT_REVIEW_TOOL_NAME,
@@ -124,6 +125,57 @@ WRITE_NOTES_TOOL: ToolDefinition = {
         "required": ["content"],
     },
 }
+
+
+def build_agent_tool(
+    descriptions: dict[str, str],
+) -> ToolDefinition:
+    """
+    Build the Agent tool definition with available sub-agent types.
+
+    The returned tool allows the model to spawn sub-agents by specifying
+    a ``subagent_type`` and a ``prompt``. The ``subagent_type`` enum is
+    populated from the provided descriptions dict.
+
+    Args:
+        descriptions (dict[str, str]): Mapping of sub-agent type names
+            to their human-readable descriptions.
+
+    Returns:
+        ToolDefinition: The Agent tool definition with dynamic enum.
+    """
+
+    type_lines: list[str] = [
+        f"- **{name}**: {desc}" for name, desc in descriptions.items()
+    ]
+
+    return {
+        "name": AGENT_TOOL_NAME,
+        "description": (
+            "Launch a sub-agent to handle a task. The sub-agent runs with "
+            "its own tools and returns its findings as notes.\n\n"
+            "Available types:\n" + "\n".join(type_lines)
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "subagent_type": {
+                    "type": "string",
+                    "enum": list(descriptions.keys()),
+                    "description": "The type of sub-agent to launch.",
+                },
+                "prompt": {
+                    "type": "string",
+                    "description": (
+                        "Specific task instructions for the sub-agent. Name "
+                        "functions, classes, files, or patterns to investigate."
+                    ),
+                },
+            },
+            "required": ["subagent_type", "prompt"],
+        },
+    }
+
 
 TOOL_DEFINITIONS: list[ToolDefinition] = [
     {
