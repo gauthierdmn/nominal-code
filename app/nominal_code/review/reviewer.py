@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import shutil
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -13,18 +15,14 @@ from nominal_code.agent.invoke import (
     save_conversation,
 )
 from nominal_code.agent.prompts import (
-    TAG_BRANCH_NAME,
-    TAG_FILE_PATH,
     TAG_REPO_GUIDELINES,
-    TAG_UNTRUSTED_COMMENT,
-    TAG_UNTRUSTED_DIFF,
-    TAG_UNTRUSTED_REQUEST,
     resolve_guidelines,
     resolve_system_prompt,
     wrap_tag,
 )
 from nominal_code.agent.sandbox import sanitize_output
-from nominal_code.config import ApiAgentConfig, ProviderConfig
+from nominal_code.agent.sub_agent import DEFAULT_MAX_TURNS_PER_SUB_AGENT, SubAgentConfig
+from nominal_code.config import ApiAgentConfig
 from nominal_code.llm.messages import ToolChoice
 from nominal_code.llm.registry import create_provider
 from nominal_code.models import (
@@ -36,17 +34,19 @@ from nominal_code.platforms.base import (
     ExistingComment,
     PullRequestEvent,
 )
+from nominal_code.prompts import load_prompt
 from nominal_code.review.diff import (
-    annotate_diff,
     build_effective_summary,
     filter_findings,
 )
-from nominal_code.review.explore import assemble_notes, run_explore_with_planner
-from nominal_code.review.explore.result import AggregatedMetrics
 from nominal_code.review.output import (
     build_fallback_comment,
     parse_review_output,
     repair_review_output,
+)
+from nominal_code.review.prompts import (
+    build_fallback_review_prompt,
+    build_reviewer_prompt,
 )
 from nominal_code.workspace.setup import create_workspace
 
@@ -56,12 +56,18 @@ if TYPE_CHECKING:
     from nominal_code.conversation.base import ConversationStore
     from nominal_code.llm.cost import CostSummary
     from nominal_code.llm.messages import Message
+    from nominal_code.llm.provider import LLMProvider
     from nominal_code.models import AgentReview
     from nominal_code.platforms.base import Platform
     from nominal_code.workspace.git import GitWorkspace
 
 
 MAX_EXISTING_COMMENTS: int = 50
+REVIEWER_TEMP_DIR_PREFIX: str = "nominal-reviewer-"
+REVIEWER_NOTES_FILENAME: str = "notes.md"
+REVIEWER_NOTES_HEADER: str = "# Review Notes\n\n"
+EXPLORE_ALLOWED_TOOLS: list[str] = ["Read", "Glob", "Grep", "Bash", "WriteNotes"]
+EXPLORE_SYSTEM_SUFFIX: str = load_prompt("explore/suffix.md")
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -82,8 +88,8 @@ class ReviewResult:
         num_turns (int): Number of agentic turns taken by the LLM.
         messages (tuple[Message, ...]): Full LLM conversation transcript.
         input_prompt (str): Full prompt sent to the LLM.
-        explore_metrics (AggregatedMetrics | None): Metrics from the
-            pre-review exploration step, or None if explore was skipped.
+        sub_agent_costs (tuple[CostSummary, ...]): Cost summaries from
+            sub-agents spawned during the review.
     """
 
     agent_review: AgentReview | None
@@ -95,7 +101,7 @@ class ReviewResult:
     num_turns: int = 0
     messages: tuple[Message, ...] = ()
     input_prompt: str = ""
-    explore_metrics: AggregatedMetrics | None = None
+    sub_agent_costs: tuple[CostSummary, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -119,171 +125,6 @@ class ReviewContext:
     changed_files: list[ChangedFile]
     existing_comments: list[ExistingComment]
     workspace: GitWorkspace | None = None
-
-
-async def _prepare_review_context(
-    event: PullRequestEvent,
-    config: Config,
-    platform: Platform,
-    workspace_path: str,
-    bot_username: str,
-) -> ReviewContext:
-    """
-    Set up workspace and fetch PR data for a review.
-
-    Handles both CI mode (pre-existing workspace) and clone mode. Fetches
-    the diff and existing comments in parallel with workspace setup.
-
-    Args:
-        event (PullRequestEvent): The parsed event that triggered the review.
-        config (Config): Application configuration.
-        platform (Platform): The platform client.
-        workspace_path (str): Pre-existing workspace path (skips cloning).
-        bot_username (str): Bot username to filter from existing comments.
-
-    Returns:
-        ReviewContext: The prepared workspace and PR data.
-    """
-
-    if workspace_path:
-        repo_path: Path = Path(workspace_path)
-
-        changed_files_result: list[ChangedFile]
-        all_comments_result: list[ExistingComment]
-
-        changed_files_result, all_comments_result = await asyncio.gather(
-            platform.fetch_pr_diff(
-                repo_full_name=event.repo_full_name,
-                pr_number=event.pr_number,
-            ),
-            platform.fetch_pr_comments(
-                repo_full_name=event.repo_full_name,
-                pr_number=event.pr_number,
-            ),
-        )
-
-        existing_comments: list[ExistingComment] = [
-            existing
-            for existing in all_comments_result
-            if not bot_username or existing.author != bot_username
-        ][-MAX_EXISTING_COMMENTS:]
-
-        return ReviewContext(
-            repo_path=repo_path,
-            deps_path=None,
-            changed_files=changed_files_result,
-            existing_comments=existing_comments,
-        )
-
-    workspace: GitWorkspace = create_workspace(
-        event=event,
-        config=config,
-    )
-
-    results: tuple[
-        list[ChangedFile], list[ExistingComment], None
-    ] = await asyncio.gather(
-        platform.fetch_pr_diff(
-            repo_full_name=event.repo_full_name,
-            pr_number=event.pr_number,
-        ),
-        platform.fetch_pr_comments(
-            repo_full_name=event.repo_full_name,
-            pr_number=event.pr_number,
-        ),
-        workspace.ensure_ready(),
-    )
-    workspace.maybe_create_deps_dir()
-
-    all_comments: list[ExistingComment] = results[1]
-
-    existing_comments = [
-        existing
-        for existing in all_comments
-        if not bot_username or existing.author != bot_username
-    ][-MAX_EXISTING_COMMENTS:]
-
-    return ReviewContext(
-        repo_path=workspace.repo_path,
-        deps_path=workspace.deps_path,
-        changed_files=results[0],
-        existing_comments=existing_comments,
-        workspace=workspace,
-    )
-
-
-async def _run_explore_for_review(
-    ctx: ReviewContext,
-    config: Config,
-    event: PullRequestEvent,
-) -> tuple[str, AggregatedMetrics | None]:
-    """
-    Run codebase exploration before the review agent.
-
-    Uses the explorer and planner provider configs from ``ApiAgentConfig``,
-    falling back to the reviewer config when not set. Resolves project
-    guidelines from the workspace and passes them to the planner.
-
-    Args:
-        ctx (ReviewContext): Prepared workspace and PR data.
-        config (Config): Application configuration with ``ApiAgentConfig``.
-        event (PullRequestEvent): The PR event for logging.
-
-    Returns:
-        tuple[str, AggregatedMetrics | None]: Assembled exploration notes
-            and aggregated metrics, or empty string and None on failure.
-    """
-
-    agent_config: ApiAgentConfig = config.agent  # type: ignore[assignment]
-
-    explorer_config: ProviderConfig = agent_config.explorer or agent_config.reviewer
-    planner_config: ProviderConfig = agent_config.planner or agent_config.reviewer
-
-    changed_files: list[str] = [cf.file_path for cf in ctx.changed_files]
-    diffs: dict[str, str] = {
-        cf.file_path: cf.patch for cf in ctx.changed_files if cf.patch
-    }
-
-    if not changed_files:
-        return "", None
-
-    file_paths: list[Path] = [Path(fp) for fp in changed_files]
-
-    guidelines: str = resolve_guidelines(
-        repo_path=ctx.repo_path,
-        default_guidelines=config.prompts.coding_guidelines,
-        language_guidelines=config.prompts.language_guidelines,
-        file_paths=file_paths,
-    )
-
-    provider = create_provider(name=explorer_config.name)
-
-    try:
-        result = await run_explore_with_planner(
-            changed_files=changed_files,
-            diffs=diffs,
-            cwd=ctx.repo_path,
-            provider=provider,
-            model=explorer_config.model,
-            provider_name=explorer_config.name,
-            planner_model=planner_config.model,
-            guidelines=guidelines,
-        )
-    finally:
-        await provider.close()
-
-    context: str = assemble_notes(result.sub_results)
-
-    if context:
-        logger.info(
-            "Explore complete for %s#%d: %d groups, %d chars",
-            event.repo_full_name,
-            event.pr_number,
-            result.metrics.num_groups,
-            len(context),
-        )
-
-    return context, result.metrics
 
 
 async def review(
@@ -338,32 +179,13 @@ async def review(
 
     reviewer_config = config.reviewer
 
-    explore_context: str = context
-    explore_metrics: AggregatedMetrics | None = None
-
-    if isinstance(config.agent, ApiAgentConfig) and not context:
-        try:
-            explore_context, explore_metrics = await _run_explore_for_review(
-                ctx=ctx,
-                config=config,
-                event=event,
-            )
-        except Exception:
-            logger.exception(
-                "Explore failed for %s#%d, continuing without context",
-                event.repo_full_name,
-                event.pr_number,
-            )
-
-            explore_context = ""
-
-    full_prompt: str = _build_reviewer_prompt(
+    full_prompt: str = build_reviewer_prompt(
         event=event,
         user_prompt=prompt,
         changed_files=ctx.changed_files,
         existing_comments=ctx.existing_comments,
         inline_suggestions=bool(reviewer_config.suggestions_prompt),
-        context=explore_context,
+        context=context,
     )
     base_system_prompt: str = reviewer_config.system_prompt
 
@@ -400,11 +222,52 @@ async def review(
     effective_allowed_tools: list[str]
 
     effective_tool_choice: ToolChoice | None = None
+    sub_agent_configs: dict[str, SubAgentConfig] | None = None
+    notes_file_path: Path | None = None
+    explore_provider: LLMProvider | None = None
 
     if isinstance(config.agent, ApiAgentConfig):
-        effective_allowed_tools = [SUBMIT_REVIEW_TOOL_NAME]
-        effective_max_turns: int = 1
-        effective_tool_choice = ToolChoice.REQUIRED
+        agent_config: ApiAgentConfig = config.agent
+
+        effective_allowed_tools = [
+            "Read",
+            "Glob",
+            "Grep",
+            "Bash",
+            "WriteNotes",
+            SUBMIT_REVIEW_TOOL_NAME,
+        ]
+        effective_max_turns: int = agent_config.reviewer_max_turns
+
+        explore_provider = create_provider(name=agent_config.explorer.name)
+
+        explore_system_prompt: str = (
+            load_prompt("explore/explorer.md")
+            + "\n\n"
+            + EXPLORE_SYSTEM_SUFFIX.format(agent_type="explore")
+        )
+
+        sub_agent_configs = {
+            "explore": SubAgentConfig(
+                provider=explore_provider,
+                model=agent_config.explorer.model,
+                provider_name=agent_config.explorer.name,
+                system_prompt=explore_system_prompt,
+                max_turns=DEFAULT_MAX_TURNS_PER_SUB_AGENT,
+                allowed_tools=EXPLORE_ALLOWED_TOOLS,
+                description=(
+                    "Fast codebase explorer. Use for deep investigation: "
+                    "finding callers, checking test coverage, tracing type "
+                    "hierarchies. For simple lookups use Read/Grep directly."
+                ),
+            ),
+        }
+
+        notes_dir: Path = Path(
+            tempfile.mkdtemp(prefix=REVIEWER_TEMP_DIR_PREFIX),
+        )
+        notes_file_path = notes_dir / REVIEWER_NOTES_FILENAME
+        notes_file_path.write_text(REVIEWER_NOTES_HEADER, encoding="utf-8")
     else:
         effective_allowed_tools = [
             "Read",
@@ -436,17 +299,54 @@ async def review(
         full_prompt,
     )
 
-    result: AgentResult = await invoke_agent(
-        prompt=full_prompt,
-        cwd=ctx.repo_path,
-        system_prompt=combined_system_prompt,
-        allowed_tools=effective_allowed_tools,
-        agent_config=config.agent,
-        conversation_id=conversation_id,
-        prior_messages=prior_messages,
-        max_turns=effective_max_turns,
-        tool_choice=effective_tool_choice,
-    )
+    try:
+        result: AgentResult = await invoke_agent(
+            prompt=full_prompt,
+            cwd=ctx.repo_path,
+            system_prompt=combined_system_prompt,
+            allowed_tools=effective_allowed_tools,
+            agent_config=config.agent,
+            conversation_id=conversation_id,
+            prior_messages=prior_messages,
+            max_turns=effective_max_turns,
+            tool_choice=effective_tool_choice,
+            notes_file_path=notes_file_path,
+            sub_agent_configs=sub_agent_configs,
+        )
+
+        if result.exhausted_without_review:
+            logger.warning(
+                "Reviewer exhausted turns for %s#%d, "
+                "falling back to notes-based review",
+                event.repo_full_name,
+                event.pr_number,
+            )
+
+            notes_content: str = ""
+
+            if notes_file_path is not None and notes_file_path.exists():
+                notes_content = notes_file_path.read_text(encoding="utf-8")
+
+            fallback_prompt: str = build_fallback_review_prompt(
+                notes=notes_content,
+                original_prompt=full_prompt,
+            )
+
+            result = await invoke_agent(
+                prompt=fallback_prompt,
+                cwd=ctx.repo_path,
+                system_prompt=combined_system_prompt,
+                allowed_tools=[SUBMIT_REVIEW_TOOL_NAME],
+                agent_config=config.agent,
+                max_turns=1,
+                tool_choice=ToolChoice.REQUIRED,
+            )
+    finally:
+        if explore_provider is not None:
+            await explore_provider.close()
+
+        if notes_file_path is not None:
+            shutil.rmtree(notes_file_path.parent, ignore_errors=True)
 
     save_conversation(
         event=event,
@@ -490,7 +390,7 @@ async def review(
             num_turns=result.num_turns,
             messages=result.messages,
             input_prompt=full_prompt,
-            explore_metrics=explore_metrics,
+            sub_agent_costs=result.sub_agent_costs,
         )
 
     valid_findings, rejected_findings = filter_findings(
@@ -514,7 +414,7 @@ async def review(
     _log_review_costs(
         event=event,
         reviewer_cost=result.cost,
-        explore_metrics=explore_metrics,
+        sub_agent_costs=result.sub_agent_costs,
         findings_count=len(review_result.findings),
         num_turns=result.num_turns,
         duration_ms=result.duration_ms,
@@ -530,7 +430,7 @@ async def review(
         num_turns=result.num_turns,
         messages=result.messages,
         input_prompt=full_prompt,
-        explore_metrics=explore_metrics,
+        sub_agent_costs=result.sub_agent_costs,
     )
 
 
@@ -645,10 +545,101 @@ async def run_and_post_review(
     return review_result
 
 
+async def _prepare_review_context(
+    event: PullRequestEvent,
+    config: Config,
+    platform: Platform,
+    workspace_path: str,
+    bot_username: str,
+) -> ReviewContext:
+    """
+    Set up workspace and fetch PR data for a review.
+
+    Handles both CI mode (pre-existing workspace) and clone mode. Fetches
+    the diff and existing comments in parallel with workspace setup.
+
+    Args:
+        event (PullRequestEvent): The parsed event that triggered the review.
+        config (Config): Application configuration.
+        platform (Platform): The platform client.
+        workspace_path (str): Pre-existing workspace path (skips cloning).
+        bot_username (str): Bot username to filter from existing comments.
+
+    Returns:
+        ReviewContext: The prepared workspace and PR data.
+    """
+
+    if workspace_path:
+        repo_path: Path = Path(workspace_path)
+
+        changed_files_result: list[ChangedFile]
+        all_comments_result: list[ExistingComment]
+
+        changed_files_result, all_comments_result = await asyncio.gather(
+            platform.fetch_pr_diff(
+                repo_full_name=event.repo_full_name,
+                pr_number=event.pr_number,
+            ),
+            platform.fetch_pr_comments(
+                repo_full_name=event.repo_full_name,
+                pr_number=event.pr_number,
+            ),
+        )
+
+        existing_comments: list[ExistingComment] = [
+            existing
+            for existing in all_comments_result
+            if not bot_username or existing.author != bot_username
+        ][-MAX_EXISTING_COMMENTS:]
+
+        return ReviewContext(
+            repo_path=repo_path,
+            deps_path=None,
+            changed_files=changed_files_result,
+            existing_comments=existing_comments,
+        )
+
+    workspace: GitWorkspace = create_workspace(
+        event=event,
+        config=config,
+    )
+
+    results: tuple[
+        list[ChangedFile], list[ExistingComment], None
+    ] = await asyncio.gather(
+        platform.fetch_pr_diff(
+            repo_full_name=event.repo_full_name,
+            pr_number=event.pr_number,
+        ),
+        platform.fetch_pr_comments(
+            repo_full_name=event.repo_full_name,
+            pr_number=event.pr_number,
+        ),
+        workspace.ensure_ready(),
+    )
+    workspace.maybe_create_deps_dir()
+
+    all_comments: list[ExistingComment] = results[1]
+
+    existing_comments = [
+        existing
+        for existing in all_comments
+        if not bot_username or existing.author != bot_username
+    ][-MAX_EXISTING_COMMENTS:]
+
+    return ReviewContext(
+        repo_path=workspace.repo_path,
+        deps_path=workspace.deps_path,
+        changed_files=results[0],
+        existing_comments=existing_comments,
+        workspace=workspace,
+    )
+
+
 def _log_review_costs(
     event: PullRequestEvent,
     reviewer_cost: CostSummary | None,
-    explore_metrics: AggregatedMetrics | None,
+    sub_agent_costs: tuple[CostSummary, ...],
     findings_count: int,
     num_turns: int,
     duration_ms: int,
@@ -656,14 +647,11 @@ def _log_review_costs(
     """
     Log the reviewer step cost and the aggregated total.
 
-    The planner and explore steps log their own costs. This function
-    logs the reviewer step and a final total line.
-
     Args:
         event (PullRequestEvent): The PR event for log context.
         reviewer_cost (CostSummary | None): Cost from the reviewer step.
-        explore_metrics (AggregatedMetrics | None): Metrics from
-            planner + explore steps.
+        sub_agent_costs (tuple[CostSummary, ...]): Cost summaries from
+            sub-agents spawned via the Agent tool.
         findings_count (int): Number of findings produced.
         num_turns (int): Number of reviewer turns.
         duration_ms (int): Wall-clock duration of the reviewer step.
@@ -694,10 +682,10 @@ def _log_review_costs(
     total_tokens_out: int = reviewer_tokens_out
     total_cost: float = reviewer_cost_usd
 
-    if explore_metrics is not None:
-        total_tokens_in += explore_metrics.total_input_tokens
-        total_tokens_out += explore_metrics.total_output_tokens
-        total_cost += explore_metrics.total_cost_usd or 0.0
+    for cost in sub_agent_costs:
+        total_tokens_in += cost.total_input_tokens
+        total_tokens_out += cost.total_output_tokens
+        total_cost += cost.total_cost_usd or 0.0
 
     logger.info(
         "Review complete for %s (findings=%d, turns=%d, duration=%dms, "
@@ -710,127 +698,3 @@ def _log_review_costs(
         total_tokens_out,
         total_cost,
     )
-
-
-def _build_reviewer_prompt(
-    event: PullRequestEvent,
-    user_prompt: str,
-    changed_files: list[ChangedFile],
-    existing_comments: list[ExistingComment] | None = None,
-    inline_suggestions: bool = True,
-    context: str = "",
-) -> str:
-    """
-    Build a prompt for the one-turn reviewer agent.
-
-    Diffs are always line-annotated so the agent can reference exact
-    line numbers without needing to read files. Exploration notes
-    (when available) are inserted before the review instruction.
-
-    Args:
-        event (PullRequestEvent): The event with PR context.
-        user_prompt (str): The user's extracted prompt text.
-        changed_files (list[ChangedFile]): Files changed in the PR.
-        existing_comments (list[ExistingComment] | None): Existing PR
-            comments to include as context.
-        inline_suggestions (bool): Whether to instruct the agent to
-            produce one-click-apply code suggestions.
-        context (str): Pre-review exploration notes. Inserted verbatim
-            when non-empty.
-
-    Returns:
-        str: The full prompt to send to the agent.
-    """
-
-    branch_info: str = (
-        f"Branch: <{TAG_BRANCH_NAME}>{event.pr_branch}</{TAG_BRANCH_NAME}>"
-        f" (PR #{event.pr_number} on {event.repo_full_name})"
-    )
-
-    if event.base_branch:
-        branch_info += f"\nBase branch: {event.base_branch}"
-
-    parts: list[str] = [branch_info]
-
-    if user_prompt:
-        parts.append(
-            f"Additional instructions:\n{wrap_tag(TAG_UNTRUSTED_REQUEST, user_prompt)}"
-        )
-
-    parts.append("## Changed files\n")
-
-    for changed_file in changed_files:
-        file_header: str = (
-            f"### <{TAG_FILE_PATH}>{changed_file.file_path}</{TAG_FILE_PATH}>"
-            f" ({changed_file.status})"
-        )
-
-        if changed_file.patch:
-            parts.append(
-                f"{file_header}\n"
-                f"{wrap_tag(TAG_UNTRUSTED_DIFF, annotate_diff(changed_file.patch))}",
-            )
-        else:
-            parts.append(f"{file_header}\n_(no patch available)_")
-
-    if existing_comments:
-        parts.append(_format_existing_comments(existing_comments))
-
-    if context:
-        parts.append(context)
-
-    review_instruction: str = (
-        "Review the above changes. Each diff line is annotated with its "
-        "actual line number — use these directly. Call the submit_review "
-        "tool with your complete review.\n\n"
-        "For comments on deleted lines (prefixed with `-` in the diff), "
-        'set `"side": "LEFT"`. For additions (`+`) and context lines '
-        'omit `side` or use `"RIGHT"`.'
-    )
-
-    if inline_suggestions:
-        review_instruction += (
-            "\n\nFor every issue where you can provide a concrete fix, "
-            "you MUST include a `suggestion` field with the exact "
-            "replacement code. The annotated diff shows the precise "
-            "indentation — match it exactly in your suggestion."
-        )
-
-    parts.append(review_instruction)
-
-    return "\n\n".join(parts)
-
-
-def _format_existing_comments(comments: list[ExistingComment]) -> str:
-    """
-    Format existing comments into a prompt section.
-
-    Args:
-        comments (list[ExistingComment]): The comments to format.
-
-    Returns:
-        str: Markdown-formatted existing discussions section.
-    """
-
-    lines: list[str] = [
-        "## Existing discussions\n",
-        "The following comments have already been posted on this PR. "
-        "Do not raise issues that are already covered below.\n",
-    ]
-
-    for existing in comments:
-        location: str = ""
-
-        if existing.file_path:
-            location = f" on `<{TAG_FILE_PATH}>{existing.file_path}</{TAG_FILE_PATH}>"
-
-            if existing.line:
-                location += f":{existing.line}"
-
-            location += "`"
-
-        resolved_tag: str = " (resolved)" if existing.is_resolved else ""
-        header: str = f"**@{existing.author}**{location}{resolved_tag}"
-        lines.append(f"{header}\n{wrap_tag(TAG_UNTRUSTED_COMMENT, existing.body)}")
-
-    return "\n\n".join(lines)

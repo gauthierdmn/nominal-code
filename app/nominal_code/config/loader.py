@@ -318,9 +318,8 @@ def _build_api_agent(
     """
     Build an API agent configuration with provider fallback.
 
-    Resolves provider configs for reviewer, planner, and explorer.
-    Planner and explorer inherit from the reviewer when not explicitly
-    configured.
+    Resolves provider configs for reviewer and explorer. The explorer
+    inherits from the reviewer when not explicitly configured.
 
     Args:
         settings (AppSettings): The application settings.
@@ -352,10 +351,6 @@ def _build_api_agent(
             update={"model": model},
         )
 
-    planner_config: ProviderConfig | None = _resolve_provider(
-        settings.agent.planner,
-        reviewer_config,
-    )
     explorer_config: ProviderConfig | None = _resolve_provider(
         settings.agent.explorer,
         reviewer_config,
@@ -363,8 +358,7 @@ def _build_api_agent(
 
     return ApiAgentConfig(
         reviewer=reviewer_config,
-        planner=planner_config,
-        explorer=explorer_config,
+        explorer=explorer_config or reviewer_config,
     )
 
 

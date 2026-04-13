@@ -19,6 +19,7 @@ from nominal_code.agent.api.tools import (
     _resolve_path,
     _validate_bash_command,
     _validate_clone_host,
+    build_agent_tool,
     execute_tool,
     get_tool_definitions,
 )
@@ -70,6 +71,31 @@ class TestGetToolDefinitions:
 
         names = [tool["name"] for tool in result]
         assert WRITE_NOTES_TOOL_NAME not in names
+
+
+class TestBuildAgentTool:
+    def test_builds_tool_with_enum_from_descriptions(self):
+        descriptions = {
+            "explore": "Fast codebase explorer",
+            "verify": "Post-implementation verifier",
+        }
+        tool = build_agent_tool(descriptions)
+
+        assert tool["name"] == "Agent"
+        enum_values = tool["input_schema"]["properties"]["subagent_type"]["enum"]
+        assert enum_values == ["explore", "verify"]
+
+    def test_descriptions_appear_in_tool_description(self):
+        descriptions = {"explore": "Fast codebase explorer"}
+        tool = build_agent_tool(descriptions)
+
+        assert "explore" in tool["description"]
+        assert "Fast codebase explorer" in tool["description"]
+
+    def test_requires_subagent_type_and_prompt(self):
+        tool = build_agent_tool({"explore": "desc"})
+
+        assert tool["input_schema"]["required"] == ["subagent_type", "prompt"]
 
 
 class TestParseBashPatterns:

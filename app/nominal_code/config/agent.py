@@ -59,22 +59,21 @@ class ApiAgentConfig(BaseModel):
     Agent configuration for API-based modes (CI, webhook, CLI).
 
     Calls the LLM provider API directly. Requires a provider API key.
-    Each agent role (reviewer, planner, explorer) can use a different
-    provider and model. When ``planner`` or ``explorer`` is ``None``,
-    they fall back to ``reviewer``.
+    The reviewer is the main agentic model that drives the review. The
+    explorer is a cheaper sub-agent that the reviewer can delegate deep
+    codebase investigation to via the ``Agent`` tool.
 
     Attributes:
-        reviewer (ProviderConfig): Reviewer provider and model (also the
-            default for planner and explorer).
-        planner (ProviderConfig | None): Planner provider and model override.
-        explorer (ProviderConfig | None): Explorer provider and model override.
+        reviewer (ProviderConfig): Reviewer provider and model.
+        explorer (ProviderConfig): Explorer sub-agent provider and model.
+        reviewer_max_turns (int): Maximum agentic turns for the reviewer.
     """
 
     model_config = ConfigDict(frozen=True)
 
     reviewer: ProviderConfig
-    planner: ProviderConfig | None = None
-    explorer: ProviderConfig | None = None
+    explorer: ProviderConfig
+    reviewer_max_turns: int = 8
 
 
 AgentConfig = CliAgentConfig | ApiAgentConfig
@@ -84,7 +83,6 @@ def resolve_agent_config(
     provider_name: ProviderName | None,
     model: str | None,
     cli_path: str | None = None,
-    planner: ProviderConfig | None = None,
     explorer: ProviderConfig | None = None,
 ) -> AgentConfig:
     """
@@ -93,12 +91,10 @@ def resolve_agent_config(
     Args:
         provider_name (ProviderName | None): Provider enum, or ``None``
             for CLI mode.
-        model (str): Optional model override.
-        cli_path (str): Path to CLI binary (only used for CLI mode).
-        planner (ProviderConfig | None): Planner provider override
-            (API mode only).
-        explorer (ProviderConfig | None): Explorer provider override
-            (API mode only).
+        model (str | None): Optional model override.
+        cli_path (str | None): Path to CLI binary (CLI mode only).
+        explorer (ProviderConfig | None): Explorer sub-agent provider.
+            Defaults to the reviewer provider when ``None``.
 
     Returns:
         AgentConfig: Either ``CliAgentConfig`` or ``ApiAgentConfig``.
@@ -119,6 +115,5 @@ def resolve_agent_config(
 
     return ApiAgentConfig(
         reviewer=provider_config,
-        planner=planner,
-        explorer=explorer,
+        explorer=explorer or provider_config,
     )

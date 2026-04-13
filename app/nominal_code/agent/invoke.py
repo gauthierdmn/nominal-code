@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from nominal_code.agent.api.runner import run_api_agent
 from nominal_code.agent.cli.runner import run_cli_agent
 from nominal_code.agent.result import AgentResult
+from nominal_code.agent.sub_agent import SubAgentConfig
 from nominal_code.config import AgentConfig, ApiAgentConfig, CliAgentConfig
 from nominal_code.llm.messages import Message, ToolChoice
 from nominal_code.llm.registry import create_provider
@@ -78,6 +79,8 @@ async def invoke_agent(
     prior_messages: list[Message] | None = None,
     max_turns: int = 0,
     tool_choice: ToolChoice | None = None,
+    notes_file_path: Path | None = None,
+    sub_agent_configs: dict[str, SubAgentConfig] | None = None,
 ) -> AgentResult:
     """
     Run the agent by routing to the CLI or API backend.
@@ -101,6 +104,11 @@ async def invoke_agent(
         max_turns (int): Maximum agentic turns (0 for unlimited).
         tool_choice (ToolChoice | None): Controls whether the model must
             use tools (API mode only, ignored in CLI mode).
+        notes_file_path (Path | None): Pre-assigned file path for the
+            WriteNotes tool.
+        sub_agent_configs (dict[str, SubAgentConfig] | None): Mapping
+            of sub-agent type names to their configs. When provided,
+            the ``Agent`` tool is available to the model.
 
     Returns:
         AgentResult: The parsed result from the agent.
@@ -124,6 +132,8 @@ async def invoke_agent(
                 prior_messages=prior_messages,
                 provider_name=agent_config.reviewer.name,
                 tool_choice=tool_choice,
+                notes_file_path=notes_file_path,
+                sub_agent_configs=sub_agent_configs,
             )
         finally:
             await provider.close()
