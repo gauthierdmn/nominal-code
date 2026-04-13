@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hmac
 import json
 import logging
@@ -28,6 +29,7 @@ from nominal_code.platforms.base import (
     PlatformAuth,
     PlatformName,
     PullRequestEvent,
+    PullRequestMetadata,
 )
 from nominal_code.platforms.gitlab.auth import GitLabPatAuth
 from nominal_code.platforms.http import request_with_retry
@@ -490,6 +492,115 @@ class GitLabPlatform:
             )
 
         return files
+
+    async def fetch_pr_metadata(
+        self,
+        repo_full_name: str,
+        pr_number: int,
+    ) -> PullRequestMetadata:
+        """
+        Fetch MR title, description, and commit messages from GitLab.
+
+        Makes two parallel API calls: one for the MR object (title and
+        description) and one for the commit list. Returns a default empty
+        ``PullRequestMetadata`` on failure so reviews can proceed.
+
+        Args:
+            repo_full_name (str): Full repository name (e.g. ``group/repo``).
+            pr_number (int): Merge request IID.
+
+        Returns:
+            PullRequestMetadata: The fetched metadata.
+        """
+
+        mr_info, commits = await asyncio.gather(
+            self._fetch_mr_info(repo_full_name, pr_number),
+            self._fetch_mr_commits(repo_full_name, pr_number),
+        )
+
+        return PullRequestMetadata(
+            title=mr_info.get("title", ""),
+            description=mr_info.get("description", "") or "",
+            commit_messages=commits,
+        )
+
+    async def _fetch_mr_info(
+        self,
+        repo_full_name: str,
+        pr_number: int,
+    ) -> dict[str, Any]:
+        """
+        Fetch the MR object from GitLab.
+
+        Args:
+            repo_full_name (str): Full repository name.
+            pr_number (int): Merge request IID.
+
+        Returns:
+            dict[str, Any]: The MR JSON object, or empty dict on failure.
+        """
+
+        project_path: str = quote(repo_full_name, safe="")
+        url: str = f"/projects/{project_path}/merge_requests/{pr_number}"
+
+        try:
+            response: httpx.Response = await self._request("GET", url)
+            response.raise_for_status()
+            data: dict[str, Any] = response.json()
+
+            return data
+        except httpx.HTTPError:
+            logger.exception(
+                "Failed to fetch MR info for %s!%d",
+                repo_full_name,
+                pr_number,
+            )
+
+            return {}
+
+    async def _fetch_mr_commits(
+        self,
+        repo_full_name: str,
+        pr_number: int,
+    ) -> tuple[str, ...]:
+        """
+        Fetch commit messages for a GitLab MR.
+
+        Returns the title (first line) of each commit message.
+
+        Args:
+            repo_full_name (str): Full repository name.
+            pr_number (int): Merge request IID.
+
+        Returns:
+            tuple[str, ...]: Commit titles in chronological order.
+        """
+
+        project_path: str = quote(repo_full_name, safe="")
+        url: str = f"/projects/{project_path}/merge_requests/{pr_number}/commits"
+
+        try:
+            response: httpx.Response = await self._request("GET", url)
+            response.raise_for_status()
+            data: list[dict[str, Any]] = response.json()
+        except httpx.HTTPError:
+            logger.exception(
+                "Failed to fetch MR commits for %s!%d",
+                repo_full_name,
+                pr_number,
+            )
+
+            return ()
+
+        messages: list[str] = []
+
+        for entry in data:
+            title: str = entry.get("title", "").strip()
+
+            if title:
+                messages.append(title)
+
+        return tuple(messages)
 
     async def submit_review(
         self,

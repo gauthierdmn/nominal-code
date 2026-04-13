@@ -48,6 +48,9 @@ def build_event() -> PullRequestEvent:
         logger.error("CI_MERGE_REQUEST_IID is not an integer: %s", mr_iid_env)
         sys.exit(1)
 
+    pr_title: str = _env.str("CI_MERGE_REQUEST_TITLE", "")
+    base_branch: str = _env.str("CI_MERGE_REQUEST_TARGET_BRANCH_NAME", "")
+
     return PullRequestEvent(
         platform=PlatformName.GITLAB,
         repo_full_name=repo_full_name,
@@ -55,6 +58,8 @@ def build_event() -> PullRequestEvent:
         pr_branch=pr_branch,
         clone_url="",
         event_type=EventType.PR_OPENED,
+        pr_title=pr_title,
+        base_branch=base_branch,
     )
 
 

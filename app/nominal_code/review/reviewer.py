@@ -33,6 +33,7 @@ from nominal_code.platforms.base import (
     CommentReply,
     ExistingComment,
     PullRequestEvent,
+    PullRequestMetadata,
 )
 from nominal_code.prompts import load_prompt
 from nominal_code.review.diff import (
@@ -124,6 +125,7 @@ class ReviewContext:
     deps_path: Path | None
     changed_files: list[ChangedFile]
     existing_comments: list[ExistingComment]
+    metadata: PullRequestMetadata = PullRequestMetadata()
     workspace: GitWorkspace | None = None
 
 
@@ -186,6 +188,7 @@ async def review(
         existing_comments=ctx.existing_comments,
         inline_suggestions=bool(reviewer_config.suggestions_prompt),
         context=context,
+        metadata=ctx.metadata,
     )
     base_system_prompt: str = reviewer_config.system_prompt
 
@@ -574,13 +577,22 @@ async def _prepare_review_context(
 
         changed_files_result: list[ChangedFile]
         all_comments_result: list[ExistingComment]
+        metadata_result: PullRequestMetadata
 
-        changed_files_result, all_comments_result = await asyncio.gather(
+        (
+            changed_files_result,
+            all_comments_result,
+            metadata_result,
+        ) = await asyncio.gather(
             platform.fetch_pr_diff(
                 repo_full_name=event.repo_full_name,
                 pr_number=event.pr_number,
             ),
             platform.fetch_pr_comments(
+                repo_full_name=event.repo_full_name,
+                pr_number=event.pr_number,
+            ),
+            platform.fetch_pr_metadata(
                 repo_full_name=event.repo_full_name,
                 pr_number=event.pr_number,
             ),
@@ -597,6 +609,7 @@ async def _prepare_review_context(
             deps_path=None,
             changed_files=changed_files_result,
             existing_comments=existing_comments,
+            metadata=metadata_result,
         )
 
     workspace: GitWorkspace = create_workspace(
@@ -605,13 +618,17 @@ async def _prepare_review_context(
     )
 
     results: tuple[
-        list[ChangedFile], list[ExistingComment], None
+        list[ChangedFile], list[ExistingComment], PullRequestMetadata, None
     ] = await asyncio.gather(
         platform.fetch_pr_diff(
             repo_full_name=event.repo_full_name,
             pr_number=event.pr_number,
         ),
         platform.fetch_pr_comments(
+            repo_full_name=event.repo_full_name,
+            pr_number=event.pr_number,
+        ),
+        platform.fetch_pr_metadata(
             repo_full_name=event.repo_full_name,
             pr_number=event.pr_number,
         ),
@@ -632,6 +649,7 @@ async def _prepare_review_context(
         deps_path=workspace.deps_path,
         changed_files=results[0],
         existing_comments=existing_comments,
+        metadata=results[2],
         workspace=workspace,
     )
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import json
@@ -23,6 +24,7 @@ from nominal_code.platforms.base import (
     PlatformAuth,
     PlatformName,
     PullRequestEvent,
+    PullRequestMetadata,
 )
 from nominal_code.platforms.github.auth import (
     NO_INSTALLATION,
@@ -563,6 +565,117 @@ class GitHubPlatform:
             page += 1
 
         return files
+
+    async def fetch_pr_metadata(
+        self,
+        repo_full_name: str,
+        pr_number: int,
+    ) -> PullRequestMetadata:
+        """
+        Fetch PR title, description, and commit messages from GitHub.
+
+        Makes two parallel API calls: one for the PR object (title and
+        body) and one for the commit list. Returns a default empty
+        ``PullRequestMetadata`` on failure so reviews can proceed.
+
+        Args:
+            repo_full_name (str): Full repository name (e.g. ``owner/repo``).
+            pr_number (int): Pull request number.
+
+        Returns:
+            PullRequestMetadata: The fetched metadata.
+        """
+
+        pr_info, commits = await asyncio.gather(
+            self._fetch_pr_info(repo_full_name, pr_number),
+            self._fetch_pr_commits(repo_full_name, pr_number),
+        )
+
+        return PullRequestMetadata(
+            title=pr_info.get("title", ""),
+            description=pr_info.get("body", "") or "",
+            commit_messages=commits,
+        )
+
+    async def _fetch_pr_info(
+        self,
+        repo_full_name: str,
+        pr_number: int,
+    ) -> dict[str, Any]:
+        """
+        Fetch the PR object from GitHub.
+
+        Args:
+            repo_full_name (str): Full repository name.
+            pr_number (int): Pull request number.
+
+        Returns:
+            dict[str, Any]: The PR JSON object, or empty dict on failure.
+        """
+
+        url: str = f"/repos/{repo_full_name}/pulls/{pr_number}"
+
+        try:
+            response: httpx.Response = await self._request("GET", url)
+            response.raise_for_status()
+            data: dict[str, Any] = response.json()
+
+            return data
+        except httpx.HTTPError:
+            logger.exception(
+                "Failed to fetch PR info for %s#%d",
+                repo_full_name,
+                pr_number,
+            )
+
+            return {}
+
+    async def _fetch_pr_commits(
+        self,
+        repo_full_name: str,
+        pr_number: int,
+    ) -> tuple[str, ...]:
+        """
+        Fetch commit messages for a GitHub PR.
+
+        Returns the first line of each commit message.
+
+        Args:
+            repo_full_name (str): Full repository name.
+            pr_number (int): Pull request number.
+
+        Returns:
+            tuple[str, ...]: First-line commit messages in chronological order.
+        """
+
+        url: str = (
+            f"/repos/{repo_full_name}/pulls/{pr_number}/commits"
+            f"?per_page={FILES_PER_PAGE}"
+        )
+
+        try:
+            response: httpx.Response = await self._request("GET", url)
+            response.raise_for_status()
+            data: list[dict[str, Any]] = response.json()
+        except httpx.HTTPError:
+            logger.exception(
+                "Failed to fetch PR commits for %s#%d",
+                repo_full_name,
+                pr_number,
+            )
+
+            return ()
+
+        messages: list[str] = []
+
+        for entry in data:
+            full_message: str = entry.get("commit", {}).get("message", "")
+            first_line: str = full_message.split("\n", maxsplit=1)[0].strip()
+
+            if first_line:
+                messages.append(first_line)
+
+        return tuple(messages)
 
     async def submit_review(
         self,

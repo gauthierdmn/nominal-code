@@ -41,12 +41,15 @@ def _make_comment(
 
 
 def _make_platform():
+    from nominal_code.platforms.base import PullRequestMetadata
+
     platform = MagicMock()
     platform.post_reaction = AsyncMock()
     platform.post_reply = AsyncMock()
     platform.fetch_pr_branch = AsyncMock(return_value="")
     platform.fetch_pr_diff = AsyncMock(return_value=[])
     platform.fetch_pr_comments = AsyncMock(return_value=[])
+    platform.fetch_pr_metadata = AsyncMock(return_value=PullRequestMetadata())
     platform.submit_review = AsyncMock()
     platform.build_clone_url = MagicMock(
         return_value="https://ro-token@github.com/owner/repo.git",

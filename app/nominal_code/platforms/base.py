@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import TYPE_CHECKING, Protocol
 
@@ -51,6 +51,26 @@ class PullRequestEvent:
     clone_url: str = ""
     pr_title: str = ""
     base_branch: str = ""
+
+
+@dataclass(frozen=True)
+class PullRequestMetadata:
+    """
+    Metadata about a pull request fetched from the platform API.
+
+    Contains the PR description and commit messages that provide
+    additional context for the reviewer agent.
+
+    Attributes:
+        title (str): Pull request or merge request title.
+        description (str): Pull request or merge request description body.
+        commit_messages (tuple[str, ...]): First-line commit messages in
+            chronological order.
+    """
+
+    title: str = ""
+    description: str = ""
+    commit_messages: tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -345,6 +365,27 @@ class Platform(Protocol):
 
         Returns:
             list[ChangedFile]: The changed files with unified diff patches.
+        """
+
+        ...
+
+    async def fetch_pr_metadata(
+        self,
+        repo_full_name: str,
+        pr_number: int,
+    ) -> PullRequestMetadata:
+        """
+        Fetch PR/MR title, description, and commit messages.
+
+        Returns a default empty ``PullRequestMetadata`` on API failure
+        so that reviews can proceed without metadata.
+
+        Args:
+            repo_full_name (str): Full repository name (e.g. ``owner/repo``).
+            pr_number (int): Pull request or merge request number.
+
+        Returns:
+            PullRequestMetadata: The fetched metadata.
         """
 
         ...
