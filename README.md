@@ -17,11 +17,11 @@
 
 Nominal Code reads your PR diffs, runs an AI agent with access to the repository, and posts structured inline reviews anchored to specific lines of code. It works as a **CI job**, a **CLI command**, or a **self-hosted webhook server** with real-time interaction.
 
-In **API mode** (CI, or webhook/CLI with a provider key), it uses a two-phase pipeline: concern-partitioned exploration agents investigate the codebase (callers, test coverage, type safety, knock-on effects), then a single-turn review agent produces findings with full context. Concerns are derived from your project's coding guidelines. In **CLI mode**, it delegates to the Claude Code CLI which handles exploration and review in one conversation.
+In **API mode** (CI, or webhook/CLI with a provider key), a multi-turn reviewer agent investigates the codebase directly and spawns explore sub-agents on demand for deep investigation (callers, test coverage, type hierarchies), then produces findings via structured output. In **CLI mode**, it delegates to the Claude Code CLI which handles exploration and review in one conversation.
 
 ## Key Features
 
-- **Two-phase review in API mode** — concern-partitioned sub-agents gather codebase context guided by your project's coding guidelines (callers, tests, types, knock-on effects), then a single-turn review agent produces findings. No guessing, no hallucinated line numbers. Line-annotated diffs give the agent exact line numbers and indentation.
+- **Agentic review in API mode** — a multi-turn reviewer agent reads annotated diffs and investigates the codebase with Read, Grep, and Glob tools. For deep analysis it spawns explore sub-agents that trace callers, check tests, and verify types — then produces findings with full context. No guessing, no hallucinated line numbers.
 - **Inline reviews with code suggestions** — comments land exactly where the issue is, with one-click-apply fixes.
 - **7 LLM providers or Claude Code CLI** — use any provider API (Anthropic, OpenAI, Google Gemini, DeepSeek, Groq, Together, Fireworks), or run via the Claude Code CLI with a Pro/Max subscription — no API key needed.
 - **GitHub + GitLab** — same bot, both platforms simultaneously. GitHub App and PAT authentication supported.
@@ -36,35 +36,31 @@ In **API mode** (CI, or webhook/CLI with a provider key), it uses a two-phase pi
 
 ```
 PR opened / @mention
-       |
+       │
        v
-  +-----------+
-  |  Planner  |     Stage 1: read guidelines + changed files
-  |  (1 turn) |     partition into investigation concerns
-  +-----+-----+
-        |
-        v
-  +-----------+     +-----------+     +-----------+
-  |  Explorer |     |  Explorer |     |  Explorer |    Stage 2: concern-partitioned agents
-  |  agent 1  |     |  agent 2  |     |  agent N  |    (callers, tests, types...)
-  +-----+-----+     +-----+-----+     +-----+-----+
-        |                 |                 |
-        v                 v                 v
-     notes.md          notes.md          notes.md       WriteNotes tool
-        |                 |                 |
-        +--------+--------+--------+--------+
-                 |
-                 v
-          +--------------+
-          |   Reviewer   |     Stage 3: single-turn analysis
-          |   (1 turn)   |     annotated diffs + notes + guidelines
-          +------+-------+
-                 |
-                 v
-          submit_review          structured JSON review
-                 |
-                 v
-         GitHub / GitLab         inline comments + suggestions
+  +─────────────────────+
+  │   Reviewer Agent    │    Multi-turn loop (up to 8 turns)
+  │                     │    Tools: Read, Glob, Grep, Bash,
+  │                     │    WriteNotes, submit_review, Agent
+  +──────────+──────────+
+             │
+             ├── [simple lookup] ──> Read / Grep / Glob
+             │
+             ├── [deep investigation] ──> Agent tool
+             │                               │
+             │              +────────────────+────────────────+
+             │              │  Explore sub-agent (32 turns)   │
+             │              │  Read, Glob, Grep, Bash,        │
+             │              │  WriteNotes                     │
+             │              +────────────────+────────────────+
+             │                               │
+             │<── notes content ─────────────+
+             │
+             v
+       submit_review          structured JSON review
+             │
+             v
+      GitHub / GitLab         inline comments + suggestions
 ```
 
 In **CLI mode**, the Claude Code CLI handles both exploration and review in a single multi-turn conversation with its own tool set.
@@ -170,7 +166,7 @@ Full reference: [Configuration](https://gauthierdmn.github.io/nominal-code/refer
 - [Getting Started](https://gauthierdmn.github.io/nominal-code/getting-started/) — from zero to a working review
 - **Modes:** [CI](https://gauthierdmn.github.io/nominal-code/modes/ci/) | [CLI](https://gauthierdmn.github.io/nominal-code/modes/cli/) | [Webhook](https://gauthierdmn.github.io/nominal-code/modes/webhook/)
 - **Platforms:** [GitHub](https://gauthierdmn.github.io/nominal-code/platforms/github/) | [GitLab](https://gauthierdmn.github.io/nominal-code/platforms/gitlab/)
-- [Review Process](https://gauthierdmn.github.io/nominal-code/review/) | [Sub-Agents](https://gauthierdmn.github.io/nominal-code/reference/sub-agents/) | [Compaction](https://gauthierdmn.github.io/nominal-code/reference/compaction/)
+- [Review Process](https://gauthierdmn.github.io/nominal-code/review/) | [Sub-Agents](https://gauthierdmn.github.io/nominal-code/reference/explore/) | [Compaction](https://gauthierdmn.github.io/nominal-code/reference/compaction/)
 - **Reference:** [Configuration](https://gauthierdmn.github.io/nominal-code/reference/configuration/) | [Environment Variables](https://gauthierdmn.github.io/nominal-code/reference/env-vars/)
 - [Architecture](https://gauthierdmn.github.io/nominal-code/architecture/) | [Deployment](https://gauthierdmn.github.io/nominal-code/deployment/) | [Security](https://gauthierdmn.github.io/nominal-code/security/)
 

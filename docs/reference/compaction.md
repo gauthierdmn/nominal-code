@@ -4,7 +4,7 @@ When an agent runs for many turns, the accumulated message history (prompts, too
 
 ## Strategy: Notes-Based Compaction
 
-Nominal Code uses a **notes-based compaction strategy** for explore sub-agents. Instead of generating a summary at compaction time (which would require an extra LLM call), the agent writes structured findings to a markdown notes file throughout execution via the `WriteNotes` tool. When compaction triggers, the notes file content is used directly as the summary.
+Nominal Code uses a **notes-based compaction strategy** for agents with notes files (the reviewer and explore sub-agents). Instead of generating a summary at compaction time (which would require an extra LLM call), the agent writes structured findings to a markdown notes file throughout execution via the `WriteNotes` tool. When compaction triggers, the notes file content is used directly as the summary.
 
 This approach is inspired by [Claude Code's SessionMemory pattern](https://github.com/anthropics/claude-code), where a background subagent periodically extracts structured session notes into a file. When context compaction is needed, those pre-built notes replace older messages at zero cost — no additional LLM call required.
 
@@ -90,10 +90,9 @@ Compaction is controlled by two parameters on `run_api_agent()`:
 
 | Parameter | Type | Description |
 |---|---|---|
-| `enable_compaction` | `bool` | Whether to attempt compaction after each turn |
-| `notes_file_path` | `Path \| None` | Path to the notes file. Required for compaction to work |
+| `notes_file_path` | `Path \| None` | Path to the notes file. When provided, enables both note-writing and notes-based compaction |
 
-Both must be set for compaction to trigger. The sub-agent runner (`run_explore`) sets both automatically when launching explore sub-agents.
+Compaction triggers when `notes_file_path` is provided and the context window exceeds `COMPACTION_TOKEN_THRESHOLD`. The API runner (`run_api_agent`) handles this automatically for both the reviewer and explore sub-agents.
 
 ## Implementation
 

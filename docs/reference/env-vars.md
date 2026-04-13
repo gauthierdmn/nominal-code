@@ -60,9 +60,7 @@ These can also be set in the YAML config file under `reviewer` and `access`.
 | `AGENT_PROVIDER` | `agent.reviewer.provider` | `webhook` `cli` `ci` | — | Reviewer LLM provider (`anthropic`, `openai`, `google`, `deepseek`, `groq`, `together`, `fireworks`). When set in webhook/CLI mode, uses the API runner instead of the Claude Code CLI |
 | `AGENT_MODEL` | `agent.reviewer.model` | `webhook` `cli` `ci` | SDK/provider default | Reviewer model override (e.g. `claude-sonnet-4-6`, `gpt-4.1`) |
 | `AGENT_CLI_PATH` | `agent.cli_path` | `webhook` `cli` | Bundled | Path to the `claude` CLI binary (ignored when `AGENT_PROVIDER` is set) |
-| `AGENT_PLANNER_PROVIDER` | `agent.planner.provider` | `ci` | Same as reviewer | Planner LLM provider override |
-| `AGENT_PLANNER_MODEL` | `agent.planner.model` | `ci` | Same as reviewer | Planner model override |
-| `AGENT_EXPLORER_PROVIDER` | `agent.explorer.provider` | `ci` | Same as reviewer | Explorer LLM provider override |
+| `AGENT_EXPLORER_PROVIDER` | `agent.explorer.provider` | `ci` | Same as reviewer | Explorer sub-agent LLM provider override |
 | `AGENT_EXPLORER_MODEL` | `agent.explorer.model` | `ci` | Same as reviewer | Explorer model override |
 
 ## Prompts and Guidelines

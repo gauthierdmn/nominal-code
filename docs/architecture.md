@@ -142,78 +142,65 @@ The dispatcher in `agent/invoke.py` routes to the appropriate backend based on w
 
 ## Sub-Agents
 
-The `review/explore/` package provides concern-partitioned parallel sub-agent execution. A planner reads the project's coding guidelines and partitions the review into investigation concerns. Each concern is assigned to an isolated explore sub-agent that composes on top of `run_api_agent()`.
+The API runner (`agent/api/runner.py`) supports spawning sub-agents via the `Agent` tool. When `sub_agent_configs` is passed to `run_api_agent()`, the tool is dynamically added with the available sub-agent types. The reviewer in `review/reviewer.py` configures an "explore" sub-agent type for codebase investigation.
 
-### Agent Types
+### Agent Tool Dispatch
 
-`AgentType` is a `StrEnum` with per-type tool restrictions:
+When the model calls the `Agent` tool, `_dispatch_tools()` creates an `asyncio.Task` for each Agent call. Multiple Agent calls in the same turn run concurrently. Each task runs `_handle_agent_tool()`, which:
 
-| Type | Tools | Purpose |
+1. Validates the `subagent_type` against the provided configs.
+2. Creates a temporary notes directory with a header file.
+3. Recursively calls `run_api_agent()` with the sub-agent's provider, model, tools, and turn budget.
+4. Reads the notes file content after completion.
+5. Returns the notes (or the agent's text output if no notes were written) to the parent agent.
+
+Sub-agents cannot spawn other sub-agents (no recursive Agent tool) or produce reviews (no `submit_review` tool).
+
+### SubAgentConfig
+
+Defined in `agent/sub_agent.py`, this frozen dataclass configures a sub-agent type:
+
+| Field | Type | Description |
 |---|---|---|
-| `explore` | Read, Glob, Grep, Bash, WriteNotes | Read-only codebase exploration with structured notes |
-| `plan` | Read, Glob, Grep, Bash | Planning and analysis |
-
-No agent type includes the `submit_review` or `Agent` tool — sub-agents cannot produce reviews or spawn other sub-agents.
+| `provider` | `LLMProvider` | LLM provider instance |
+| `model` | `str` | Model identifier |
+| `provider_name` | `ProviderName` | Provider name for cost tracking |
+| `system_prompt` | `str` | Full system prompt |
+| `max_turns` | `int` | Turn budget (default 32) |
+| `allowed_tools` | `list[str]` | Tool names the sub-agent may use |
+| `description` | `str` | Description shown in Agent tool schema |
 
 ### WriteNotes Tool
 
-Explore sub-agents have access to a `WriteNotes` tool that appends structured findings to a pre-assigned markdown notes file. The agent writes findings incrementally as it discovers them — callers, tests, type definitions, knock-on effects — organized under markdown headings. The notes file is the agent's primary deliverable: the analysis agent receives its content, not the raw exploration conversation.
+Agents with a notes file (both the reviewer and explore sub-agents) have access to a `WriteNotes` tool that appends structured findings to a pre-assigned markdown file. The agent writes findings incrementally — callers, tests, type definitions, knock-on effects — organized under markdown headings.
 
-Each sub-agent gets its own notes file (no write conflicts during parallel execution). Files are created in a temporary directory that is cleaned up after notes are read back.
+Each sub-agent gets its own notes file (no write conflicts during concurrent execution). Files are created in a temporary directory that is cleaned up after notes are read back. The notes content is the sub-agent's primary deliverable: the reviewer receives the notes, not the raw exploration conversation.
 
 See [Compaction](reference/compaction.md) for how notes files also serve as the compaction summary.
 
-### Concern-Based Exploration
+### Explore Sub-Agent
 
-The primary entry point is `run_explore_with_planner()`. The planner receives the changed file list, diff line counts, and the project's coding guidelines. It derives investigation concerns from the guidelines (or falls back to defaults: callers, test coverage, type safety, knock-on effects) and creates groups where each agent focuses on a different concern. The same file may appear in multiple groups.
+The reviewer configures a single sub-agent type, `"explore"`, with these tools:
 
-Explore agents receive only the planner's concern-focused prompt — no diffs or file lists. They discover everything through their tools (`git diff`, Read, Grep).
+| Tool | Purpose |
+|---|---|
+| Read | Read file contents |
+| Glob | Find files by pattern |
+| Grep | Search file contents |
+| Bash | Shell commands |
+| WriteNotes | Record structured findings |
 
-```
-changed_files + diffs + guidelines
-        │
-        ├─ if len(files) >= file_threshold (default 8):
-        │       ▼
-        │   plan_exploration_groups(guidelines=...)
-        │       │
-        │       ├─ build_planner_user_message() → file paths + line counts + guidelines
-        │       ├─ provider.send() → single LLM call (no tools, JSON output)
-        │       └─ parse_planner_response() → list[ExploreGroup]
-        │
-        ├─ if planner produced ≥2 groups:
-        │       ▼
-        │   run_explore(groups)
-        │       │
-        │       ├─ allocate_turns(total, num_groups) → per_group turns (min 4)
-        │       ├─ asyncio.gather([
-        │       │    _run_single_sub_agent(group) → run_api_agent(allowed_tools=...)
-        │       │    for group in groups
-        │       │  ], return_exceptions=True)
-        │       └─ aggregate_metrics() → AggregatedMetrics
-        │
-        └─ else (fallback):
-                ▼
-            Single agent with generic exploration prompt
-```
+The reviewer decides when to spawn explorers based on the diffs it sees. It provides a task prompt describing what to investigate (e.g. "find all callers of `process_event` and check if they handle the new return type"). The explore sub-agent discovers everything through its tools.
 
-Each sub-agent receives:
-- A system prompt with the sub-agent suffix ("You are a background sub-agent...")
-- Tool restrictions from `AGENT_TYPE_TOOLS[AgentType.EXPLORE]`
-- The group's concern-focused exploration prompt (authored by the planner)
-- An isolated turn budget
+### Cost Tracking
 
-### Key Types
-
-- `ExploreGroup(label, files, prompt)` — a concern-based exploration group with a focused investigation prompt. Files may overlap across groups.
-- `SubAgentResult(group, output, is_error, num_turns, duration_ms, messages, cost)` — result from one sub-agent.
-- `AggregatedMetrics` — summed token counts, API calls, and costs across sub-agents with wall-clock duration.
-- `ParallelExploreResult(sub_results, metrics)` — aggregated result from parallel execution.
+Sub-agent costs are collected as `tuple[CostSummary, ...]` on `AgentResult.sub_agent_costs` and propagated to `ReviewResult.sub_agent_costs`. Each `CostSummary` carries token counts, API call count, and dollar cost for one sub-agent invocation.
 
 ### Prompts
 
 Bundled prompt files in `prompts/explore/`:
-- `explorer.md` — system prompt for exploration sub-agents (read-only context gathering via tools).
-- `planner.md` — system prompt for the planner (concern-based grouping into JSON).
+- `explorer.md` — system prompt for explore sub-agents (read-only context gathering via tools).
+- `suffix.md` — sub-agent suffix template appended to system prompts ("You are a background sub-agent...").
 
 ## Policies
 
@@ -294,7 +281,7 @@ Each incoming request is verified, parsed, and dispatched. The HTTP response is 
 
 ### Handlers
 
-- **`review.handler.review()`** — core review logic (clone, fetch diff + comments, build annotated diffs, run single-turn review agent, parse JSON, filter findings). Returns a `ReviewResult` without posting. Used by webhook, CLI, and CI modes.
+- **`review.handler.review()`** — core review logic (clone, fetch diff + comments, build annotated diffs, run multi-turn reviewer agent with optional sub-agents, parse JSON, filter findings). Returns a `ReviewResult` without posting. Used by webhook, CLI, and CI modes.
 - **`review.handler.run_and_post_review()`** — webhook/CI entry point. Calls `review()` then posts results to the platform.
 
 ### CLI Module (`commands/cli/main.py`)
@@ -346,7 +333,7 @@ The reviewer prompt is composed from multiple sources across two layers:
 4. Exploration notes — structured findings from concern-partitioned sub-agents
 5. Review instruction (use annotated line numbers, call `submit_review`)
 
-The review agent runs in single-turn mode with only the `submit_review` tool — one API call, no file reading. All context is provided upfront.
+The review agent runs as a multi-turn agentic loop with access to Read, Glob, Grep, Bash, WriteNotes, the Agent tool (for spawning explore sub-agents), and `submit_review`. It can investigate the codebase directly or delegate to sub-agents before producing its review.
 
 System prompt composition is handled by `agent/prompts.py`, which loads guidelines from the `.nominal/` directory with per-repo and per-language overrides. Language detection is based on file extensions in the PR diff.
 
@@ -458,30 +445,27 @@ nominal_code/
 │   ├── openai.py        # OpenAI provider implementation (also used by DeepSeek, Groq, Together, Fireworks)
 │   └── google.py        # Google Gemini provider implementation
 ├── agent/
-│   ├── invoke.py        # Single entry point: invoke_agent() (with persistence) + invoke_agent_stateless()
-│   ├── result.py        # AgentResult dataclass (output, turns, conversation ID, cost)
+│   ├── invoke.py        # Single entry point: invoke_agent() (with persistence)
+│   ├── result.py        # AgentResult dataclass (output, turns, conversation ID, cost, sub_agent_costs)
+│   ├── sub_agent.py     # SubAgentConfig dataclass, DEFAULT_MAX_TURNS_PER_SUB_AGENT
 │   ├── prompts.py       # Guideline loading, language detection, system prompt composition
 │   ├── errors.py        # Async context manager for handler error handling
 │   ├── compaction.py    # Notes-based message compaction
+│   ├── sandbox.py       # Output sanitization and environment building
 │   ├── api/
-│   │   ├── runner.py    # LLM provider API agentic loop (tool use)
-│   │   └── tools.py     # Tool definitions and execution (Read, Glob, Grep, Bash, WriteNotes, submit_review)
-│   ├── cli/
-│   │   └── runner.py    # Claude Code CLI subprocess wrapper (SDK integration)
-│   └── types.py         # AgentType enum, per-type tool mappings
+│   │   ├── runner.py    # LLM provider API agentic loop with sub-agent dispatch
+│   │   └── tools.py     # Tool definitions and execution (Read, Glob, Grep, Bash, WriteNotes, Agent, submit_review)
+│   └── cli/
+│       └── runner.py    # Claude Code CLI subprocess wrapper (SDK integration)
 ├── conversation/
 │   ├── base.py          # Conversation store protocol
 │   ├── memory.py        # In-memory conversation store
 │   └── redis.py         # Redis-backed conversation store
 ├── review/
-│   ├── reviewer.py      # Review orchestration: diff fetching, prompt building, output parsing
+│   ├── reviewer.py      # Review orchestration: diff fetching, sub-agent config, output parsing
+│   ├── prompts.py       # Reviewer prompt building, fallback prompt, comment formatting
 │   ├── diff.py          # Diff handling utilities
-│   ├── output.py        # Output parsing and JSON repair
-│   └── explore/         # Phase 1: concern-partitioned exploration pipeline
-│       ├── planner.py   # LLM-based concern partitioning planner
-│       ├── explorer.py  # run_explore(), run_explore_with_planner()
-│       ├── result.py    # ExploreGroup, SubAgentResult, AggregatedMetrics
-│       └── prompts.py   # Bundled prompt loading
+│   └── output.py        # Output parsing and JSON repair
 ├── platforms/
 │   ├── base.py          # Platform protocol and shared dataclasses
 │   ├── http.py          # request_with_retry(): HTTP request helper with transient error retries

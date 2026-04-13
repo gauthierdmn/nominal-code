@@ -53,7 +53,7 @@ The following mechanisms limit the impact of a successful prompt injection:
 
 - **`ALLOWED_USERS` gating** — only users listed in `ALLOWED_USERS` can trigger the agent via comments. Unauthorized users are silently ignored, preventing external actors from directly prompting the agent.
 
-- **Turn caps** — explore sub-agents have a fixed turn budget (default 32 per group). The review agent runs in single-turn mode (one API call). `MAX_RESPONSE_TOKENS` (16,384) caps each LLM response.
+- **Turn caps** — the reviewer agent runs in a multi-turn loop (default 8 turns). Explore sub-agents spawned via the Agent tool have a separate turn budget (default 32). `MAX_RESPONSE_TOKENS` (16,384) caps each LLM response.
 
 - **Diff line validation** — review findings are validated against the actual diff. Findings that reference lines outside the diff are filtered out and appended to the summary instead.
 
@@ -255,8 +255,8 @@ Output sanitization is applied at two points:
 | Grep timeout | 30 seconds | Prevents expensive searches |
 | HTTP client timeout | 30 seconds | Prevents hanging API calls |
 | Max response tokens | 16,384 | Caps LLM output per response |
-| Explore agent turns | 32 per group (default) | Limits exploration loop iterations |
-| Review agent turns | 1 (single-turn) | One API call, no tool loop |
+| Explore sub-agent turns | 32 (default) | Limits exploration loop iterations |
+| Reviewer agent turns | 8 (default) | Limits review loop iterations |
 | Max notes file size | 50,000 characters | Prevents runaway WriteNotes output |
 | Max glob results | 200 | Prevents oversized file listings |
 | Max grep output | 30,000 characters | Truncates large search results |
