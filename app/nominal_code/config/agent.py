@@ -67,6 +67,8 @@ class ApiAgentConfig(BaseModel):
         reviewer (ProviderConfig): Reviewer provider and model.
         explorer (ProviderConfig): Explorer sub-agent provider and model.
         reviewer_max_turns (int): Maximum agentic turns for the reviewer.
+        explorer_max_turns (int): Maximum agentic turns for each explorer
+            sub-agent.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -74,6 +76,7 @@ class ApiAgentConfig(BaseModel):
     reviewer: ProviderConfig
     explorer: ProviderConfig
     reviewer_max_turns: int = 8
+    explorer_max_turns: int = 32
 
 
 AgentConfig = CliAgentConfig | ApiAgentConfig

@@ -21,7 +21,7 @@ from nominal_code.agent.prompts import (
     wrap_tag,
 )
 from nominal_code.agent.sandbox import sanitize_output
-from nominal_code.agent.sub_agent import DEFAULT_MAX_TURNS_PER_SUB_AGENT, SubAgentConfig
+from nominal_code.agent.sub_agent import SubAgentConfig
 from nominal_code.config import ApiAgentConfig
 from nominal_code.llm.messages import ToolChoice
 from nominal_code.llm.registry import create_provider
@@ -253,7 +253,7 @@ async def review(
                 model=agent_config.explorer.model,
                 provider_name=agent_config.explorer.name,
                 system_prompt=explore_system_prompt,
-                max_turns=DEFAULT_MAX_TURNS_PER_SUB_AGENT,
+                max_turns=agent_config.explorer_max_turns,
                 allowed_tools=EXPLORE_ALLOWED_TOOLS,
                 description=(
                     "Fast codebase explorer. Use for deep investigation: "
