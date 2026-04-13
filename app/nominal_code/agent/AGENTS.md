@@ -8,7 +8,7 @@ The call chain follows four conceptual layers:
 
 1. **Receive** — `commands/webhook/main.py` receives webhooks, `commands/` handles CLI/CI entry points.
 2. **Prepare** — `workspace/setup.py::prepare_job_event()` resolves clone URLs and branches. `jobs/runner/process.py` wraps execution with error handling and queue management.
-3. **Orchestrate** — `review/reviewer.py` contains business logic (diff fetching, prompt building, output parsing). `review/explore/` implements Phase 1 exploration.
+3. **Orchestrate** — `review/reviewer.py` contains business logic (diff fetching, prompt building, sub-agent configuration, output parsing).
 4. **Invoke** — `agent/invoke.py` provides agent execution with explicit conversation lifecycle.
 
 ## Agent invocation
@@ -40,18 +40,22 @@ The API runner's default model is resolved from `llm.registry.DEFAULT_MODELS` ba
 - **Glob** — finds files by pattern, capped at 200 results.
 - **Grep** — runs `grep -rn` as a subprocess, 30s timeout.
 - **Bash** — runs shell commands. When `allowed_tools` contains patterns like `Bash(git clone*)`, commands are validated against those patterns via `fnmatch`. Unrestricted when no patterns are set.
-- **WriteNotes** — appends structured findings to a pre-assigned notes file. Only available to explore sub-agents. Path controlled by the orchestrator, not the agent. Capped at 50,000 characters per file.
+- **WriteNotes** — appends structured findings to a pre-assigned notes file. Available to the reviewer and explore sub-agents. Path controlled by the orchestrator, not the agent. Capped at 50,000 characters per file.
+- **Agent** — spawns a sub-agent by type (e.g. `"explore"`). Built dynamically by `build_agent_tool()` from the provided `sub_agent_configs`. The sub-agent runs its own `run_api_agent()` loop with isolated tools and turn budget, then returns its notes content.
 - **submit_review** — structured output tool for the review agent. The API runner intercepts calls and returns the input as JSON output.
 
 Tool definitions use canonical `ToolDefinition` (TypedDict with `name`, `description`, `input_schema`) — provider-agnostic.
 
 ## Review flow
 
-The review runs in three stages:
+In API mode, the reviewer runs as a **multi-turn agentic loop** (up to `reviewer_max_turns`, default 8). It has direct access to Read, Glob, Grep, Bash, and WriteNotes for its own investigation, plus the `Agent` tool for spawning explore sub-agents on demand.
 
-1. **Plan** — a single-turn planner reads the changed file list and the project's coding guidelines, then partitions the work into concern-based exploration groups via the `submit_plan` tool. Skipped when the PR has fewer than 8 changed files.
-2. **Explore** — concern-partitioned parallel explorer agents investigate the codebase. Each agent focuses on a different concern (e.g., callers, test coverage, type safety) and writes structured findings to a notes file via `WriteNotes`. Agents discover diffs and file lists through their tools (`git diff`, Read, Grep). Notes-based compaction (`compact_with_notes`) keeps long sessions within the context window.
-3. **Review** — a single-turn reviewer agent receives annotated diffs (line numbers on every line), exploration notes, guidelines, and existing comments. It calls `submit_review` with the structured JSON review. No file-reading tools — one API call, one output.
+1. The reviewer receives annotated diffs (line numbers on every line), coding guidelines, and existing PR comments.
+2. It can use tools directly for simple lookups (reading a file, grepping for callers) or spawn explore sub-agents via the `Agent` tool for deep investigation (tracing type hierarchies, checking test coverage across modules).
+3. Explore sub-agents run with their own turn budget (`explorer_max_turns`, default 32), write findings via `WriteNotes`, and return notes content to the reviewer. Multiple Agent calls in the same turn run concurrently.
+4. On the last turn, a warning is injected instructing the reviewer to call `submit_review` immediately.
+5. If `max_turns` is reached without `submit_review`, a fallback single-turn call is made with the reviewer's accumulated notes.
+6. The `submit_review` output is parsed as JSON, findings are filtered against the diff, and results are posted to the platform.
 
 ## File tree
 
@@ -59,23 +63,26 @@ The review runs in three stages:
 agent/
 ├── __init__.py      # Re-exports: invoke_agent, prepare_conversation, save_conversation, AgentResult
 ├── invoke.py        # prepare_conversation() + invoke_agent() + save_conversation()
-├── result.py        # AgentResult dataclass (output, is_error, num_turns, duration_ms, conversation_id, cost)
+├── result.py        # AgentResult dataclass (output, is_error, num_turns, duration_ms, cost, sub_agent_costs)
+├── sub_agent.py     # SubAgentConfig dataclass, DEFAULT_MAX_TURNS_PER_SUB_AGENT
 ├── prompts.py       # Guideline loading (.nominal/ overrides), language detection, system prompt composition
 ├── compaction.py    # Notes-based message compaction: compact_with_notes()
 ├── errors.py        # handle_agent_errors(): async context manager that catches and posts error replies
-├── types.py         # AgentType enum, AGENT_TYPE_TOOLS, SUB_AGENT_SYSTEM_SUFFIX
+├── sandbox.py       # Output sanitization and environment building
 ├── api/
-│   ├── runner.py    # Provider-agnostic agentic loop: run_api_agent()
-│   └── tools.py     # Tool definitions and local execution (Read, Glob, Grep, Bash, WriteNotes)
+│   ├── runner.py    # Provider-agnostic agentic loop: run_api_agent() with sub-agent dispatch
+│   └── tools.py     # Tool definitions and local execution (Read, Glob, Grep, Bash, WriteNotes, Agent, submit_review)
 └── cli/
     └── runner.py    # Claude Code CLI wrapper: run_cli_agent() (claude_agent_sdk.query + SDK monkey-patch)
 ```
 
-The exploration pipeline (planner + parallel explore agents) lives in `review/explore/`, not here. This package provides the generic agent infrastructure that the exploration pipeline builds on.
+Sub-agent infrastructure (`SubAgentConfig`, Agent tool handling, concurrent dispatch) lives in this package. The reviewer in `review/reviewer.py` configures explore sub-agents and passes them to `invoke_agent()`.
 
 ## Non-obvious details
 
 - `AgentResult.conversation_id` carries a CLI conversation ID or a provider response ID. Either can be `None` when the runner/provider does not support continuity.
+- `AgentResult.sub_agent_costs` collects `CostSummary` tuples from sub-agents spawned via the Agent tool during a run. Propagated to `ReviewResult.sub_agent_costs` for total pipeline cost tracking.
+- `AgentResult.exhausted_without_review` is `True` when `max_turns` was reached without the model calling `submit_review`. The reviewer uses this to trigger a fallback single-turn call.
 - The CLI runner captures the conversation ID from both the `init` system message and the `ResultMessage` — whichever is available. The `ResultMessage` takes precedence if it has one.
 - `resolve_system_prompt()` in `prompts.py` is the single composition entry point: resolves repo guidelines, detects languages, builds the full prompt.
 - Language detection currently supports Python only (`.py`, `.pyi`); extend via `EXTENSION_TO_LANGUAGE` in `prompts.py`.

@@ -39,9 +39,6 @@ agent:
   reviewer:
     provider: "google"
     model: ""
-  planner:                    # optional, falls back to reviewer
-    provider: ""
-    model: ""
   explorer:                   # optional, falls back to reviewer
     provider: ""
     model: ""

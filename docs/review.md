@@ -1,6 +1,6 @@
 # Review Process
 
-The bot runs a three-stage review pipeline: a **planner** partitions the work into investigation concerns, parallel **explorer** agents gather codebase context for each concern, then a single-turn **reviewer** agent produces a structured inline code review.
+In API mode, the bot runs a **multi-turn reviewer agent** that reads annotated diffs, investigates the codebase using tools, and optionally spawns **explore sub-agents** on demand for deep investigation. It produces a structured inline code review via the `submit_review` tool.
 
 ## How to Trigger
 
@@ -22,11 +22,12 @@ The bot can also run automatically on PR lifecycle events — see [Auto-Trigger]
 
 1. Clones the repository (or updates an existing workspace) to the PR's head branch.
 2. Concurrently fetches the full PR diff and existing comments.
-3. **Plan:** A planner agent reads the changed file list and the project's coding guidelines, then partitions the review into concern-based exploration groups (e.g., callers and dependencies, test coverage, type safety). This is a single LLM call with structured output via the `submit_plan` tool. When the PR has fewer than 8 changed files, the planner is skipped and a single explorer handles all concerns.
-4. **Explore:** Parallel explorer agents run concurrently — one per concern. Each agent uses read-only tools (Read, Grep, Glob, Bash) to discover diffs, search for callers, check test coverage, and verify type contracts. Findings are recorded incrementally via the `WriteNotes` tool. See [Exploration Pipeline](reference/explore.md).
-5. **Review:** A single-turn reviewer agent receives the annotated diffs, assembled exploration notes, coding guidelines, and existing comments. It calls the `submit_review` tool with a structured JSON review — one API call, no file-reading tools.
-6. Parses the agent's JSON output into a structured review.
-7. Posts the review as native inline comments on the PR/MR.
+3. Builds the reviewer prompt with annotated diffs, existing comments, coding guidelines, and any user instructions.
+4. Runs the **reviewer agent** as a multi-turn agentic loop (up to `reviewer_max_turns`, default 8). The reviewer has direct access to Read, Glob, Grep, Bash, and WriteNotes for its own investigation, plus the **Agent tool** for spawning explore sub-agents on demand.
+5. For deep investigation (tracing callers, checking test coverage, verifying type hierarchies), the reviewer spawns **explore sub-agents** via the Agent tool. Each sub-agent runs with its own turn budget (up to `explorer_max_turns`, default 32) and writes findings via WriteNotes. Multiple sub-agents run concurrently. See [Sub-Agents](reference/explore.md).
+6. The reviewer calls `submit_review` with a structured JSON review. If the turn limit is reached without calling `submit_review`, a fallback single-turn call is made with accumulated notes.
+7. Parses the agent's JSON output into a structured review.
+8. Posts the review as native inline comments on the PR/MR.
 
 ## Annotated Diffs
 
@@ -45,7 +46,7 @@ This allows the review agent to reference exact line numbers and indentation wit
 
 ## Exploration Notes
 
-Explore sub-agents write structured findings to markdown notes files organized under headings:
+When the reviewer spawns explore sub-agents, each sub-agent writes structured findings to a markdown notes file organized under headings:
 
 - `## Callers` — functions in other files that call or reference the changed code
 - `## Tests` — test coverage for the changed modules
@@ -53,17 +54,23 @@ Explore sub-agents write structured findings to markdown notes files organized u
 - `## Knock-on Effects` — callers not updated, config references not renamed
 - `## Additional Context` — surrounding function bodies, related code
 
-The notes from all sub-agents are assembled and injected into the review agent's prompt. See [Exploration Pipeline](reference/explore.md) and [Compaction](reference/compaction.md).
+Notes are returned to the reviewer as the Agent tool result, giving it full context for its review. See [Sub-Agents](reference/explore.md) and [Compaction](reference/compaction.md).
 
 ## Review Agent
 
-The review agent runs in **single-turn mode** — one API call, no file-reading tools. Its only tool is `submit_review`, which enforces the structured output format. The agent receives everything it needs in the prompt:
+In API mode, the reviewer is a **multi-turn agent** with access to these tools:
 
-- Annotated diffs with exact line numbers
-- Exploration notes from sub-agents
-- Repository coding guidelines
-- Existing PR comments (to avoid duplicates)
-- User instructions (if any)
+| Tool | Purpose |
+|---|---|
+| Read | Read file contents with line numbers |
+| Glob | Find files by pattern |
+| Grep | Search file contents |
+| Bash | Shell commands (with allowlist validation) |
+| WriteNotes | Record findings to a notes file |
+| Agent | Spawn explore sub-agents for deep investigation |
+| submit_review | Submit the final structured review |
+
+The reviewer receives annotated diffs, coding guidelines, existing PR comments, and user instructions in its prompt. It decides how to investigate — using tools directly for simple lookups or delegating to explore sub-agents for complex analysis.
 
 ## JSON Output and Retry Logic
 

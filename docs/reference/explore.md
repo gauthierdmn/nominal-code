@@ -1,38 +1,37 @@
-# Exploration Pipeline
+# Sub-Agents
 
-The `review.explore` package implements the plan → explore stages of the review pipeline. A planner agent reads the project's coding guidelines and partitions the work into investigation concerns. Each concern is assigned to a parallel explorer agent that gathers codebase context for the reviewer.
+The reviewer agent can spawn **explore sub-agents** on demand via the `Agent` tool. Sub-agents run their own agentic loop with isolated tools and a separate turn budget, then return their findings as notes content to the reviewer.
 
-## Three-Stage Pipeline
+## How It Works
 
 ```
-changed files + diffs + guidelines
-        │
-        ├─ Planner (1 turn, submit_plan tool)
-        │   → list[ExploreGroup]
-        │
-        ├─ Explorer agents (parallel, up to 32 turns each)
-        │   → notes files via WriteNotes
-        │
-        └─ assemble_notes()
-            → context string for the reviewer
+Reviewer agent (multi-turn, up to 8 turns)
+    │
+    ├─ [simple lookup] ──> Read / Grep / Glob directly
+    │
+    ├─ [deep investigation] ──> Agent tool
+    │                              │
+    │                   +──────────+──────────+
+    │                   │  Explore Sub-Agent  │
+    │                   │  (up to 32 turns)   │
+    │                   │  Read, Glob, Grep,  │
+    │                   │  Bash, WriteNotes   │
+    │                   +──────────+──────────+
+    │                              │
+    │                        notes.md (via WriteNotes)
+    │                              │
+    │<──── notes content ──────────+
+    │
+    └─ submit_review ──> structured JSON review
 ```
 
-When the PR has fewer than 8 changed files, the planner is skipped and a single explorer handles all concerns with a fallback prompt.
+The reviewer decides when exploration is needed based on what it sees in the diffs. It provides a task prompt describing what to investigate (e.g. "find all callers of `process_event` and check if they handle the new return type"). The sub-agent discovers everything through its tools.
 
-## Planner
+Multiple Agent calls in the same turn are dispatched concurrently via `asyncio.create_task`.
 
-Single LLM call with `tool_choice=REQUIRED` and the `submit_plan` tool. The planner receives:
+## Explore Sub-Agent
 
-- Changed file paths with `+N -M` line counts
-- The project's coding guidelines (when available)
-
-It returns 2–5 concern-based `ExploreGroup` objects. When no guidelines are available, it falls back to default concerns: callers and dependencies, test coverage, type safety and contracts, knock-on effects.
-
-The planner does NOT assign files to groups — it assigns investigation concerns. Each group has a `label` and a `prompt` with specific exploration instructions.
-
-## Explorer
-
-Each explorer agent runs via `run_api_agent()` with these tools:
+Each explore sub-agent runs via `run_api_agent()` with these tools:
 
 | Tool | Purpose |
 |---|---|
@@ -42,11 +41,11 @@ Each explorer agent runs via `run_api_agent()` with these tools:
 | Bash | Read-only shell commands (`git diff`, `git log`, etc.) |
 | WriteNotes | Record structured findings to a notes file |
 
-Explorer agents receive only the planner's concern-focused prompt — no diffs, no file lists. They discover everything through their tools (`git diff HEAD~1`, Read, Grep).
+Sub-agents do **not** have `submit_review` or `Agent` — they cannot produce reviews or spawn other sub-agents.
 
 ### WriteNotes
 
-Explorers record findings to a markdown notes file organized under headings:
+Sub-agents record findings to a markdown notes file organized under headings:
 
 - `## Callers` — functions calling the changed code
 - `## Tests` — test coverage for changed modules
@@ -56,66 +55,43 @@ Explorers record findings to a markdown notes file organized under headings:
 
 The notes file serves two purposes:
 
-1. **Primary deliverable** — the reviewer receives the notes content, not the raw conversation.
-2. **Compaction summary** — when the context window fills up, the notes file replaces older messages at zero cost. See [Compaction](compaction.md).
+1. **Primary deliverable** — the reviewer receives the notes content as the Agent tool result, not the raw conversation.
+2. **Compaction summary** — when the sub-agent's context window fills up, the notes file replaces older messages at zero cost. See [Compaction](compaction.md).
 
-Each explorer gets its own notes file (no write conflicts during parallel execution).
+Each sub-agent gets its own notes file in a temporary directory (no write conflicts during concurrent execution). The directory is cleaned up after notes are read back.
 
 ## Configuration
 
-Each stage can use a different LLM provider and model:
+The reviewer and explorer can use different LLM providers and models:
 
 ```yaml
 agent:
   reviewer:
     provider: "anthropic"
     model: "claude-sonnet-4-20250514"
-  planner:
-    provider: "google"
-    model: "gemini-2.5-flash"
-  explorer:
+  explorer:                   # optional, falls back to reviewer
     provider: "google"
     model: "gemini-2.5-flash"
 ```
 
-When `planner` or `explorer` are omitted, they inherit from `reviewer`. See [Configuration](configuration.md) and [Environment Variables](env-vars.md).
+When `explorer` is omitted, it inherits from `reviewer`. See [Configuration](configuration.md) and [Environment Variables](env-vars.md).
 
 | Parameter | Default | Description |
 |---|---|---|
-| `file_threshold` | `8` | Min changed files to trigger the planner |
-| Turn budget per explorer | `32` | `DEFAULT_MAX_TURNS_PER_SUB_AGENT` |
+| `reviewer_max_turns` | `8` | Turn budget for the reviewer agent |
+| `explorer_max_turns` | `32` | Turn budget per explore sub-agent |
 
-## Result Types
+## Cost Tracking
 
-### `ExploreGroup`
+Sub-agent costs are collected as `tuple[CostSummary, ...]` on `AgentResult.sub_agent_costs` and propagated to `ReviewResult.sub_agent_costs`. Each entry carries token counts, API call count, and estimated dollar cost for one sub-agent invocation.
 
-Returned by the planner, consumed by the explorer.
+The reviewer's `_log_review_costs()` function sums the reviewer's own cost with all sub-agent costs to produce the total pipeline cost.
 
-| Field | Type | Description |
-|---|---|---|
-| `label` | `str` | Short concern label (e.g., "callers", "test-coverage") |
-| `prompt` | `str` | Specific exploration instructions for the explorer |
+## Fallback Behavior
 
-### `SubAgentResult`
-
-| Field | Type | Description |
-|---|---|---|
-| `group` | `ExploreGroup` | The concern this agent explored |
-| `output` | `str` | Agent's text output |
-| `is_error` | `bool` | Whether execution errored |
-| `num_turns` | `int` | Agentic turns taken |
-| `duration_ms` | `int` | Wall-clock duration |
-| `cost` | `CostSummary \| None` | Token/cost info |
-| `notes` | `str` | Structured findings from the notes file |
-
-### `ParallelExploreResult`
-
-| Field | Type | Description |
-|---|---|---|
-| `sub_results` | `tuple[SubAgentResult, ...]` | Per-agent results |
-| `metrics` | `AggregatedMetrics` | Aggregated metrics (tokens, costs, turns) |
+If the reviewer reaches its turn limit (`reviewer_max_turns`) without calling `submit_review`, a fallback single-turn call is made. This call receives the original prompt plus any notes the reviewer accumulated, and is forced to call `submit_review` immediately via `tool_choice=REQUIRED`.
 
 ## Bundled Prompts
 
-- `prompts/explore/explorer.md` — explorer system prompt (read-only context gathering via tools).
-- `prompts/explore/planner.md` — planner system prompt (concern-based grouping via `submit_plan` tool).
+- `prompts/explore/explorer.md` — system prompt for explore sub-agents (read-only codebase investigation via tools).
+- `prompts/explore/suffix.md` — sub-agent suffix template appended to system prompts ("You are a background sub-agent...").
