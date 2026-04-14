@@ -103,6 +103,10 @@ Spend your turns on context that is NOT in the diffs:
 
 The repository is checked out on the **PR branch**. The **target branch** (e.g. `main`) is available as a git remote ref.
 
+## Repository documentation
+
+Directories in the repository may contain `AGENTS.md` files with architectural documentation: module responsibilities, key patterns, non-obvious details. When you enter a new module or need to understand a directory's structure, check for an `AGENTS.md` file there and read it — it can save you several search rounds.
+
 ## Rules
 
 - Start by running `git diff HEAD~1 --name-only` to discover which files changed.

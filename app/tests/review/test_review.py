@@ -79,12 +79,15 @@ def _make_comment(
 
 
 def _make_platform():
+    from nominal_code.platforms.base import PullRequestMetadata
+
     platform = MagicMock()
     platform.post_reaction = AsyncMock()
     platform.post_reply = AsyncMock()
     platform.fetch_pr_branch = AsyncMock(return_value="")
     platform.fetch_pr_diff = AsyncMock(return_value=[])
     platform.fetch_pr_comments = AsyncMock(return_value=[])
+    platform.fetch_pr_metadata = AsyncMock(return_value=PullRequestMetadata())
     platform.submit_review = AsyncMock()
     platform.build_clone_url = MagicMock(
         return_value="https://ro-token@github.com/owner/repo.git",
@@ -609,7 +612,7 @@ class TestBuildReviewerPrompt:
             changed_files=changed_files,
         )
 
-        assert "Base branch: main" in result
+        assert "-> main" in result
 
     def test_build_reviewer_prompt_omits_base_branch_when_empty(self):
         comment = _make_comment()
@@ -913,7 +916,7 @@ class TestBotCommentFiltering:
                     mock_gather.assert_called_once()
                     gather_args = mock_gather.call_args.args
 
-                    assert len(gather_args) == 3
+                    assert len(gather_args) == 4
 
             platform.fetch_pr_diff.assert_called_once_with(
                 repo_full_name="owner/repo",

@@ -58,6 +58,9 @@ def build_event() -> PullRequestEvent:
         )
         sys.exit(1)
 
+    pr_title: str = pull_request.get("title", "")
+    base_branch: str = pull_request.get("base", {}).get("ref", "")
+
     return PullRequestEvent(
         platform=PlatformName.GITHUB,
         repo_full_name=repo_full_name,
@@ -65,6 +68,8 @@ def build_event() -> PullRequestEvent:
         pr_branch=pr_branch,
         clone_url="",
         event_type=EventType.PR_OPENED,
+        pr_title=pr_title,
+        base_branch=base_branch,
     )
 
 

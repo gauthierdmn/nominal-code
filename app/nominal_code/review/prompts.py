@@ -4,13 +4,22 @@ from nominal_code.agent.prompts import (
     TAG_BRANCH_NAME,
     TAG_FILE_PATH,
     TAG_UNTRUSTED_COMMENT,
+    TAG_UNTRUSTED_COMMIT_MESSAGES,
+    TAG_UNTRUSTED_DESCRIPTION,
     TAG_UNTRUSTED_DIFF,
     TAG_UNTRUSTED_REQUEST,
     wrap_tag,
 )
 from nominal_code.models import ChangedFile
-from nominal_code.platforms.base import ExistingComment, PullRequestEvent
+from nominal_code.platforms.base import (
+    ExistingComment,
+    PullRequestEvent,
+    PullRequestMetadata,
+)
 from nominal_code.review.diff import annotate_diff
+
+MAX_DESCRIPTION_CHARS: int = 5_000
+MAX_COMMIT_MESSAGES: int = 20
 
 
 def build_reviewer_prompt(
@@ -20,6 +29,7 @@ def build_reviewer_prompt(
     existing_comments: list[ExistingComment] | None = None,
     inline_suggestions: bool = True,
     context: str = "",
+    metadata: PullRequestMetadata | None = None,
 ) -> str:
     """
     Build a prompt for the reviewer agent.
@@ -38,20 +48,15 @@ def build_reviewer_prompt(
             produce one-click-apply code suggestions.
         context (str): Pre-review exploration notes. Inserted verbatim
             when non-empty.
+        metadata (PullRequestMetadata | None): PR metadata with title,
+            description, and commit messages. When provided, these are
+            included at the top of the prompt.
 
     Returns:
         str: The full prompt to send to the agent.
     """
 
-    branch_info: str = (
-        f"Branch: <{TAG_BRANCH_NAME}>{event.pr_branch}</{TAG_BRANCH_NAME}>"
-        f" (PR #{event.pr_number} on {event.repo_full_name})"
-    )
-
-    if event.base_branch:
-        branch_info += f"\nBase branch: {event.base_branch}"
-
-    parts: list[str] = [branch_info]
+    parts: list[str] = [_format_pr_header(event, metadata)]
 
     if user_prompt:
         parts.append(
@@ -135,6 +140,70 @@ def format_existing_comments(comments: list[ExistingComment]) -> str:
         lines.append(f"{header}\n{wrap_tag(TAG_UNTRUSTED_COMMENT, existing.body)}")
 
     return "\n\n".join(lines)
+
+
+def _format_pr_header(
+    event: PullRequestEvent,
+    metadata: PullRequestMetadata | None,
+) -> str:
+    """
+    Format the PR header section with branch info and metadata.
+
+    Includes title, description, and commit messages when metadata
+    is available. Description and commits are wrapped in untrusted
+    tags for prompt injection defense.
+
+    Args:
+        event (PullRequestEvent): The event with branch context.
+        metadata (PullRequestMetadata | None): PR metadata from the
+            platform API.
+
+    Returns:
+        str: The formatted PR header section.
+    """
+
+    title: str = ""
+    description: str = ""
+    commit_messages: tuple[str, ...] = ()
+
+    if metadata is not None:
+        title = metadata.title
+        description = metadata.description
+        commit_messages = metadata.commit_messages
+
+    if not title:
+        title = event.pr_title
+
+    header_parts: list[str] = [
+        f"## Pull request #{event.pr_number} on {event.repo_full_name}\n",
+    ]
+
+    if title:
+        header_parts.append(f"**Title**: {title}")
+
+    branch_line: str = (
+        f"**Branch**: <{TAG_BRANCH_NAME}>{event.pr_branch}</{TAG_BRANCH_NAME}>"
+    )
+
+    if event.base_branch:
+        branch_line += f" -> {event.base_branch}"
+
+    header_parts.append(branch_line)
+
+    if description:
+        truncated: str = description[:MAX_DESCRIPTION_CHARS]
+        header_parts.append(
+            f"**Description**:\n{wrap_tag(TAG_UNTRUSTED_DESCRIPTION, truncated)}",
+        )
+
+    if commit_messages:
+        capped: tuple[str, ...] = commit_messages[:MAX_COMMIT_MESSAGES]
+        bullet_list: str = "\n".join(f"- {msg}" for msg in capped)
+        header_parts.append(
+            f"**Commits**:\n{wrap_tag(TAG_UNTRUSTED_COMMIT_MESSAGES, bullet_list)}",
+        )
+
+    return "\n".join(header_parts)
 
 
 def build_fallback_review_prompt(

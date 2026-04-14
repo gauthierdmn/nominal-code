@@ -42,6 +42,7 @@ platforms/
 | `build_clone_url()` | Build authenticated clone URL |
 | `fetch_pr_comments()` | Fetch existing PR comments |
 | `fetch_pr_diff()` | Fetch changed files with patches |
+| `fetch_pr_metadata()` | Fetch PR title, description, and commit messages |
 | `submit_review()` | Submit native code review with inline comments |
 
 ## PlatformAuth ABC
