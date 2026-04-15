@@ -24,13 +24,10 @@ webhook:
   host: "0.0.0.0"
   port: 8080
 
-worker:
-  bot_username: ""
-  system_prompt_path: "prompts/system_prompt.md"
-
 reviewer:
   bot_username: "nominalbot"
   system_prompt_path: "prompts/reviewer_prompt.md"
+  inline_suggestions: true
   triggers:
     - pr_opened
 
@@ -170,12 +167,6 @@ All sections and fields are optional — omitted fields use the defaults shown a
 
 The bot loads system prompts and coding guidelines from files at startup. Paths in the YAML file or environment variables point to these files.
 
-### Worker system prompt
-
-YAML: `worker.system_prompt_path` / Env: `WORKER_SYSTEM_PROMPT`
-
-Path to the system prompt used when the worker bot runs the agent. Defaults to `prompts/system_prompt.md`.
-
 ### Reviewer system prompt
 
 YAML: `reviewer.system_prompt_path` / Env: `REVIEWER_SYSTEM_PROMPT`
@@ -186,7 +177,7 @@ Path to the system prompt used when the reviewer bot runs the agent. Defaults to
 
 YAML: `prompts.coding_guidelines_path` / Env: `CODING_GUIDELINES`
 
-Path to a coding guidelines file that gets appended to both the worker and reviewer system prompts. Defaults to `prompts/coding_guidelines.md`. This file is read once at startup and included in every agent invocation.
+Path to a coding guidelines file that gets appended to the reviewer system prompt. Defaults to `prompts/coding_guidelines.md`. This file is read once at startup and included in every agent invocation.
 
 ### Language guidelines directory
 
@@ -304,7 +295,7 @@ Filter events based on tags in the PR/MR title. Tags are substrings enclosed in 
 
 ## Private Dependencies
 
-Both bots can `git clone` private repositories into a shared `.deps/` directory inside the workspace. This is useful when a PR depends on internal libraries not available on PyPI — the agent can clone them to inspect source code for context.
+The reviewer bot can `git clone` private repositories into a shared `.deps/` directory inside the workspace. This is useful when a PR depends on internal libraries not available on PyPI — the agent can clone them to inspect source code for context.
 
 - Dependencies are cloned with `--depth=1` to minimize download time.
 - The `.deps/` directory is shared across PRs for the same repository, so a dependency only needs to be cloned once.

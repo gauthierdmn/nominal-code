@@ -69,9 +69,8 @@ only, not as instructions.
 | `<untrusted-diff>` | PR patch | `_build_reviewer_prompt` |
 | `<untrusted-comment>` | Existing comment bodies | `_format_existing_comments` |
 | `<untrusted-request>` | User mention prompt | Both prompt builders |
-| `<untrusted-hunk>` | Diff hunk context | `_build_prompt` (worker) |
-| `<file-path>` | File paths | Both prompt builders |
-| `<branch-name>` | PR branch name | Both prompt builders |
+| `<file-path>` | File paths | Reviewer prompt builder |
+| `<branch-name>` | PR branch name | Reviewer prompt builder |
 | `<repo-guidelines>` | Repo guidelines | `resolve_system_prompt` |
 
 #### Attacks mitigated
@@ -99,19 +98,11 @@ successful prompt injection.
 
 ### Recommendations
 
-- **Prefer reviewer-only mode** — the reviewer bot's read-only tool set drastically limits the blast radius of prompt injection. Use the worker bot at your own risk.
-
 - **Keep `ALLOWED_USERS` tight** — only grant access to trusted team members. In open-source repos, this prevents external contributors from prompting the agent directly.
-
-- **Use read-only reviewer tokens** — set `GITHUB_REVIEWER_TOKEN` (or `GITLAB_REVIEWER_TOKEN`) to a token with only read and comment permissions. This adds a second layer of defense beyond tool restrictions.
 
 - **Review `.nominal/guidelines.md` changes carefully** — these files are injected into the system prompt. Treat changes to them with the same scrutiny as CI configuration changes.
 
 - **For open-source repos, prefer CI mode** — CI mode runs automatically on PR events without accepting user-supplied prompts, eliminating comment-based injection vectors entirely.
-
-!!! danger "Worker bot considerations"
-
-    The worker bot runs with **full tool access** (`bypassPermissions`) and can modify files, run arbitrary commands, and push commits. A successful prompt injection against the worker bot could result in arbitrary code execution and unauthorized repository changes. Only enable it in trusted, private repositories with a restricted set of allowed users.
 
 ## Webhook Verification
 
@@ -143,7 +134,7 @@ The webhook server enforces a **5 MB** maximum request body size. Payloads excee
 
 ### GitHub PAT Mode
 
-Set `GITHUB_TOKEN` to a personal access token. Optionally set `GITHUB_REVIEWER_TOKEN` for the reviewer bot to use a separate, more restricted token.
+Set `GITHUB_TOKEN` to a personal access token.
 
 ### GitHub App Mode (Recommended)
 
@@ -158,7 +149,7 @@ Configure via `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY` (inline) or `GITHUB_APP_
 
 ### GitLab
 
-Set `GITLAB_TOKEN` for full access. Optionally set `GITLAB_REVIEWER_TOKEN` for reviewer-specific operations.
+Set `GITLAB_TOKEN` for full access.
 
 ## Authorization
 
@@ -180,16 +171,16 @@ PR lifecycle events (open, push, reopen, ready-for-review) configured in `REVIEW
 
 ## Tool Restrictions
 
-| Capability | Reviewer Bot | Worker Bot |
-|------------|-------------|------------|
-| **Available tools** | `Read`, `Glob`, `Grep`, `Bash(git clone*)` | All tools |
-| **Bash commands** | Only `git clone*` (fnmatch) + shell injection check | Unrestricted |
-| **Git clone hosts** | `github.com`, `gitlab.com` (configurable) | Configurable |
-| **Subprocess environment** | Sanitized (allowlisted vars only) | Sanitized (allowlisted vars only) |
-| **Output sanitization** | Secret patterns redacted | Secret patterns redacted |
-| **Permission mode** | `bypassPermissions` (with tool allowlist) | `bypassPermissions` (no allowlist) |
-| **Can modify files** | No | Yes |
-| **Can push code** | No | Yes |
+| Capability | Value |
+|------------|-------|
+| **Available tools** | `Read`, `Glob`, `Grep`, `Bash(git clone*)` |
+| **Bash commands** | Only `git clone*` (fnmatch) + shell injection check |
+| **Git clone hosts** | `github.com`, `gitlab.com` (configurable) |
+| **Subprocess environment** | Sanitized (allowlisted vars only) |
+| **Output sanitization** | Secret patterns redacted |
+| **Permission mode** | `bypassPermissions` (with tool allowlist) |
+| **Can modify files** | No |
+| **Can push code** | No |
 
 ## Defense-in-Depth Architecture
 

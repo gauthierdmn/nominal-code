@@ -180,7 +180,7 @@ See [Compaction](reference/compaction.md) for how notes files also serve as the 
 
 ### Explore Sub-Agent
 
-The reviewer configures a single sub-agent type, `"explore"`, with these tools:
+The reviewer configures a `"explore"` sub-agent with these tools:
 
 | Tool | Purpose |
 |---|---|
@@ -223,9 +223,9 @@ The `config/` package uses a two-layer pattern: mutable **Settings** models for 
 
 `AppSettings` and its nested `*Settings` models (`KubernetesSettings`, `RedisSettings`, etc.) are mutable Pydantic models that mirror the shape of the YAML file and environment variables. Their job is purely structural — they hold raw values exactly as the user provided them.
 
-`AppSettings.from_env()` merges three sources in priority order: model defaults → YAML file → environment variables. The `_ENV_MAP` table flattens legacy env var names (e.g. `K8S_NAMESPACE`) into the nested structure (`["kubernetes", "namespace"]`).
+`config/env.py` provides `load_app_settings()`, which merges three sources in priority order: model defaults → YAML file → environment variables. The `ENV_MAP` table in `env.py` flattens env var names (e.g. `K8S_NAMESPACE`) into the nested structure (`["kubernetes", "namespace"]`).
 
-### Layer 2: Config (output) — `config/config.py`, `config/kubernetes.py`
+### Layer 2: Config (output) — `config/settings.py`, `config/kubernetes.py`
 
 `Config`, `WebhookConfig`, `KubernetesConfig`, `RedisConfig`, etc. are frozen (`frozen=True`) Pydantic models that represent the validated, resolved configuration the application consumes. They are immutable and safe to pass around.
 
@@ -255,7 +255,7 @@ A single-layer approach would force one model to serve both roles — you'd eith
 ### Adding a new config field
 
 1. Add the field with a default to the appropriate `*Settings` model in `models.py`.
-2. If it needs an env var, add a `(ENV_NAME, ["section", "field"])` entry to `_ENV_MAP` and the appropriate type set (`INT_KEYS`, `BOOL_KEYS`, or `COMMA_LIST_KEYS`).
+2. If it needs an env var, add a `(ENV_NAME, ["section", "field"])` entry to `ENV_MAP` in `env.py` and the appropriate type set (`INT_KEYS`, `BOOL_KEYS`, or `COMMA_LIST_KEYS`).
 3. Add the field to the corresponding `*Config` model in `settings.py` or `kubernetes.py`.
 4. Forward the value in the relevant `_resolve_*()` or `load_config()` function in `loader.py`.
 5. Add tests for the env var override in `tests/test_config.py`.
@@ -404,9 +404,11 @@ In **Kubernetes mode**, the `RedisJobQueue` replaces the in-memory `AsyncioJobQu
 nominal_code/
 ├── main.py              # Entry point: dispatches to webhook server, CLI, or CI
 ├── config/
-│   ├── settings.py      # Frozen Config model loaded from env vars / files
+│   ├── models.py        # Mutable *Settings models (YAML/env input layer)
+│   ├── settings.py      # Frozen *Config models (application output layer)
+│   ├── env.py           # ENV_MAP, type sets, load_app_settings() (YAML + env merge)
+│   ├── loader.py        # Settings → Config transformation with validation
 │   ├── policies.py      # FilteringPolicy and RoutingPolicy (frozen Pydantic models)
-│   ├── loader.py        # load_config(), load_config_for_cli(), load_config_for_ci()
 │   ├── agent.py         # AgentConfig, CliAgentConfig, ApiAgentConfig
 │   └── kubernetes.py    # KubernetesConfig
 ├── models.py            # Shared enums (EventType, FileStatus) and dataclasses
@@ -461,6 +463,18 @@ nominal_code/
 │   ├── base.py          # Conversation store protocol
 │   ├── memory.py        # In-memory conversation store
 │   └── redis.py         # Redis-backed conversation store
+├── prompts/
+│   ├── reviewer_prompt.md       # Base reviewer system prompt
+│   ├── reviewer_suggestions.md  # Inline suggestions instructions
+│   ├── languages/
+│   │   └── python.md            # Built-in Python language guidelines
+│   ├── explore/
+│   │   ├── explorer.md          # Explore sub-agent system prompt
+│   │   └── suffix.md            # Sub-agent suffix template
+│   └── output/
+│       ├── json_fix_system.md   # JSON repair system prompt
+│       ├── json_fix_user.md     # JSON repair user prompt
+│       └── json_fix_retry.md    # JSON repair retry prompt
 ├── review/
 │   ├── reviewer.py      # Review orchestration: diff fetching, sub-agent config, output parsing
 │   ├── prompts.py       # Reviewer prompt building, fallback prompt, comment formatting
@@ -473,6 +487,7 @@ nominal_code/
 │   │   ├── auth.py      # GitHubAuth ABC, PAT and App auth implementations
 │   │   └── platform.py  # GitHub webhook handler and REST API client
 │   └── gitlab/
+│       ├── auth.py      # GitLabAuth: PAT auth implementation
 │       └── platform.py  # GitLab webhook handler and REST API client
 └── workspace/
     ├── git.py           # GitWorkspace: clone, update, push per-PR workspaces

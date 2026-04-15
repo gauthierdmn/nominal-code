@@ -22,7 +22,6 @@ Each variable is tagged with the modes where it applies: `webhook` `cli` `ci`.
 | `GITHUB_APP_PRIVATE_KEY_PATH` | `webhook` `cli` | — | Path to a PEM private key file (alternative to inline) |
 | `GITHUB_INSTALLATION_ID` | `cli` | — | GitHub App installation ID (required for CLI mode with App auth) |
 | `GITHUB_WEBHOOK_SECRET` | `webhook` | — | HMAC secret for GitHub webhook verification |
-| `GITHUB_REVIEWER_TOKEN` | `webhook` `cli` | — | Separate read-only token for reviewer bot clones (PAT mode only) |
 
 When both a PAT and a GitHub App are configured, the App takes precedence. See [GitHub authentication](../platforms/github.md#authentication) for setup details.
 
@@ -33,7 +32,6 @@ When both a PAT and a GitHub App are configured, the App takes precedence. See [
 | `GITLAB_TOKEN` | `webhook` `cli` | — | GitLab API token for authentication |
 | `GITLAB_WEBHOOK_SECRET` | `webhook` | — | Secret token for GitLab webhook verification |
 | `GITLAB_API_BASE` | `webhook` `cli` | `https://gitlab.com` | GitLab instance URL (for self-hosted) |
-| `GITLAB_REVIEWER_TOKEN` | `webhook` `cli` | — | Separate read-only token for reviewer bot clones |
 
 ## Bot Identity
 
@@ -42,6 +40,7 @@ These can also be set in the YAML config file under `reviewer` and `access`.
 | Variable | YAML path | Modes | Default | Description |
 |---|---|---|---|---|
 | `REVIEWER_BOT_USERNAME` | `reviewer.bot_username` | `webhook` | — | The `@mention` name for the reviewer bot |
+| `INLINE_SUGGESTIONS` | `reviewer.inline_suggestions` | `webhook` `cli` `ci` | `true` | Enable inline code suggestions in reviews |
 | `ALLOWED_USERS` | `access.allowed_users` | `webhook` | — | Comma-separated usernames allowed to trigger the bot |
 
 `REVIEWER_BOT_USERNAME` must be set in webhook mode.

@@ -43,7 +43,6 @@ You need an **LLM provider API key** (unless using Claude Code CLI):
 |---|---|---|
 | `GITHUB_WEBHOOK_SECRET` | Webhook signature validation secret | _(skip validation)_ |
 | `GITLAB_WEBHOOK_SECRET` | GitLab webhook secret | _(skip validation)_ |
-| `GITHUB_REVIEWER_TOKEN` | Read-only token for reviewer clones (PAT mode only) | Falls back to `GITHUB_TOKEN` |
 | `GITHUB_INSTALLATION_ID` | Required for CLI mode with GitHub App auth | _(extracted from webhook payload)_ |
 | `ALLOWED_REPOS` | Comma-separated repo full names to process | _(all repos)_ |
 | `LOG_LEVEL` | Logging verbosity | `INFO` |

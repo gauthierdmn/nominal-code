@@ -108,6 +108,7 @@ Or track the latest changes on `main` (may include breaking changes):
 | `github_token` | Yes | — | GitHub token for posting review comments |
 | `provider` | No | `anthropic` | LLM provider to use |
 | `model` | No | Provider default | Model to use |
+| `max_turns` | No | — | Maximum agentic turns for the reviewer (0 = unlimited) |
 | `prompt` | No | — | Custom review instructions appended to the default prompt |
 | `coding_guidelines` | No | — | Path to a coding guidelines file (relative to repo root) |
 
@@ -242,7 +243,7 @@ include:
 ## How It Works
 
 1. The CI runner checks out the repository (the workspace is reused as-is).
-2. `nominal-code ci {platform}` loads the platform-specific CI module (`platforms/github/ci.py` or `platforms/gitlab/ci.py`).
+2. `nominal-code ci {platform}` loads the platform-specific CI module (`commands/ci/github.py` or `commands/ci/gitlab.py`).
 3. The platform module builds the event, platform client, and workspace path from CI environment variables.
 4. The review runs using the configured LLM provider API directly (tool use loop with Read, Glob, Grep, and Bash).
 5. Structured findings are posted as native inline comments on the PR/MR.

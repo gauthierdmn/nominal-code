@@ -22,19 +22,13 @@ This affects both API calls and clone URLs. Defaults to `https://gitlab.com`.
 
 ## Token Requirements
 
-### Worker token (`GITLAB_TOKEN`)
+### API token (`GITLAB_TOKEN`)
 
 Create a **Personal Access Token** with the `api` scope. This grants full API access, which is needed to:
 
 - Clone private repositories
 - Post comments and reviews on merge requests
 - Fetch diffs and MR metadata
-
-### Reviewer token (`GITLAB_REVIEWER_TOKEN`)
-
-Optional. When set, the reviewer bot uses this token for `git clone` instead of `GITLAB_TOKEN`. This lets you issue a token with **read-only** access, limiting what the reviewer agent can do at the git level.
-
-The reviewer still uses `GITLAB_TOKEN` for API calls (posting reviews, fetching diffs).
 
 For all authentication variables, see [Environment Variables](../reference/env-vars.md#gitlab).
 
