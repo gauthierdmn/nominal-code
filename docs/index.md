@@ -17,7 +17,6 @@ New here? Start with the **[Getting Started](getting-started.md)** guide.
 ## Features
 
 - **Reviewer bot** — fetches the PR diff, runs an agent with read-only tools, posts structured inline code reviews
-- **Worker bot** *(beta)* — receives a prompt, clones the repo, runs an agent with full tool access, commits and pushes changes
 - **Three execution modes** — CI job, CLI one-off, or webhook server
 - **GitHub and GitLab** — supports both platforms simultaneously
 - **Conversation continuity** — multi-turn conversations within the same PR (webhook mode)

@@ -6,8 +6,6 @@ When an agent runs for many turns, the accumulated message history (prompts, too
 
 Nominal Code uses a **notes-based compaction strategy** for agents with notes files (the reviewer and explore sub-agents). Instead of generating a summary at compaction time (which would require an extra LLM call), the agent writes structured findings to a markdown notes file throughout execution via the `WriteNotes` tool. When compaction triggers, the notes file content is used directly as the summary.
 
-This approach is inspired by [Claude Code's SessionMemory pattern](https://github.com/anthropics/claude-code), where a background subagent periodically extracts structured session notes into a file. When context compaction is needed, those pre-built notes replace older messages at zero cost — no additional LLM call required.
-
 ### How It Works
 
 ```
@@ -54,24 +52,13 @@ After compaction, the message history looks like:
 
 The agent picks up exactly where it left off, with its own structured findings as context instead of hundreds of raw tool outputs.
 
-## Why Not LLM-Based Compaction?
-
-The typical alternative is to send the full conversation to an LLM with a "summarize this" prompt (what Claude Code calls `compactConversation`). This has two costs:
-
-1. **Latency** — an extra LLM API call (potentially slow for large conversations).
-2. **Token cost** — the summarization call itself consumes tokens.
-
-Notes-based compaction avoids both because the summary already exists on disk. The agent built it incrementally as part of its normal work. This makes compaction effectively free.
-
-The trade-off is that compaction quality depends on the agent actually using `WriteNotes`. If the agent writes sparse or low-quality notes, the compaction summary will be sparse too. The explore prompt mitigates this by instructing the agent to write findings incrementally and organizing them under structured headings.
-
 ## Trade-Offs
 
 ### Prompt Cache Invalidation
 
 When compaction triggers, the LLM's prompt cache is invalidated. The message prefix changes from the original sequence to the continuation summary, so the provider must re-process everything from scratch on the next API call.
 
-This is an inherent cost of any compaction strategy — Claude Code pays it too. The mitigation:
+This is an inherent cost of any compaction strategy. The mitigation:
 
 - **Compaction should be rare.** Most explore sessions (32 turns) won't hit the token limit. When they do, one cache miss is the price for continuing instead of stopping.
 - **Cache rebuilds quickly.** After compaction, the new shorter message sequence starts building a fresh cache. Subsequent turns benefit from caching again.

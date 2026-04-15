@@ -53,7 +53,6 @@ from nominal_code.models import EventType
 
 routing = RoutingPolicy(
     reviewer_triggers=frozenset({EventType.PR_OPENED, EventType.PR_PUSH}),
-    worker_bot_username="nominal-worker",
     reviewer_bot_username="nominalbot",
 )
 ```
@@ -61,12 +60,11 @@ routing = RoutingPolicy(
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `reviewer_triggers` | `frozenset[EventType]` | `frozenset()` | PR lifecycle events that auto-trigger the reviewer bot. Empty disables auto-trigger. |
-| `worker_bot_username` | `str` | `""` | The `@mention` name for the worker bot. Empty disables the worker. |
-| `reviewer_bot_username` | `str` | `""` | The `@mention` name for the reviewer bot. Empty disables the reviewer. |
+| `reviewer_bot_username` | `str \| None` | `None` | The `@mention` name for the reviewer bot. `None` disables the reviewer. |
 
 ### YAML mapping
 
-Routing fields are spread across the `reviewer` and `worker` YAML sections:
+Routing fields map to the `reviewer` YAML section:
 
 ```yaml
 reviewer:
@@ -74,9 +72,6 @@ reviewer:
   triggers:
     - pr_opened
     - pr_push
-
-worker:
-  bot_username: "nominal-worker"
 ```
 
 ## How they fit into Config
@@ -101,7 +96,7 @@ The webhook server exposes standalone dispatch functions that accept policies di
 ### filter_event
 
 ```python
-from nominal_code.commands.webhook.server import filter_event
+from nominal_code.commands.webhook.main import filter_event
 
 reason: str | None = filter_event(event, filtering)
 ```
@@ -111,7 +106,7 @@ Applies `allowed_repos` and PR title tag filters. Returns a reason string (`"fil
 ### dispatch_lifecycle_event
 
 ```python
-from nominal_code.commands.webhook.server import dispatch_lifecycle_event
+from nominal_code.commands.webhook.main import dispatch_lifecycle_event
 
 response = await dispatch_lifecycle_event(
     event=event,
@@ -129,7 +124,7 @@ Dispatches a PR lifecycle event (open, push, reopen, ready-for-review) to the re
 ### dispatch_comment_event
 
 ```python
-from nominal_code.commands.webhook.server import dispatch_comment_event
+from nominal_code.commands.webhook.main import dispatch_comment_event
 
 response = await dispatch_comment_event(
     event=event,
@@ -142,12 +137,12 @@ response = await dispatch_comment_event(
 )
 ```
 
-Dispatches a comment event to the appropriate bot. Checks for `@mentions` of the worker and reviewer bots using usernames from `routing`, authorizes the comment author against `filtering.allowed_users`, and enqueues the job.
+Dispatches a comment event to the reviewer bot. Checks for `@mentions` of the reviewer bot using the username from `routing`, authorizes the comment author against `filtering.allowed_users`, and enqueues the job.
 
 ### build_runner
 
 ```python
-from nominal_code.jobs.runner import build_runner
+from nominal_code.commands.webhook.jobs.runner import build_runner
 
 runner = build_runner(config, platforms)
 ```
@@ -176,7 +171,6 @@ org_filtering = FilteringPolicy(
 
 org_routing = RoutingPolicy(
     reviewer_triggers=frozenset({EventType.PR_OPENED}),
-    worker_bot_username="org-worker-bot",
     reviewer_bot_username=global_routing.reviewer_bot_username,
 )
 

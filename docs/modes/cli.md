@@ -22,6 +22,7 @@ The CLI resolves the PR branch, clones the repository, fetches the diff, runs th
 | `--prompt` | `-p` | — | Custom review instructions |
 | `--platform` | — | `github` | Platform type (`github` or `gitlab`) |
 | `--model` | — | SDK default | Agent model override (e.g. `claude-sonnet-4-6`) |
+| `--provider` | — | — | LLM provider (e.g. `anthropic`, `openai`, `google`). When set, uses the API runner instead of the Claude Code CLI |
 | `--dry-run` | — | `false` | Print results to stdout without posting to the PR |
 
 ## Examples
