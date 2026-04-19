@@ -296,7 +296,7 @@ class TestPatchedParseMessage:
 class TestRunAgentApiDispatch:
     @pytest.mark.asyncio
     async def test_run_agent_threads_prior_messages_to_api_runner(self):
-        from nominal_code.config import ApiAgentConfig, ProviderConfig
+        from nominal_code.config import AgentRoleConfig, ApiAgentConfig
         from nominal_code.llm.messages import Message, TextBlock
         from nominal_code.models import ProviderName
 
@@ -327,11 +327,11 @@ class TestRunAgentApiDispatch:
                 prompt="test",
                 cwd="/tmp",
                 agent_config=ApiAgentConfig(
-                    reviewer=ProviderConfig(
+                    reviewer=AgentRoleConfig(
                         name=ProviderName.ANTHROPIC,
                         model="test",
                     ),
-                    explorer=ProviderConfig(
+                    explorer=AgentRoleConfig(
                         name=ProviderName.ANTHROPIC,
                         model="test",
                     ),

@@ -48,11 +48,11 @@ Tool definitions use canonical `ToolDefinition` (TypedDict with `name`, `descrip
 
 ## Review flow
 
-In API mode, the reviewer runs as a **multi-turn agentic loop** (up to `reviewer_max_turns`, default 8). It has direct access to Read, Glob, Grep, Bash, and WriteNotes for its own investigation, plus the `Agent` tool for spawning explore sub-agents on demand.
+In API mode, the reviewer runs as a **multi-turn agentic loop** (up to `agent.reviewer.max_turns`). It has direct access to Read, Glob, Grep, Bash, and WriteNotes for its own investigation, plus the `Agent` tool for spawning explore sub-agents on demand.
 
 1. The reviewer receives PR metadata (title, description, commit messages), annotated diffs (line numbers on every line), coding guidelines, and existing PR comments. Metadata is fetched via `Platform.fetch_pr_metadata()` in parallel with the diff and comments.
 2. It can use tools directly for simple lookups (reading a file, grepping for callers) or spawn explore sub-agents via the `Agent` tool for deep investigation (tracing type hierarchies, checking test coverage across modules).
-3. Explore sub-agents run with their own turn budget (`explorer_max_turns`, default 32), write findings via `WriteNotes`, and return notes content to the reviewer. Multiple Agent calls in the same turn run concurrently. Explore sub-agents are aware of the `AGENTS.md` convention and will read these files on demand when navigating the repository.
+3. Explore sub-agents run with their own turn budget (`agent.explorer.max_turns`), write findings via `WriteNotes`, and return notes content to the reviewer. Multiple Agent calls in the same turn run concurrently. Explore sub-agents are aware of the `AGENTS.md` convention and will read these files on demand when navigating the repository.
 4. On the last turn, a warning is injected instructing the reviewer to call `submit_review` immediately.
 5. If `max_turns` is reached without `submit_review`, a fallback single-turn call is made with the reviewer's accumulated notes.
 6. The `submit_review` output is parsed as JSON, findings are filtered against the diff, and results are posted to the platform.
@@ -64,7 +64,7 @@ agent/
 ├── __init__.py      # Re-exports: invoke_agent, prepare_conversation, save_conversation, AgentResult
 ├── invoke.py        # prepare_conversation() + invoke_agent() + save_conversation()
 ├── result.py        # AgentResult dataclass (output, is_error, num_turns, duration_ms, cost, sub_agent_costs)
-├── sub_agent.py     # SubAgentConfig dataclass, DEFAULT_MAX_TURNS_PER_SUB_AGENT
+├── sub_agent.py     # SubAgentConfig dataclass (max_turns defaults to config.agent.EXPLORER_DEFAULT_MAX_TURNS)
 ├── prompts.py       # Guideline loading (.nominal/ overrides), language detection, system prompt composition
 ├── compaction.py    # Notes-based message compaction: compact_with_notes()
 ├── errors.py        # handle_agent_errors(): async context manager that catches and posts error replies

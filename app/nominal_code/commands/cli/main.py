@@ -191,6 +191,9 @@ async def _run_review(args: argparse.Namespace) -> int:
         provider=provider,
     )
 
+    if args.dry_run:
+        config = config.model_copy(update={"dry_run": True})
+
     platform_name: PlatformName = PlatformName(args.platform)
 
     if platform_name == PlatformName.GITHUB:
@@ -249,7 +252,7 @@ async def _run_review(args: argparse.Namespace) -> int:
 
     _print_review(result)
 
-    if not args.dry_run and result.agent_review is not None:
+    if not config.dry_run and result.agent_review is not None:
         await post_review_result(
             event=event,
             result=result,

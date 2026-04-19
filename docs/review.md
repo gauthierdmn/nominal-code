@@ -24,9 +24,9 @@ The bot can also run automatically on PR lifecycle events — see [Auto-Trigger]
 2. Concurrently fetches the full PR diff and existing comments.
 3. Builds the reviewer prompt with annotated diffs, existing comments, coding guidelines, and any user instructions.
 4. Runs the **reviewer agent**:
-    - **API mode**: a multi-turn agentic loop (up to `reviewer_max_turns`, default 8) with access to Read, Glob, Grep, Bash, WriteNotes, and the **Agent tool** for spawning explore sub-agents.
+    - **API mode**: a multi-turn agentic loop (up to `agent.reviewer.max_turns`, default 8) with access to Read, Glob, Grep, Bash, WriteNotes, and the **Agent tool** for spawning explore sub-agents.
     - **CLI mode**: runs via the Claude Code CLI with read-only tools (Read, Glob, Grep, `Bash(git clone*)`).
-5. **API mode only**: for deep investigation, the reviewer spawns **explore sub-agents** via the Agent tool. Each sub-agent runs with its own turn budget (up to `explorer_max_turns`, default 32) and writes findings via WriteNotes. Multiple sub-agents run concurrently. See [Sub-Agents](reference/explore.md).
+5. **API mode only**: for deep investigation, the reviewer spawns **explore sub-agents** via the Agent tool. Each sub-agent runs with its own turn budget (up to `agent.explorer.max_turns`, default 32) and writes findings via WriteNotes. Multiple sub-agents run concurrently. See [Sub-Agents](reference/explore.md).
 6. **API mode only**: the reviewer calls `submit_review` with a structured JSON review. If the turn limit is reached without calling `submit_review`, a fallback single-turn call is made with accumulated notes.
 7. Parses the agent's JSON output into a structured review.
 8. Posts the review as native inline comments on the PR/MR.

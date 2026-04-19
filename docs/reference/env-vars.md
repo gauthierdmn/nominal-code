@@ -66,9 +66,19 @@ These can also be set in the YAML config file under `reviewer` and `access`.
 
 | Variable | YAML path | Modes | Default | Description |
 |---|---|---|---|---|
-| `REVIEWER_SYSTEM_PROMPT` | `reviewer.system_prompt_path` | `webhook` `cli` | `prompts/reviewer_prompt.md` | Path to the reviewer bot system prompt file |
-| `CODING_GUIDELINES` | `prompts.coding_guidelines_path` | `webhook` `cli` `ci` | `prompts/coding_guidelines.md` | Path to a coding guidelines file appended to the system prompt |
+| `REVIEWER_SYSTEM_PROMPT` | `agent.reviewer.system_prompt` | `webhook` `cli` | Bundled `reviewer_prompt.md` | Reviewer agent system prompt. Accepts either a path to a file or the raw prompt content (see [Dual semantics](#dual-semantics-path-or-inline-content)) |
+| `EXPLORER_SYSTEM_PROMPT` | `agent.explorer.system_prompt` | `webhook` `cli` `ci` | Bundled `explore/explorer.md` | Explorer sub-agent system prompt. Accepts either a path or raw content |
+| `CODING_GUIDELINES` | `prompts.coding_guidelines` | `webhook` `cli` `ci` | — | Coding guidelines appended to the reviewer system prompt. Accepts either a path or raw content |
 | `LANGUAGE_GUIDELINES_DIR` | `prompts.language_guidelines_dir` | `webhook` `cli` | `prompts/languages` | Directory containing language-specific guideline files (e.g. `python.md`) |
+
+### Dual semantics: path or inline content
+
+`REVIEWER_SYSTEM_PROMPT`, `EXPLORER_SYSTEM_PROMPT`, and `CODING_GUIDELINES` each accept either of:
+
+- **File path** — an absolute or relative path that exists on disk. The file contents are read and stripped.
+- **Inline content** — any non-empty string that does not resolve to an existing file. The value is used as the prompt body verbatim.
+
+Detection happens at load time via `Path(value).is_file()`. The chosen branch is logged at INFO on startup, e.g. `Loaded reviewer_system_prompt from file: /etc/prompts/reviewer.md` or `Loaded coding_guidelines as inline content (1284 chars)`. A typo'd path therefore becomes a short, visibly-wrong inline prompt rather than a silent empty string — check the startup logs to confirm.
 
 See [Prompt File Configuration](configuration.md#prompt-file-configuration) for how these files are loaded and composed.
 

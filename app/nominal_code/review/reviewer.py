@@ -17,7 +17,6 @@ from nominal_code.agent.invoke import (
 from nominal_code.agent.prompts import (
     TAG_REPO_GUIDELINES,
     resolve_guidelines,
-    resolve_system_prompt,
     wrap_tag,
 )
 from nominal_code.agent.sandbox import sanitize_output
@@ -88,9 +87,23 @@ class ReviewResult:
         cost (CostSummary | None): Cost information from the agent invocation.
         num_turns (int): Number of agentic turns taken by the LLM.
         messages (tuple[Message, ...]): Full LLM conversation transcript.
-        input_prompt (str): Full prompt sent to the LLM.
+        input_prompt (str): User prompt sent to the LLM.
         sub_agent_costs (tuple[CostSummary, ...]): Cost summaries from
             sub-agents spawned during the review.
+        reviewer_base_system_prompt (str): Base reviewer system prompt
+            (reviewer prompt plus inline-suggestions section when enabled),
+            before guidelines concatenation.
+        explorer_system_prompt (str): Fully assembled explorer sub-agent
+            system prompt (explorer prompt plus suffix). Empty when no
+            explorer sub-agent runs.
+        coding_guidelines (str): Guidelines text resolved for the changed
+            files (after repo overrides and language-specific selection).
+        notes (str): Contents of the reviewer's notes scratchpad written via
+            the ``WriteNotes`` tool.
+        reviewer_system_prompt (str): Full system prompt delivered to the
+            reviewer agent — ``reviewer_base_system_prompt`` plus the
+            tag-wrapped ``coding_guidelines``. This is what the reviewer
+            LLM actually saw.
     """
 
     agent_review: AgentReview | None
@@ -103,6 +116,11 @@ class ReviewResult:
     messages: tuple[Message, ...] = ()
     input_prompt: str = ""
     sub_agent_costs: tuple[CostSummary, ...] = ()
+    reviewer_base_system_prompt: str = ""
+    explorer_system_prompt: str = ""
+    coding_guidelines: str = ""
+    notes: str = ""
+    reviewer_system_prompt: str = ""
 
 
 @dataclass(frozen=True)
@@ -168,7 +186,7 @@ async def review(
         RuntimeError: If workspace setup fails.
     """
 
-    ctx: ReviewContext = await _prepare_review_context(
+    review_context: ReviewContext = await _prepare_review_context(
         event=event,
         config=config,
         platform=platform,
@@ -184,43 +202,47 @@ async def review(
     full_prompt: str = build_reviewer_prompt(
         event=event,
         user_prompt=prompt,
-        changed_files=ctx.changed_files,
-        existing_comments=ctx.existing_comments,
+        changed_files=review_context.changed_files,
+        existing_comments=review_context.existing_comments,
         inline_suggestions=bool(reviewer_config.suggestions_prompt),
         context=context,
-        metadata=ctx.metadata,
+        metadata=review_context.metadata,
     )
-    base_system_prompt: str = reviewer_config.system_prompt
+
+    if isinstance(config.agent, ApiAgentConfig):
+        base_system_prompt: str = config.agent.reviewer.system_prompt
+    else:
+        base_system_prompt = config.agent.system_prompt
 
     if reviewer_config.suggestions_prompt:
         base_system_prompt = (
             base_system_prompt + "\n\n" + reviewer_config.suggestions_prompt
         )
 
-    file_paths: list[Path] = [Path(changed.file_path) for changed in ctx.changed_files]
+    file_paths: list[Path] = [
+        Path(changed.file_path) for changed in review_context.changed_files
+    ]
 
-    if ctx.workspace is None:
-        effective_guidelines: str = resolve_guidelines(
-            repo_path=ctx.repo_path,
-            default_guidelines=config.prompts.coding_guidelines,
-            language_guidelines=config.prompts.language_guidelines,
-            file_paths=file_paths,
+    guidelines_repo_path: Path = (
+        review_context.workspace.repo_path
+        if review_context.workspace is not None
+        else review_context.repo_path
+    )
+    effective_guidelines: str = resolve_guidelines(
+        repo_path=guidelines_repo_path,
+        default_guidelines=config.prompts.coding_guidelines,
+        language_guidelines=config.prompts.language_guidelines,
+        file_paths=file_paths,
+    )
+
+    if effective_guidelines:
+        combined_system_prompt: str = (
+            base_system_prompt
+            + "\n\n"
+            + wrap_tag(TAG_REPO_GUIDELINES, effective_guidelines)
         )
-        if effective_guidelines:
-            combined_system_prompt: str = (
-                base_system_prompt
-                + "\n\n"
-                + wrap_tag(TAG_REPO_GUIDELINES, effective_guidelines)
-            )
-        else:
-            combined_system_prompt = base_system_prompt
     else:
-        combined_system_prompt = resolve_system_prompt(
-            workspace=ctx.workspace,
-            config=config,
-            bot_system_prompt=base_system_prompt,
-            file_paths=file_paths,
-        )
+        combined_system_prompt = base_system_prompt
 
     effective_allowed_tools: list[str]
 
@@ -228,6 +250,8 @@ async def review(
     sub_agent_configs: dict[str, SubAgentConfig] | None = None
     notes_file_path: Path | None = None
     explore_provider: LLMProvider | None = None
+    explore_system_prompt: str = ""
+    captured_notes: str = ""
 
     if isinstance(config.agent, ApiAgentConfig):
         agent_config: ApiAgentConfig = config.agent
@@ -240,12 +264,12 @@ async def review(
             "WriteNotes",
             SUBMIT_REVIEW_TOOL_NAME,
         ]
-        effective_max_turns: int = agent_config.reviewer_max_turns
+        effective_max_turns: int = agent_config.reviewer.max_turns
 
         explore_provider = create_provider(name=agent_config.explorer.name)
 
-        explore_system_prompt: str = (
-            load_prompt("explore/explorer.md")
+        explore_system_prompt = (
+            agent_config.explorer.system_prompt
             + "\n\n"
             + EXPLORE_SYSTEM_SUFFIX.format(agent_type="explore")
         )
@@ -256,12 +280,16 @@ async def review(
                 model=agent_config.explorer.model,
                 provider_name=agent_config.explorer.name,
                 system_prompt=explore_system_prompt,
-                max_turns=agent_config.explorer_max_turns,
+                max_turns=agent_config.explorer.max_turns,
                 allowed_tools=EXPLORE_ALLOWED_TOOLS,
                 description=(
-                    "Fast codebase explorer. Use for deep investigation: "
-                    "finding callers, checking test coverage, tracing type "
-                    "hierarchies. For simple lookups use Read/Grep directly."
+                    "Fast codebase explorer. Use to answer questions about "
+                    "the codebase: finding callers of a symbol, tracing "
+                    "type hierarchies, checking test coverage across "
+                    "modules, or investigating knock-on effects of a "
+                    "change. Prefer this over running 3+ sequential "
+                    "Grep/Read calls yourself. For a single, directed "
+                    "lookup use Read/Grep directly."
                 ),
             ),
         }
@@ -305,7 +333,7 @@ async def review(
     try:
         result: AgentResult = await invoke_agent(
             prompt=full_prompt,
-            cwd=ctx.repo_path,
+            cwd=review_context.repo_path,
             system_prompt=combined_system_prompt,
             allowed_tools=effective_allowed_tools,
             agent_config=config.agent,
@@ -337,7 +365,7 @@ async def review(
 
             result = await invoke_agent(
                 prompt=fallback_prompt,
-                cwd=ctx.repo_path,
+                cwd=review_context.repo_path,
                 system_prompt=combined_system_prompt,
                 allowed_tools=[SUBMIT_REVIEW_TOOL_NAME],
                 agent_config=config.agent,
@@ -349,15 +377,22 @@ async def review(
             await explore_provider.close()
 
         if notes_file_path is not None:
+            if notes_file_path.exists():
+                try:
+                    captured_notes = notes_file_path.read_text(encoding="utf-8")
+                except OSError:
+                    captured_notes = ""
+
             shutil.rmtree(notes_file_path.parent, ignore_errors=True)
 
-    save_conversation(
-        event=event,
-        result=result,
-        agent_config=config.agent,
-        conversation_store=conversation_store,
-        namespace=namespace,
-    )
+    if not config.dry_run:
+        save_conversation(
+            event=event,
+            result=result,
+            agent_config=config.agent,
+            conversation_store=conversation_store,
+            namespace=namespace,
+        )
 
     review_result: AgentReview | None = parse_review_output(output=result.output)
 
@@ -371,7 +406,7 @@ async def review(
         review_result = await repair_review_output(
             broken_output=result.output,
             config=config,
-            cwd=ctx.repo_path,
+            cwd=review_context.repo_path,
         )
 
     if review_result is None:
@@ -394,11 +429,16 @@ async def review(
             messages=result.messages,
             input_prompt=full_prompt,
             sub_agent_costs=result.sub_agent_costs,
+            reviewer_base_system_prompt=base_system_prompt,
+            explorer_system_prompt=explore_system_prompt,
+            coding_guidelines=effective_guidelines,
+            notes=captured_notes,
+            reviewer_system_prompt=combined_system_prompt,
         )
 
     valid_findings, rejected_findings = filter_findings(
         findings=review_result.findings,
-        changed_files=ctx.changed_files,
+        changed_files=review_context.changed_files,
     )
 
     if rejected_findings:
@@ -434,6 +474,11 @@ async def review(
         messages=result.messages,
         input_prompt=full_prompt,
         sub_agent_costs=result.sub_agent_costs,
+        reviewer_base_system_prompt=base_system_prompt,
+        explorer_system_prompt=explore_system_prompt,
+        coding_guidelines=effective_guidelines,
+        notes=captured_notes,
+        reviewer_system_prompt=combined_system_prompt,
     )
 
 
@@ -539,11 +584,12 @@ async def run_and_post_review(
         context=context,
     )
 
-    await post_review_result(
-        event=event,
-        result=review_result,
-        platform=platform,
-    )
+    if not config.dry_run:
+        await post_review_result(
+            event=event,
+            result=review_result,
+            platform=platform,
+        )
 
     return review_result
 

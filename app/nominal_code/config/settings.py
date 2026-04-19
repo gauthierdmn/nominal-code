@@ -60,19 +60,22 @@ class GitLabConfig(BaseModel):
 
 class ReviewerConfig(BaseModel):
     """
-    Reviewer bot configuration.
+    Reviewer bot identity configuration.
+
+    Holds only bot-identity concerns (user-facing behavior on the PR).
+    The reviewer's LLM runtime (provider, model, system prompt, max
+    turns) lives on ``AgentConfig.reviewer``.
 
     Attributes:
         bot_username (str): The @mention name for the reviewer bot.
-        system_prompt (str): System prompt text for reviewer bot invocations.
-        suggestions_prompt (str): Prompt section appended to the system prompt
-            when non-empty, enabling one-click-apply code suggestions.
+        suggestions_prompt (str): Prompt section appended to the reviewer
+            system prompt when non-empty, enabling one-click-apply code
+            suggestions.
     """
 
     model_config = ConfigDict(frozen=True)
 
     bot_username: str
-    system_prompt: str
     suggestions_prompt: str = ""
 
 
@@ -162,6 +165,10 @@ class Config(BaseModel):
         prompts (PromptsConfig): Prompt and guideline configuration.
         webhook (WebhookConfig | None): Webhook server configuration, or
             None in CLI/CI modes.
+        dry_run (bool): When True, run the review end-to-end but skip
+            posting results to the platform and writing to the conversation
+            store. Used by manual dry-run review dispatches for prompt
+            iteration.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -173,6 +180,7 @@ class Config(BaseModel):
     workspace: WorkspaceConfig = WorkspaceConfig()
     prompts: PromptsConfig = PromptsConfig()
     webhook: WebhookConfig | None = None
+    dry_run: bool = False
 
     @classmethod
     def from_env(cls, **kwargs: object) -> Config:

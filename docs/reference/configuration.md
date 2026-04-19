@@ -24,21 +24,24 @@ webhook:
   host: "0.0.0.0"
   port: 8080
 
-reviewer:
+reviewer:                     # bot identity (user-facing, reviewer-only)
   bot_username: "nominalbot"
-  system_prompt_path: "prompts/reviewer_prompt.md"
   inline_suggestions: true
   triggers:
     - pr_opened
 
-agent:
+agent:                        # agent runtime, symmetric per role
   cli_path: ""
   reviewer:
     provider: "google"
     model: ""
-  explorer:                   # optional, falls back to reviewer
+    system_prompt: "prompts/reviewer_prompt.md"  # path or inline content
+    max_turns: 8
+  explorer:                   # optional; provider/model fall back to reviewer
     provider: ""
     model: ""
+    system_prompt: "prompts/explore/explorer.md"  # path or inline content
+    max_turns: 32
 
 access:
   allowed_users:
@@ -52,7 +55,7 @@ workspace:
   base_dir: "/tmp/nominal-code"
 
 prompts:
-  coding_guidelines_path: "prompts/coding_guidelines.md"
+  coding_guidelines: "prompts/coding_guidelines.md"
   language_guidelines_dir: "prompts/languages"
 
 redis:
@@ -165,19 +168,25 @@ All sections and fields are optional — omitted fields use the defaults shown a
 
 ## Prompt File Configuration
 
-The bot loads system prompts and coding guidelines from files at startup. Paths in the YAML file or environment variables point to these files.
+The bot loads system prompts and coding guidelines at startup from either a file or inline content. `REVIEWER_SYSTEM_PROMPT`, `EXPLORER_SYSTEM_PROMPT`, and `CODING_GUIDELINES` each accept either semantic transparently: if the value resolves to an existing file on disk, its contents are read; otherwise the value itself is used as the prompt body. The resolution branch is logged at INFO on startup so operators can confirm what was loaded.
 
 ### Reviewer system prompt
 
-YAML: `reviewer.system_prompt_path` / Env: `REVIEWER_SYSTEM_PROMPT`
+YAML: `agent.reviewer.system_prompt` / Env: `REVIEWER_SYSTEM_PROMPT`
 
-Path to the system prompt used when the reviewer bot runs the agent. Defaults to `prompts/reviewer_prompt.md`.
+System prompt used when the reviewer agent runs. Either a file path or inline prompt content. Defaults to the bundled `prompts/reviewer_prompt.md`.
+
+### Explorer system prompt
+
+YAML: `agent.explorer.system_prompt` / Env: `EXPLORER_SYSTEM_PROMPT`
+
+System prompt used by the explorer sub-agent that the reviewer can delegate codebase investigation to. Either a file path or inline prompt content. Defaults to the bundled `prompts/explore/explorer.md`.
 
 ### Coding guidelines
 
-YAML: `prompts.coding_guidelines_path` / Env: `CODING_GUIDELINES`
+YAML: `prompts.coding_guidelines` / Env: `CODING_GUIDELINES`
 
-Path to a coding guidelines file that gets appended to the reviewer system prompt. Defaults to `prompts/coding_guidelines.md`. This file is read once at startup and included in every agent invocation.
+Coding guidelines that get appended to the reviewer system prompt. Either a file path or inline content. No bundled default — when unset, no general coding guidelines are appended.
 
 ### Language guidelines directory
 

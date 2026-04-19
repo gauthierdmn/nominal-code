@@ -449,7 +449,7 @@ nominal_code/
 ├── agent/
 │   ├── invoke.py        # Single entry point: invoke_agent() (with persistence)
 │   ├── result.py        # AgentResult dataclass (output, turns, conversation ID, cost, sub_agent_costs)
-│   ├── sub_agent.py     # SubAgentConfig dataclass, DEFAULT_MAX_TURNS_PER_SUB_AGENT
+│   ├── sub_agent.py     # SubAgentConfig dataclass (max_turns defaults to EXPLORER_DEFAULT_MAX_TURNS)
 │   ├── prompts.py       # Guideline loading, language detection, system prompt composition
 │   ├── errors.py        # Async context manager for handler error handling
 │   ├── compaction.py    # Notes-based message compaction

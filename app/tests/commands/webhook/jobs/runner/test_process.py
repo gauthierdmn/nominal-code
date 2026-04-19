@@ -23,12 +23,11 @@ def _make_config():
     config = MagicMock()
     config.reviewer = ReviewerConfig(
         bot_username="claude-reviewer",
-        system_prompt="Review code.",
     )
     config.allowed_users = frozenset(["alice"])
     config.workspace = MagicMock()
     config.workspace.base_dir = "/tmp/workspaces"
-    config.agent = CliAgentConfig()
+    config.agent = CliAgentConfig(system_prompt="Review code.")
 
     return config
 

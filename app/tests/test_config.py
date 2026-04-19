@@ -86,7 +86,7 @@ class TestFromEnv:
 
         assert config.reviewer is not None
         assert config.reviewer.bot_username == "claude-reviewer"
-        assert config.reviewer.system_prompt == "Review carefully."
+        assert config.agent.system_prompt == "Review carefully."
         assert config.webhook is not None
         assert config.webhook.host == "127.0.0.1"
         assert config.webhook.port == 9090
@@ -111,20 +111,60 @@ class TestFromEnv:
             config = Config.from_env(require_webhook=True)
 
         assert config.reviewer is not None
-        assert config.reviewer.system_prompt == "Review code."
+        assert config.agent.system_prompt == "Review code."
 
-    def test_from_env_reviewer_system_prompt_missing_file_returns_empty(
+    def test_from_env_reviewer_system_prompt_inline_content(
         self,
         _reviewer_only_env,
     ):
+        inline_prompt: str = "Review the changes.\nFocus on security."
+
         with patch.dict(
             os.environ,
-            {"REVIEWER_SYSTEM_PROMPT": "/nonexistent/reviewer.md"},
+            {"REVIEWER_SYSTEM_PROMPT": inline_prompt},
         ):
             config = Config.from_env(require_webhook=True)
 
         assert config.reviewer is not None
-        assert config.reviewer.system_prompt == ""
+        assert config.agent.system_prompt == inline_prompt
+
+    def test_from_env_explorer_system_prompt_from_file(
+        self,
+        tmp_path,
+        _reviewer_only_env,
+    ):
+        prompt_file = tmp_path / "explorer.md"
+        prompt_file.write_text("You are an explorer.\n", encoding="utf-8")
+
+        with patch.dict(
+            os.environ,
+            {
+                "AGENT_PROVIDER": "anthropic",
+                "ANTHROPIC_API_KEY": "test",
+                "EXPLORER_SYSTEM_PROMPT": str(prompt_file),
+            },
+        ):
+            config = Config.from_env(require_webhook=True)
+
+        assert config.agent.explorer.system_prompt == "You are an explorer."
+
+    def test_from_env_explorer_system_prompt_inline_content(
+        self,
+        _reviewer_only_env,
+    ):
+        inline_prompt: str = "You are an explorer.\nAnswer concisely."
+
+        with patch.dict(
+            os.environ,
+            {
+                "AGENT_PROVIDER": "anthropic",
+                "ANTHROPIC_API_KEY": "test",
+                "EXPLORER_SYSTEM_PROMPT": inline_prompt,
+            },
+        ):
+            config = Config.from_env(require_webhook=True)
+
+        assert config.agent.explorer.system_prompt == inline_prompt
 
     def test_from_env_coding_guidelines_from_file(self, tmp_path, _reviewer_only_env):
         guidelines_file = tmp_path / "guidelines.md"
@@ -138,17 +178,19 @@ class TestFromEnv:
 
         assert config.prompts.coding_guidelines == "Use snake_case."
 
-    def test_from_env_coding_guidelines_missing_file_returns_empty(
+    def test_from_env_coding_guidelines_inline_content(
         self,
         _reviewer_only_env,
     ):
+        inline_guidelines: str = "Use snake_case.\nPrefer f-strings."
+
         with patch.dict(
             os.environ,
-            {"CODING_GUIDELINES": "/nonexistent/guidelines.md"},
+            {"CODING_GUIDELINES": inline_guidelines},
         ):
             config = Config.from_env(require_webhook=True)
 
-        assert config.prompts.coding_guidelines == ""
+        assert config.prompts.coding_guidelines == inline_guidelines
 
     def test_from_env_coding_guidelines_defaults_empty(
         self,

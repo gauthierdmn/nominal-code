@@ -4,16 +4,27 @@ from pydantic import BaseModel, ConfigDict
 
 from nominal_code.models import ProviderName
 
+REVIEWER_DEFAULT_MAX_TURNS: int = 8
+EXPLORER_DEFAULT_MAX_TURNS: int = 32
 
-class ProviderConfig(BaseModel):
+
+class AgentRoleConfig(BaseModel):
     """
-    LLM provider configuration.
+    Per-role runtime configuration for one agent in the review pipeline.
+
+    Applies symmetrically to the reviewer and explorer roles. Each role
+    carries both LLM selection (provider, model, base_url) and runtime
+    behavior (system prompt, max turns).
 
     Attributes:
         name (ProviderName): Provider identifier.
-        model (str): Model name (e.g. ``"claude-sonnet-4-20250514"``).
+        model (str): Model name (e.g. ``"claude-sonnet-4-5-20250929"``).
         base_url (str | None): Base URL for OpenAI-compatible providers.
             ``None`` for native providers and OpenAI itself (uses SDK default).
+        system_prompt (str): Resolved system prompt text for this role.
+            Populated by the config loader; empty in the ``PROVIDERS``
+            catalog defaults and set per-role via ``model_copy``.
+        max_turns (int): Maximum agentic turns for this role.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -21,6 +32,8 @@ class ProviderConfig(BaseModel):
     name: ProviderName
     model: str
     base_url: str | None = None
+    system_prompt: str = ""
+    max_turns: int = REVIEWER_DEFAULT_MAX_TURNS
 
     @property
     def api_key_env(self) -> str:
@@ -44,14 +57,17 @@ class CliAgentConfig(BaseModel):
     Uses the Claude Code CLI subprocess.
 
     Attributes:
-        model (str): Optional model override (empty string uses CLI default).
-        cli_path (str): Path to the Claude Code CLI binary.
+        model (str | None): Optional model override (None uses CLI default).
+        cli_path (str | None): Path to the Claude Code CLI binary.
+        system_prompt (str): Reviewer system prompt text. Populated by the
+            config loader from ``settings.agent.reviewer.system_prompt``.
     """
 
     model_config = ConfigDict(frozen=True)
 
     model: str | None = None
     cli_path: str | None = None
+    system_prompt: str = ""
 
 
 class ApiAgentConfig(BaseModel):
@@ -61,62 +77,18 @@ class ApiAgentConfig(BaseModel):
     Calls the LLM provider API directly. Requires a provider API key.
     The reviewer is the main agentic model that drives the review. The
     explorer is a cheaper sub-agent that the reviewer can delegate deep
-    codebase investigation to via the ``Agent`` tool.
+    codebase investigation to via the ``Agent`` tool. Both roles share the
+    same ``AgentRoleConfig`` shape.
 
     Attributes:
-        reviewer (ProviderConfig): Reviewer provider and model.
-        explorer (ProviderConfig): Explorer sub-agent provider and model.
-        reviewer_max_turns (int): Maximum agentic turns for the reviewer.
-        explorer_max_turns (int): Maximum agentic turns for each explorer
-            sub-agent.
+        reviewer (AgentRoleConfig): Reviewer runtime config.
+        explorer (AgentRoleConfig): Explorer sub-agent runtime config.
     """
 
     model_config = ConfigDict(frozen=True)
 
-    reviewer: ProviderConfig
-    explorer: ProviderConfig
-    reviewer_max_turns: int = 8
-    explorer_max_turns: int = 32
+    reviewer: AgentRoleConfig
+    explorer: AgentRoleConfig
 
 
 AgentConfig = CliAgentConfig | ApiAgentConfig
-
-
-def resolve_agent_config(
-    provider_name: ProviderName | None,
-    model: str | None,
-    cli_path: str | None = None,
-    explorer: ProviderConfig | None = None,
-) -> AgentConfig:
-    """
-    Build either a CLI or API agent config based on provider selection.
-
-    Args:
-        provider_name (ProviderName | None): Provider enum, or ``None``
-            for CLI mode.
-        model (str | None): Optional model override.
-        cli_path (str | None): Path to CLI binary (CLI mode only).
-        explorer (ProviderConfig | None): Explorer sub-agent provider.
-            Defaults to the reviewer provider when ``None``.
-
-    Returns:
-        AgentConfig: Either ``CliAgentConfig`` or ``ApiAgentConfig``.
-    """
-
-    if provider_name is None:
-        return CliAgentConfig(
-            model=model,
-            cli_path=cli_path,
-        )
-
-    from nominal_code.llm.registry import PROVIDERS
-
-    provider_config: ProviderConfig = PROVIDERS[provider_name]
-
-    if model:
-        provider_config = provider_config.model_copy(update={"model": model})
-
-    return ApiAgentConfig(
-        reviewer=provider_config,
-        explorer=explorer or provider_config,
-    )

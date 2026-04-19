@@ -12,7 +12,7 @@ from nominal_code.agent.invoke import (
     save_conversation,
 )
 from nominal_code.agent.result import AgentResult
-from nominal_code.config import ApiAgentConfig, ProviderConfig
+from nominal_code.config import AgentRoleConfig, ApiAgentConfig
 from nominal_code.conversation.memory import MemoryConversationStore
 from nominal_code.llm.messages import (
     LLMResponse,
@@ -849,8 +849,8 @@ def _make_event():
 def _make_api_config():
     config = MagicMock()
     config.agent = ApiAgentConfig(
-        reviewer=ProviderConfig(name=ProviderName.OPENAI, model="gpt-4.1"),
-        explorer=ProviderConfig(name=ProviderName.OPENAI, model="gpt-4.1-mini"),
+        reviewer=AgentRoleConfig(name=ProviderName.OPENAI, model="gpt-4.1"),
+        explorer=AgentRoleConfig(name=ProviderName.OPENAI, model="gpt-4.1-mini"),
     )
 
     return config

@@ -78,8 +78,8 @@ When `explorer` is omitted, it inherits from `reviewer`. See [Configuration](con
 
 | Parameter | Default | Description |
 |---|---|---|
-| `reviewer_max_turns` | `8` | Turn budget for the reviewer agent |
-| `explorer_max_turns` | `32` | Turn budget per explore sub-agent |
+| `agent.reviewer.max_turns` | `8` | Turn budget for the reviewer agent |
+| `agent.explorer.max_turns` | `32` | Turn budget per explore sub-agent |
 
 ## Cost Tracking
 
@@ -89,7 +89,7 @@ The reviewer's `_log_review_costs()` function sums the reviewer's own cost with 
 
 ## Fallback Behavior
 
-If the reviewer reaches its turn limit (`reviewer_max_turns`) without calling `submit_review`, a fallback single-turn call is made. This call receives the original prompt plus any notes the reviewer accumulated, and is forced to call `submit_review` immediately via `tool_choice=REQUIRED`.
+If the reviewer reaches its turn limit (`agent.reviewer.max_turns`) without calling `submit_review`, a fallback single-turn call is made. This call receives the original prompt plus any notes the reviewer accumulated, and is forced to call `submit_review` immediately via `tool_choice=REQUIRED`.
 
 ## Bundled Prompts
 

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from nominal_code.config.agent import (
     AgentConfig,
+    AgentRoleConfig,
     ApiAgentConfig,
     CliAgentConfig,
-    ProviderConfig,
 )
 from nominal_code.config.kubernetes import KubernetesConfig
 from nominal_code.config.loader import load_config
@@ -22,6 +22,7 @@ from nominal_code.config.settings import (
 
 __all__ = [
     "AgentConfig",
+    "AgentRoleConfig",
     "ApiAgentConfig",
     "CliAgentConfig",
     "Config",
@@ -30,7 +31,6 @@ __all__ = [
     "GitLabConfig",
     "KubernetesConfig",
     "PromptsConfig",
-    "ProviderConfig",
     "RedisConfig",
     "ReviewerConfig",
     "RoutingPolicy",

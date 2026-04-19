@@ -61,9 +61,8 @@ async def test_webhook_server_posts_review(
     config = Config(
         reviewer=ReviewerConfig(
             bot_username=REVIEWER_BOT,
-            system_prompt="You are a test reviewer.",
         ),
-        agent=CliAgentConfig(),
+        agent=CliAgentConfig(system_prompt="You are a test reviewer."),
         workspace=WorkspaceConfig(base_dir=Path(tempfile.mkdtemp())),
         webhook=WebhookConfig(
             host="0.0.0.0",
