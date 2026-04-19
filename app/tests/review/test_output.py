@@ -23,14 +23,13 @@ def _make_config():
     config.allowed_users = frozenset(["alice"])
     config.workspace = MagicMock()
     config.workspace.base_dir = "/tmp/workspaces"
-    config.agent = CliAgentConfig()
+    config.agent = CliAgentConfig(system_prompt="Review code.")
     config.prompts = MagicMock()
     config.prompts.coding_guidelines = "Use snake_case."
     config.prompts.language_guidelines = {"python": "Python style rules."}
     config.worker = None
     config.reviewer = ReviewerConfig(
         bot_username="claude-reviewer",
-        system_prompt="Review code.",
     )
 
     return config

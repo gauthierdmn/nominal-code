@@ -63,55 +63,67 @@ class WebhookSettings(BaseModel):
 
 class ReviewerSettings(BaseModel):
     """
-    Reviewer bot settings.
+    Reviewer bot identity settings.
+
+    These control how the bot appears on pull requests. Runtime concerns
+    (LLM provider, model, system prompt, max turns) live under
+    ``AgentSettings.reviewer``.
 
     Attributes:
         bot_username (str): The @mention name for the reviewer bot.
-        system_prompt_path (str): Path to the reviewer prompt file.
         triggers (list[str]): PR lifecycle events that auto-trigger the reviewer.
         inline_suggestions (bool): Whether to enable one-click-apply code
             suggestions in review comments.
     """
 
     bot_username: str | None = None
-    system_prompt_path: str = ""
     triggers: list[str] = Field(default_factory=list)
     inline_suggestions: bool = True
 
 
-class ProviderSettings(BaseModel):
+class AgentRoleSettings(BaseModel):
     """
-    LLM provider and model selection for a single agent role.
+    Per-role agent runtime settings.
 
-    Mirrors ``ProviderConfig`` on the frozen config side. When fields
-    are ``None``, the loader falls back to the reviewer's values.
+    Mirrors ``AgentRoleConfig`` on the frozen config side. Applies
+    symmetrically to the reviewer and explorer roles. When fields are
+    ``None``/empty, the loader inherits from defaults or the reviewer's
+    provider.
 
     Attributes:
         provider (str | None): LLM provider name.
         model (str | None): Model name override.
+        system_prompt (str): System prompt for this role, either a file
+            path or inline content. Resolved at load time via
+            ``Path(value).is_file()``.
+        max_turns (int | None): Maximum agentic turns for this role.
+            ``None`` inherits the per-role default (8 for reviewer, 32
+            for explorer).
     """
 
     provider: str | None = None
     model: str | None = None
+    system_prompt: str = ""
+    max_turns: int | None = None
 
 
 class AgentSettings(BaseModel):
     """
-    Agent runner settings with per-role provider and model configuration.
+    Agent runtime settings for both roles in the review pipeline.
 
-    Each role (reviewer, explorer) can specify its own provider and model.
-    When the explorer field is omitted, it inherits from the reviewer's
-    provider and model.
+    Each role (reviewer, explorer) carries its own provider, model,
+    system prompt, and max-turn budget. When the explorer role omits
+    provider/model, it inherits from the reviewer.
 
     Attributes:
-        reviewer (ProviderSettings): Reviewer agent provider and model.
-        explorer (ProviderSettings): Explorer agent provider and model.
+        reviewer (AgentRoleSettings): Reviewer agent runtime settings.
+        explorer (AgentRoleSettings): Explorer agent runtime settings.
         cli_path (str | None): Path to the Claude Code CLI binary
             (reviewer CLI mode only).
     """
 
-    reviewer: ProviderSettings = ProviderSettings()
-    explorer: ProviderSettings = ProviderSettings()
+    reviewer: AgentRoleSettings = Field(default_factory=AgentRoleSettings)
+    explorer: AgentRoleSettings = Field(default_factory=AgentRoleSettings)
     cli_path: str | None = None
 
 
@@ -148,11 +160,13 @@ class PromptsSettings(BaseModel):
     Prompt file settings.
 
     Attributes:
-        coding_guidelines_path (str): Path to coding guidelines file.
+        coding_guidelines (str): Coding guidelines provided either as a
+            file path or as inline content. Resolved at load time via
+            ``Path(value).is_file()``.
         language_guidelines_dir (str): Path to language guidelines directory.
     """
 
-    coding_guidelines_path: str = ""
+    coding_guidelines: str = ""
     language_guidelines_dir: str = ""
 
 
@@ -257,3 +271,4 @@ class AppSettings(BaseModel):
     prompts: PromptsSettings = Field(default_factory=PromptsSettings)
     redis: RedisSettings = Field(default_factory=RedisSettings)
     kubernetes: KubernetesSettings = Field(default_factory=KubernetesSettings)
+    dry_run: bool = False

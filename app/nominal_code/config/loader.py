@@ -4,18 +4,20 @@ import logging
 from pathlib import Path
 
 from nominal_code.config.agent import (
+    EXPLORER_DEFAULT_MAX_TURNS,
+    REVIEWER_DEFAULT_MAX_TURNS,
     AgentConfig,
+    AgentRoleConfig,
     ApiAgentConfig,
-    ProviderConfig,
-    resolve_agent_config,
+    CliAgentConfig,
 )
 from nominal_code.config.env import load_app_settings
 from nominal_code.config.kubernetes import KubernetesConfig
 from nominal_code.config.models import (
+    AgentRoleSettings,
     AppSettings,
     GitHubSettings,
     GitLabSettings,
-    ProviderSettings,
 )
 from nominal_code.config.policies import FilteringPolicy, RoutingPolicy
 from nominal_code.config.settings import (
@@ -38,6 +40,9 @@ from nominal_code.models import EventType, ProviderName
 from nominal_code.prompts import load_bundled_language_guidelines, load_prompt
 
 logger: logging.Logger = logging.getLogger(__name__)
+
+REVIEWER_BUNDLED_PROMPT: str = "reviewer_prompt.md"
+EXPLORER_BUNDLED_PROMPT: str = "explore/explorer.md"
 
 
 def load_config(
@@ -101,12 +106,7 @@ def load_config(
         else WorkspaceConfig().base_dir
     )
 
-    coding_guidelines: str = ""
-
-    if settings.prompts.coding_guidelines_path:
-        coding_guidelines = load_file_content(
-            Path(settings.prompts.coding_guidelines_path),
-        )
+    coding_guidelines: str = resolve_prompt(settings.prompts.coding_guidelines)
 
     if guidelines_path is not None:
         custom_coding: str = load_file_content(guidelines_path)
@@ -132,36 +132,55 @@ def load_config(
             language_guidelines=language_guidelines,
         ),
         webhook=webhook,
+        dry_run=settings.dry_run,
     )
+
+
+def resolve_prompt(value: str, *, fallback: str = "") -> str:
+    """
+    Resolve a prompt source value that may be a file path or inline content.
+
+    - When ``value`` points to an existing file, returns its contents.
+    - When ``value`` is non-empty but is not a path, returns it verbatim
+      (treated as inline content).
+    - When ``value`` is empty, returns ``fallback``.
+
+    Args:
+        value (str): Raw input (file path, inline content, or empty).
+        fallback (str): Value to return when ``value`` is empty. Callers
+            pass the pre-loaded bundled default here when one exists.
+
+    Returns:
+        str: The resolved prompt content.
+    """
+
+    if value and Path(value).is_file():
+        return load_file_content(Path(value))
+
+    return value or fallback
 
 
 def _build_reviewer(
     settings: AppSettings,
     require_webhook: bool,
-) -> ReviewerConfig | None:
+) -> ReviewerConfig:
     """
-    Build the reviewer configuration from settings.
+    Build the reviewer bot identity configuration.
 
-    In webhook mode, ``REVIEWER_BOT_USERNAME`` is required. In CLI/CI
-    modes, the reviewer is always enabled with an empty bot username.
+    Only bot-identity concerns (username, suggestions) live on
+    ``ReviewerConfig``. The reviewer's system prompt is resolved on the
+    agent-runtime side via ``_build_agent``.
 
     Args:
         settings (AppSettings): The application settings.
         require_webhook (bool): Whether webhook-mode validation applies.
 
     Returns:
-        ReviewerConfig | None: The reviewer config.
+        ReviewerConfig: The reviewer identity config.
 
     Raises:
         ValueError: If ``require_webhook`` is True and no bot username is set.
     """
-
-    if settings.reviewer.system_prompt_path:
-        reviewer_system_prompt: str = load_file_content(
-            Path(settings.reviewer.system_prompt_path),
-        )
-    else:
-        reviewer_system_prompt = load_prompt("reviewer_prompt.md")
 
     suggestions_prompt: str = ""
 
@@ -174,13 +193,11 @@ def _build_reviewer(
 
         return ReviewerConfig(
             bot_username=settings.reviewer.bot_username,
-            system_prompt=reviewer_system_prompt,
             suggestions_prompt=suggestions_prompt,
         )
 
     return ReviewerConfig(
         bot_username="",
-        system_prompt=reviewer_system_prompt,
         suggestions_prompt=suggestions_prompt,
     )
 
@@ -261,22 +278,23 @@ def _build_agent(
     """
     Build the agent configuration from settings and overrides.
 
-    When ``default_provider`` is set, forces ``ApiAgentConfig`` with
-    that provider as fallback. Otherwise, uses ``resolve_agent_config``
-    which returns ``CliAgentConfig`` when no provider is specified.
+    When ``default_provider`` is set, always returns ``ApiAgentConfig``
+    with per-role runtime configs (reviewer + explorer). When no
+    provider is configured anywhere, returns ``CliAgentConfig`` with the
+    reviewer's system prompt populated.
 
     Args:
         settings (AppSettings): The application settings.
         default_provider (str | None): Fallback provider for API mode.
-        model (str | None): Model override. None to use settings.
-        provider (ProviderName | None): Provider override. None to use
-            settings.
+        model (str | None): Reviewer model override. None uses settings.
+        provider (ProviderName | None): Reviewer provider override.
+            None uses settings.
 
     Returns:
         AgentConfig: The resolved agent configuration.
 
     Raises:
-        ValueError: If the provider name is not recognised.
+        ValueError: If a provider name is not recognised.
     """
 
     effective_model: str | None = (
@@ -286,125 +304,198 @@ def _build_agent(
     if default_provider is not None:
         return _build_api_agent(
             settings=settings,
-            default_provider=default_provider,
-            model=effective_model,
+            reviewer_provider_name=_resolve_reviewer_provider_name(
+                settings=settings,
+                override=provider,
+                default_provider=default_provider,
+            ),
+            reviewer_model=effective_model,
         )
 
     provider_name: ProviderName | None = provider
 
     if provider_name is None and settings.agent.reviewer.provider:
-        try:
-            provider_name = ProviderName(settings.agent.reviewer.provider)
-        except ValueError:
-            available: str = ", ".join(p.value for p in ProviderName)
+        provider_name = _parse_provider_name(
+            settings.agent.reviewer.provider,
+            source="AGENT_PROVIDER",
+        )
 
-            raise ValueError(
-                f"Unknown AGENT_PROVIDER: {settings.agent.reviewer.provider!r}. "
-                f"Available: {available}",
-            ) from None
+    if provider_name is None:
+        return CliAgentConfig(
+            model=effective_model,
+            cli_path=settings.agent.cli_path,
+            system_prompt=resolve_prompt(
+                settings.agent.reviewer.system_prompt,
+                fallback=load_prompt(REVIEWER_BUNDLED_PROMPT),
+            ),
+        )
 
-    return resolve_agent_config(
-        provider_name=provider_name,
-        model=effective_model,
-        cli_path=settings.agent.cli_path,
+    return _build_api_agent(
+        settings=settings,
+        reviewer_provider_name=provider_name,
+        reviewer_model=effective_model,
     )
 
 
 def _build_api_agent(
     settings: AppSettings,
-    default_provider: str,
-    model: str | None,
+    reviewer_provider_name: ProviderName,
+    reviewer_model: str | None,
 ) -> ApiAgentConfig:
     """
-    Build an API agent configuration with provider fallback.
+    Build an API agent configuration with per-role runtime config.
 
-    Resolves provider configs for reviewer and explorer. The explorer
-    inherits from the reviewer when not explicitly configured.
+    Each role (reviewer, explorer) is built by taking the provider's
+    ``PROVIDERS`` template and ``model_copy``-ing per-role overrides
+    (model, system prompt, max turns). The explorer inherits the
+    reviewer's provider/model when its settings are empty.
 
     Args:
         settings (AppSettings): The application settings.
-        default_provider (str): Fallback provider name.
-        model (str | None): Model override for the reviewer.
+        reviewer_provider_name (ProviderName): Resolved reviewer provider.
+        reviewer_model (str | None): Reviewer model override.
 
     Returns:
         ApiAgentConfig: The resolved API agent configuration.
 
     Raises:
-        ValueError: If a provider name is not recognised.
+        ValueError: If the explorer's provider name is not recognised.
     """
 
-    provider_name_str: str = settings.agent.reviewer.provider or default_provider
+    reviewer_role: AgentRoleConfig = _build_role_config(
+        role_settings=settings.agent.reviewer,
+        provider_name=reviewer_provider_name,
+        model_override=reviewer_model,
+        bundled_prompt=load_prompt(REVIEWER_BUNDLED_PROMPT),
+        default_max_turns=REVIEWER_DEFAULT_MAX_TURNS,
+    )
+
+    explorer_provider_name: ProviderName = reviewer_provider_name
+
+    if settings.agent.explorer.provider:
+        explorer_provider_name = _parse_provider_name(
+            settings.agent.explorer.provider,
+            source="AGENT_EXPLORER_PROVIDER",
+        )
+
+    explorer_model: str | None = settings.agent.explorer.model or reviewer_role.model
+
+    explorer_role: AgentRoleConfig = _build_role_config(
+        role_settings=settings.agent.explorer,
+        provider_name=explorer_provider_name,
+        model_override=explorer_model,
+        bundled_prompt=load_prompt(EXPLORER_BUNDLED_PROMPT),
+        default_max_turns=EXPLORER_DEFAULT_MAX_TURNS,
+    )
+
+    return ApiAgentConfig(reviewer=reviewer_role, explorer=explorer_role)
+
+
+def _build_role_config(
+    role_settings: AgentRoleSettings,
+    provider_name: ProviderName,
+    model_override: str | None,
+    bundled_prompt: str,
+    default_max_turns: int,
+) -> AgentRoleConfig:
+    """
+    Build one role's ``AgentRoleConfig`` by layering overrides on the provider template.
+
+    Starts from ``PROVIDERS[provider_name]`` (the catalog template) and
+    ``model_copy``-ies in per-role overrides: model, system prompt,
+    max turns.
+
+    Args:
+        role_settings (AgentRoleSettings): Raw settings for this role.
+        provider_name (ProviderName): Resolved LLM provider.
+        model_override (str | None): Effective model to use; when None,
+            keeps the provider template's default.
+        bundled_prompt (str): Pre-loaded bundled prompt content used as
+            the fallback when no override is configured.
+        default_max_turns (int): Per-role default max turns (8 for
+            reviewer, 32 for explorer).
+
+    Returns:
+        AgentRoleConfig: The fully-resolved role config.
+    """
+
+    template: AgentRoleConfig = PROVIDERS[provider_name]
+    updates: dict[str, object] = {}
+
+    if model_override:
+        updates["model"] = model_override
+
+    updates["system_prompt"] = resolve_prompt(
+        role_settings.system_prompt,
+        fallback=bundled_prompt,
+    )
+
+    updates["max_turns"] = (
+        role_settings.max_turns
+        if role_settings.max_turns is not None
+        else default_max_turns
+    )
+
+    return template.model_copy(update=updates)
+
+
+def _resolve_reviewer_provider_name(
+    settings: AppSettings,
+    override: ProviderName | None,
+    default_provider: str,
+) -> ProviderName:
+    """
+    Resolve the reviewer provider name in API-forced mode.
+
+    Priority: explicit ``override`` > settings > ``default_provider``.
+
+    Args:
+        settings (AppSettings): The application settings.
+        override (ProviderName | None): Explicit override (from kwargs).
+        default_provider (str): Fallback provider name string.
+
+    Returns:
+        ProviderName: The resolved provider.
+
+    Raises:
+        ValueError: If the resolved name is not recognised.
+    """
+
+    if override is not None:
+        return override
+
+    if settings.agent.reviewer.provider:
+        return _parse_provider_name(
+            settings.agent.reviewer.provider,
+            source="AGENT_PROVIDER",
+        )
+
+    return _parse_provider_name(default_provider, source="default_provider")
+
+
+def _parse_provider_name(value: str, *, source: str) -> ProviderName:
+    """
+    Parse a string into a ``ProviderName``, raising a clear error otherwise.
+
+    Args:
+        value (str): The raw provider name.
+        source (str): Diagnostic label identifying the source of ``value``.
+
+    Returns:
+        ProviderName: The parsed enum value.
+
+    Raises:
+        ValueError: When ``value`` is not a known provider.
+    """
 
     try:
-        provider_name: ProviderName = ProviderName(provider_name_str)
+        return ProviderName(value)
     except ValueError:
         available: str = ", ".join(p.value for p in ProviderName)
 
         raise ValueError(
-            f"Unknown AGENT_PROVIDER: {provider_name_str!r}. Available: {available}",
+            f"Unknown {source}: {value!r}. Available: {available}",
         ) from None
-
-    reviewer_config: ProviderConfig = PROVIDERS[provider_name]
-
-    if model:
-        reviewer_config = reviewer_config.model_copy(
-            update={"model": model},
-        )
-
-    explorer_config: ProviderConfig | None = _resolve_provider(
-        settings.agent.explorer,
-        reviewer_config,
-    )
-
-    return ApiAgentConfig(
-        reviewer=reviewer_config,
-        explorer=explorer_config or reviewer_config,
-    )
-
-
-def _resolve_provider(
-    settings: ProviderSettings,
-    fallback: ProviderConfig,
-) -> ProviderConfig | None:
-    """
-    Resolve a provider config from per-role settings with fallback.
-
-    When the settings have no overrides (both provider and model are
-    empty), returns ``None`` — the caller should use the fallback.
-    When only the model is set, uses the fallback's provider name.
-    When only the provider is set, uses that provider's default model.
-
-    Args:
-        settings (ProviderSettings): Per-role provider and model settings.
-        fallback (ProviderConfig): The reviewer's resolved config to
-            inherit from.
-
-    Returns:
-        ProviderConfig | None: Resolved config, or ``None`` when the
-            role has no overrides.
-    """
-
-    if not settings.provider and not settings.model:
-        return None
-
-    if settings.provider:
-        try:
-            provider_name: ProviderName = ProviderName(settings.provider)
-        except ValueError:
-            available: str = ", ".join(p.value for p in ProviderName)
-
-            raise ValueError(
-                f"Unknown provider: {settings.provider!r}. Available: {available}",
-            ) from None
-
-        config: ProviderConfig = PROVIDERS[provider_name]
-    else:
-        config = fallback
-
-    if settings.model:
-        config = config.model_copy(update={"model": settings.model})
-
-    return config
 
 
 def _resolve_kubernetes(

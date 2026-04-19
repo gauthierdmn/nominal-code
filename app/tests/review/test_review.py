@@ -40,14 +40,14 @@ def _make_config(allowed_users=None):
     config.allowed_users = frozenset(allowed_users or ["alice"])
     config.workspace = MagicMock()
     config.workspace.base_dir = "/tmp/workspaces"
-    config.agent = CliAgentConfig()
+    config.agent = CliAgentConfig(system_prompt="Review code.")
     config.prompts = MagicMock()
     config.prompts.coding_guidelines = "Use snake_case."
     config.prompts.language_guidelines = {"python": "Python style rules."}
     config.worker = None
+    config.dry_run = False
     config.reviewer = ReviewerConfig(
         bot_username="claude-reviewer",
-        system_prompt="Review code.",
     )
 
     return config
@@ -238,7 +238,7 @@ class TestReviewerProcessComment:
                 mock_ws_class.return_value = mock_ws
 
                 with patch(
-                    "nominal_code.agent.prompts.resolve_guidelines",
+                    "nominal_code.review.reviewer.resolve_guidelines",
                     return_value="Repo guidelines override",
                 ) as mock_resolve:
                     await run_and_post_review(
@@ -1292,18 +1292,20 @@ class TestPromptBoundaryTags:
 class TestAgenticReviewer:
     @pytest.mark.asyncio
     async def test_review_uses_agentic_flow_for_api_agent(self):
-        from nominal_code.config import ApiAgentConfig, ProviderConfig
+        from nominal_code.config import AgentRoleConfig, ApiAgentConfig
         from nominal_code.models import ProviderName
 
         config = _make_config()
         config.agent = ApiAgentConfig(
-            reviewer=ProviderConfig(
+            reviewer=AgentRoleConfig(
                 name=ProviderName.GOOGLE,
                 model="gemini-2.5-pro",
+                system_prompt="Review code.",
             ),
-            explorer=ProviderConfig(
+            explorer=AgentRoleConfig(
                 name=ProviderName.GOOGLE,
                 model="gemini-2.5-flash",
+                system_prompt="Explore code.",
             ),
         )
 
@@ -1357,18 +1359,20 @@ class TestAgenticReviewer:
 
     @pytest.mark.asyncio
     async def test_fallback_review_on_exhausted_turns(self):
-        from nominal_code.config import ApiAgentConfig, ProviderConfig
+        from nominal_code.config import AgentRoleConfig, ApiAgentConfig
         from nominal_code.models import ProviderName
 
         config = _make_config()
         config.agent = ApiAgentConfig(
-            reviewer=ProviderConfig(
+            reviewer=AgentRoleConfig(
                 name=ProviderName.GOOGLE,
                 model="gemini-2.5-pro",
+                system_prompt="Review code.",
             ),
-            explorer=ProviderConfig(
+            explorer=AgentRoleConfig(
                 name=ProviderName.GOOGLE,
                 model="gemini-2.5-flash",
+                system_prompt="Explore code.",
             ),
         )
 

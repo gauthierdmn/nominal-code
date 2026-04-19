@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-DEFAULT_MAX_TURNS_PER_SUB_AGENT: int = 32
+from nominal_code.config.agent import EXPLORER_DEFAULT_MAX_TURNS
 
 if TYPE_CHECKING:
     from nominal_code.llm.provider import LLMProvider
@@ -30,6 +30,6 @@ class SubAgentConfig:
     model: str
     provider_name: ProviderName
     system_prompt: str
-    max_turns: int = DEFAULT_MAX_TURNS_PER_SUB_AGENT
+    max_turns: int = EXPLORER_DEFAULT_MAX_TURNS
     allowed_tools: list[str] = field(default_factory=list)
     description: str = ""

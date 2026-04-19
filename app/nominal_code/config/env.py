@@ -26,7 +26,7 @@ ENV_MAP: list[tuple[str, list[str]]] = [
     ("WEBHOOK_HOST", ["webhook", "host"]),
     ("WEBHOOK_PORT", ["webhook", "port"]),
     ("REVIEWER_BOT_USERNAME", ["reviewer", "bot_username"]),
-    ("REVIEWER_SYSTEM_PROMPT", ["reviewer", "system_prompt_path"]),
+    ("REVIEWER_SYSTEM_PROMPT", ["agent", "reviewer", "system_prompt"]),
     ("REVIEWER_TRIGGERS", ["reviewer", "triggers"]),
     ("INLINE_SUGGESTIONS", ["reviewer", "inline_suggestions"]),
     ("AGENT_PROVIDER", ["agent", "reviewer", "provider"]),
@@ -39,8 +39,10 @@ ENV_MAP: list[tuple[str, list[str]]] = [
     ("PR_TITLE_INCLUDE_TAGS", ["access", "pr_title_include_tags"]),
     ("PR_TITLE_EXCLUDE_TAGS", ["access", "pr_title_exclude_tags"]),
     ("WORKSPACE_BASE_DIR", ["workspace", "base_dir"]),
-    ("CODING_GUIDELINES", ["prompts", "coding_guidelines_path"]),
+    ("CODING_GUIDELINES", ["prompts", "coding_guidelines"]),
     ("LANGUAGE_GUIDELINES_DIR", ["prompts", "language_guidelines_dir"]),
+    ("EXPLORER_SYSTEM_PROMPT", ["agent", "explorer", "system_prompt"]),
+    ("DRY_RUN_REVIEW", ["dry_run"]),
     ("REDIS_URL", ["redis", "url"]),
     ("REDIS_KEY_TTL_SECONDS", ["redis", "key_ttl_seconds"]),
     ("K8S_IMAGE", ["kubernetes", "image"]),
@@ -88,6 +90,7 @@ INT_KEYS: frozenset[str] = frozenset(
 BOOL_KEYS: frozenset[str] = frozenset(
     {
         "INLINE_SUGGESTIONS",
+        "DRY_RUN_REVIEW",
     }
 )
 

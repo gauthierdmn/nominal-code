@@ -4,41 +4,41 @@ from typing import Any
 
 from environs import Env
 
-from nominal_code.config import ProviderConfig
+from nominal_code.config import AgentRoleConfig
 from nominal_code.llm.provider import LLMProvider
 from nominal_code.models import ProviderName
 
 _env: Env = Env()
 
-PROVIDERS: dict[ProviderName, ProviderConfig] = {
-    ProviderName.ANTHROPIC: ProviderConfig(
+PROVIDERS: dict[ProviderName, AgentRoleConfig] = {
+    ProviderName.ANTHROPIC: AgentRoleConfig(
         name=ProviderName.ANTHROPIC,
         model="claude-sonnet-4-20250514",
     ),
-    ProviderName.OPENAI: ProviderConfig(
+    ProviderName.OPENAI: AgentRoleConfig(
         name=ProviderName.OPENAI,
         model="gpt-4.1",
     ),
-    ProviderName.GOOGLE: ProviderConfig(
+    ProviderName.GOOGLE: AgentRoleConfig(
         name=ProviderName.GOOGLE,
         model="gemini-2.5-flash",
     ),
-    ProviderName.DEEPSEEK: ProviderConfig(
+    ProviderName.DEEPSEEK: AgentRoleConfig(
         name=ProviderName.DEEPSEEK,
         model="deepseek-chat",
         base_url="https://api.deepseek.com",
     ),
-    ProviderName.GROQ: ProviderConfig(
+    ProviderName.GROQ: AgentRoleConfig(
         name=ProviderName.GROQ,
         model="llama-3.3-70b-versatile",
         base_url="https://api.groq.com/openai/v1",
     ),
-    ProviderName.TOGETHER: ProviderConfig(
+    ProviderName.TOGETHER: AgentRoleConfig(
         name=ProviderName.TOGETHER,
         model="meta-llama/Llama-3.3-70B-Instruct-Turbo",
         base_url="https://api.together.xyz/v1",
     ),
-    ProviderName.FIREWORKS: ProviderConfig(
+    ProviderName.FIREWORKS: AgentRoleConfig(
         name=ProviderName.FIREWORKS,
         model="accounts/fireworks/models/llama-v3p3-70b-instruct",
         base_url="https://api.fireworks.ai/inference/v1",
@@ -94,13 +94,13 @@ def create_provider(name: str, **kwargs: Any) -> LLMProvider:
 
     from nominal_code.llm.openai import OpenAIProvider
 
-    provider_config = PROVIDERS[provider]
+    provider_defaults = PROVIDERS[provider]
     api_key: str = (
         kwargs.pop("api_key", "")
-        or _env.str(provider_config.api_key_env, "")
+        or _env.str(provider_defaults.api_key_env, "")
         or _env.str("OPENAI_API_KEY", "")
     )
-    base_url: str | None = kwargs.pop("base_url", None) or provider_config.base_url
+    base_url: str | None = kwargs.pop("base_url", None) or provider_defaults.base_url
 
     return OpenAIProvider(
         api_key=api_key,

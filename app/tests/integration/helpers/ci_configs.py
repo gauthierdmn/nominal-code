@@ -1,7 +1,7 @@
 import base64
 import os
 
-from nominal_code.config import ProviderConfig
+from nominal_code.config import AgentRoleConfig
 from nominal_code.llm.registry import PROVIDERS
 from nominal_code.models import ProviderName
 
@@ -43,9 +43,9 @@ def _provider() -> str:
     return os.environ.get("TEST_PROVIDER", DEFAULT_PROVIDER)
 
 
-def _provider_defaults(provider: str) -> ProviderConfig:
+def _provider_defaults(provider: str) -> AgentRoleConfig:
     """
-    Return the provider config for a given provider name.
+    Return the role config for a given provider name.
 
     Uses a cheaper test model when available, falling back to the
     production default.
@@ -54,7 +54,7 @@ def _provider_defaults(provider: str) -> ProviderConfig:
         provider (str): The provider name (e.g. ``anthropic``, ``openai``).
 
     Returns:
-        ProviderConfig: The provider-specific configuration.
+        AgentRoleConfig: The resolved role configuration.
 
     Raises:
         ValueError: If the provider is not recognized.
