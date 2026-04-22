@@ -106,7 +106,11 @@ def load_config(
         else WorkspaceConfig().base_dir
     )
 
-    coding_guidelines: str = resolve_prompt(settings.prompts.coding_guidelines)
+    coding_guidelines: str = resolve_prompt_override(
+        inline=settings.prompts.coding_guidelines,
+        file_path=settings.prompts.coding_guidelines_file,
+        default="",
+    )
 
     if guidelines_path is not None:
         custom_coding: str = load_file_content(guidelines_path)
@@ -136,28 +140,59 @@ def load_config(
     )
 
 
-def resolve_prompt(value: str, *, fallback: str = "") -> str:
+def resolve_prompt_override(inline: str, file_path: str, default: str) -> str:
     """
-    Resolve a prompt source value that may be a file path or inline content.
+    Resolve a prompt override from explicit inline + file inputs.
 
-    - When ``value`` points to an existing file, returns its contents.
-    - When ``value`` is non-empty but is not a path, returns it verbatim
-      (treated as inline content).
-    - When ``value`` is empty, returns ``fallback``.
+    The caller passes two separate values (inline content, file path)
+    plus a default. Precedence, from highest to lowest:
+
+    1. ``file_path`` — read the file; raise ``ValueError`` if the path
+       does not point to a readable file.
+    2. ``inline`` — used verbatim.
+    3. ``default`` — used when neither override is set.
+
+    When both ``inline`` and ``file_path`` are supplied, a warning is
+    logged and ``file_path`` wins.
+
+    No ``Path(value).is_file()`` probe is performed on inline content —
+    the caller declares the mode by which argument they populate.
 
     Args:
-        value (str): Raw input (file path, inline content, or empty).
-        fallback (str): Value to return when ``value`` is empty. Callers
-            pass the pre-loaded bundled default here when one exists.
+        inline (str): Inline prompt content override. Empty means unset.
+        file_path (str): Path to a file whose contents are the override.
+            Empty means unset.
+        default (str): Fallback value when both overrides are empty.
+            Callers pass the pre-loaded bundled default here when one
+            exists.
 
     Returns:
         str: The resolved prompt content.
+
+    Raises:
+        ValueError: If ``file_path`` is set but does not point to a
+            readable file.
     """
 
-    if value and Path(value).is_file():
-        return load_file_content(Path(value))
+    if inline and file_path:
+        logger.warning(
+            "Prompt override has both inline and _FILE set; using the file",
+        )
 
-    return value or fallback
+    if file_path:
+        path: Path = Path(file_path)
+
+        if not path.is_file():
+            raise ValueError(
+                f"Prompt override file does not exist or is not readable: {file_path}",
+            )
+
+        return load_file_content(path)
+
+    if inline:
+        return inline
+
+    return default
 
 
 def _build_reviewer(
@@ -324,9 +359,10 @@ def _build_agent(
         return CliAgentConfig(
             model=effective_model,
             cli_path=settings.agent.cli_path,
-            system_prompt=resolve_prompt(
-                settings.agent.reviewer.system_prompt,
-                fallback=load_prompt(REVIEWER_BUNDLED_PROMPT),
+            system_prompt=resolve_prompt_override(
+                inline=settings.agent.reviewer.system_prompt,
+                file_path=settings.agent.reviewer.system_prompt_file,
+                default=load_prompt(REVIEWER_BUNDLED_PROMPT),
             ),
         )
 
@@ -425,9 +461,10 @@ def _build_role_config(
     if model_override:
         updates["model"] = model_override
 
-    updates["system_prompt"] = resolve_prompt(
-        role_settings.system_prompt,
-        fallback=bundled_prompt,
+    updates["system_prompt"] = resolve_prompt_override(
+        inline=role_settings.system_prompt,
+        file_path=role_settings.system_prompt_file,
+        default=bundled_prompt,
     )
 
     updates["max_turns"] = (
