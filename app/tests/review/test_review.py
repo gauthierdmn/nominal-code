@@ -82,10 +82,19 @@ def _make_platform():
     from nominal_code.platforms.base import PullRequestMetadata
 
     platform = MagicMock()
+    platform.name = "github"
     platform.post_reaction = AsyncMock()
     platform.post_reply = AsyncMock()
     platform.fetch_pr_branch = AsyncMock(return_value="")
-    platform.fetch_pr_diff = AsyncMock(return_value=[])
+    platform.fetch_pr_diff = AsyncMock(
+        return_value=[
+            ChangedFile(
+                file_path="src/main.py",
+                status=FileStatus.MODIFIED,
+                patch="@@ -1 +1 @@\n-old\n+new",
+            ),
+        ],
+    )
     platform.fetch_pr_comments = AsyncMock(return_value=[])
     platform.fetch_pr_metadata = AsyncMock(return_value=PullRequestMetadata())
     platform.submit_review = AsyncMock()
@@ -152,6 +161,38 @@ class TestReviewerProcessComment:
                 repo_full_name="owner/repo",
                 pr_number=42,
             )
+
+    @pytest.mark.asyncio
+    async def test_reviewer_raises_when_fetch_pr_diff_returns_empty(self):
+        config = _make_config(allowed_users=["alice"])
+        platform = _make_platform()
+        platform.fetch_pr_diff = AsyncMock(return_value=[])
+        comment = _make_comment(author="alice")
+        conversation_store = MemoryConversationStore()
+
+        with patch(
+            "nominal_code.agent.invoke.run_cli_agent",
+            new_callable=AsyncMock,
+        ) as mock_run:
+            with patch(
+                "nominal_code.workspace.setup.GitWorkspace",
+            ) as mock_ws_class:
+                mock_ws = MagicMock()
+                mock_ws.ensure_ready = AsyncMock()
+                mock_ws.repo_path = Path("/tmp/workspaces/owner/repo/pr-42")
+                mock_ws_class.return_value = mock_ws
+
+                with pytest.raises(ValueError, match="no changed files"):
+                    await run_and_post_review(
+                        event=comment,
+                        prompt="review",
+                        config=config,
+                        platform=platform,
+                        conversation_store=conversation_store,
+                    )
+
+            # LLM must never be called when the diff is empty.
+            mock_run.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_reviewer_uses_reviewer_system_prompt(self):
@@ -253,7 +294,7 @@ class TestReviewerProcessComment:
                         repo_path=Path("/tmp/workspaces/owner/repo/pr-42"),
                         default_guidelines="Use snake_case.",
                         language_guidelines={"python": "Python style rules."},
-                        file_paths=[],
+                        file_paths=[Path("src/main.py")],
                     )
 
                 call_kwargs = mock_run.call_args.kwargs
@@ -869,7 +910,13 @@ class TestBotCommentFiltering:
 
         async def track_fetch_diff(repo_full_name, pr_number):
             call_order.append("fetch_pr_diff")
-            return []
+            return [
+                ChangedFile(
+                    file_path="src/main.py",
+                    status=FileStatus.MODIFIED,
+                    patch="@@ -1 +1 @@\n-old\n+new",
+                ),
+            ]
 
         async def track_fetch_comments(repo_full_name, pr_number):
             call_order.append("fetch_pr_comments")

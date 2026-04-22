@@ -194,6 +194,13 @@ async def review(
         bot_username=bot_username,
     )
 
+    if not review_context.changed_files:
+        raise ValueError(
+            f"{platform.name} returned no changed files for "
+            f"{event.repo_full_name}#{event.pr_number}; "
+            "aborting review to avoid running the LLM on an empty diff",
+        )
+
     if config.reviewer is None:
         raise ValueError("ReviewerConfig is required but not configured")
 
