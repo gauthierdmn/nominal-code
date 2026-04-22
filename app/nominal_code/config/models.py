@@ -93,9 +93,12 @@ class AgentRoleSettings(BaseModel):
     Attributes:
         provider (str | None): LLM provider name.
         model (str | None): Model name override.
-        system_prompt (str): System prompt for this role, either a file
-            path or inline content. Resolved at load time via
-            ``Path(value).is_file()``.
+        system_prompt (str): Inline system prompt content for this role.
+            Used verbatim. Empty means "no inline override".
+        system_prompt_file (str): Path to a file whose contents override
+            the system prompt for this role. Takes precedence over
+            ``system_prompt`` when both are set. Missing files fail
+            loudly at load time.
         max_turns (int | None): Maximum agentic turns for this role.
             ``None`` inherits the per-role default (8 for reviewer, 32
             for explorer).
@@ -104,6 +107,7 @@ class AgentRoleSettings(BaseModel):
     provider: str | None = None
     model: str | None = None
     system_prompt: str = ""
+    system_prompt_file: str = ""
     max_turns: int | None = None
 
 
@@ -160,13 +164,17 @@ class PromptsSettings(BaseModel):
     Prompt file settings.
 
     Attributes:
-        coding_guidelines (str): Coding guidelines provided either as a
-            file path or as inline content. Resolved at load time via
-            ``Path(value).is_file()``.
+        coding_guidelines (str): Inline coding guidelines. Used verbatim.
+            Empty means "no inline override".
+        coding_guidelines_file (str): Path to a file whose contents
+            override the coding guidelines. Takes precedence over
+            ``coding_guidelines`` when both are set. Missing files fail
+            loudly at load time.
         language_guidelines_dir (str): Path to language guidelines directory.
     """
 
     coding_guidelines: str = ""
+    coding_guidelines_file: str = ""
     language_guidelines_dir: str = ""
 
 

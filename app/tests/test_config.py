@@ -46,8 +46,8 @@ def _full_env(tmp_path):
         "AGENT_MAX_TURNS": "10",
         "AGENT_MODEL": "claude-sonnet-4-20250514",
         "AGENT_CLI_PATH": "/usr/local/bin/claude",
-        "REVIEWER_SYSTEM_PROMPT": str(reviewer_prompt_file),
-        "CODING_GUIDELINES": str(guidelines_file),
+        "REVIEWER_SYSTEM_PROMPT_FILE": str(reviewer_prompt_file),
+        "CODING_GUIDELINES_FILE": str(guidelines_file),
         "LANGUAGE_GUIDELINES_DIR": str(lang_dir),
     }
 
@@ -107,7 +107,10 @@ class TestFromEnv:
         prompt_file = tmp_path / "reviewer.md"
         prompt_file.write_text("Review code.\n", encoding="utf-8")
 
-        with patch.dict(os.environ, {"REVIEWER_SYSTEM_PROMPT": str(prompt_file)}):
+        with patch.dict(
+            os.environ,
+            {"REVIEWER_SYSTEM_PROMPT_FILE": str(prompt_file)},
+        ):
             config = Config.from_env(require_webhook=True)
 
         assert config.reviewer is not None
@@ -128,6 +131,43 @@ class TestFromEnv:
         assert config.reviewer is not None
         assert config.agent.system_prompt == inline_prompt
 
+    def test_from_env_reviewer_system_prompt_file_wins_over_inline(
+        self,
+        tmp_path,
+        _reviewer_only_env,
+        caplog,
+    ):
+        prompt_file = tmp_path / "reviewer.md"
+        prompt_file.write_text("From file.", encoding="utf-8")
+
+        with patch.dict(
+            os.environ,
+            {
+                "REVIEWER_SYSTEM_PROMPT": "Inline content",
+                "REVIEWER_SYSTEM_PROMPT_FILE": str(prompt_file),
+            },
+        ):
+            with caplog.at_level("WARNING"):
+                config = Config.from_env(require_webhook=True)
+
+        assert config.agent.system_prompt == "From file."
+        assert any(
+            "both inline and _file set" in record.message.lower()
+            for record in caplog.records
+        )
+
+    def test_from_env_reviewer_system_prompt_file_missing_raises(
+        self,
+        tmp_path,
+        _reviewer_only_env,
+    ):
+        with patch.dict(
+            os.environ,
+            {"REVIEWER_SYSTEM_PROMPT_FILE": str(tmp_path / "does-not-exist.md")},
+        ):
+            with pytest.raises(ValueError, match="does not exist"):
+                Config.from_env(require_webhook=True)
+
     def test_from_env_explorer_system_prompt_from_file(
         self,
         tmp_path,
@@ -141,7 +181,7 @@ class TestFromEnv:
             {
                 "AGENT_PROVIDER": "anthropic",
                 "ANTHROPIC_API_KEY": "test",
-                "EXPLORER_SYSTEM_PROMPT": str(prompt_file),
+                "EXPLORER_SYSTEM_PROMPT_FILE": str(prompt_file),
             },
         ):
             config = Config.from_env(require_webhook=True)
@@ -166,13 +206,29 @@ class TestFromEnv:
 
         assert config.agent.explorer.system_prompt == inline_prompt
 
+    def test_from_env_explorer_system_prompt_file_missing_raises(
+        self,
+        tmp_path,
+        _reviewer_only_env,
+    ):
+        with patch.dict(
+            os.environ,
+            {
+                "AGENT_PROVIDER": "anthropic",
+                "ANTHROPIC_API_KEY": "test",
+                "EXPLORER_SYSTEM_PROMPT_FILE": str(tmp_path / "nope.md"),
+            },
+        ):
+            with pytest.raises(ValueError, match="does not exist"):
+                Config.from_env(require_webhook=True)
+
     def test_from_env_coding_guidelines_from_file(self, tmp_path, _reviewer_only_env):
         guidelines_file = tmp_path / "guidelines.md"
         guidelines_file.write_text("Use snake_case.\n", encoding="utf-8")
 
         with patch.dict(
             os.environ,
-            {"CODING_GUIDELINES": str(guidelines_file)},
+            {"CODING_GUIDELINES_FILE": str(guidelines_file)},
         ):
             config = Config.from_env(require_webhook=True)
 
@@ -191,6 +247,43 @@ class TestFromEnv:
             config = Config.from_env(require_webhook=True)
 
         assert config.prompts.coding_guidelines == inline_guidelines
+
+    def test_from_env_coding_guidelines_file_wins_over_inline(
+        self,
+        tmp_path,
+        _reviewer_only_env,
+        caplog,
+    ):
+        guidelines_file = tmp_path / "guidelines.md"
+        guidelines_file.write_text("From file.", encoding="utf-8")
+
+        with patch.dict(
+            os.environ,
+            {
+                "CODING_GUIDELINES": "Inline content",
+                "CODING_GUIDELINES_FILE": str(guidelines_file),
+            },
+        ):
+            with caplog.at_level("WARNING"):
+                config = Config.from_env(require_webhook=True)
+
+        assert config.prompts.coding_guidelines == "From file."
+        assert any(
+            "both inline and _file set" in record.message.lower()
+            for record in caplog.records
+        )
+
+    def test_from_env_coding_guidelines_file_missing_raises(
+        self,
+        tmp_path,
+        _reviewer_only_env,
+    ):
+        with patch.dict(
+            os.environ,
+            {"CODING_GUIDELINES_FILE": str(tmp_path / "absent.md")},
+        ):
+            with pytest.raises(ValueError, match="does not exist"):
+                Config.from_env(require_webhook=True)
 
     def test_from_env_coding_guidelines_defaults_empty(
         self,

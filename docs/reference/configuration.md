@@ -35,12 +35,14 @@ agent:                        # agent runtime, symmetric per role
   reviewer:
     provider: "google"
     model: ""
-    system_prompt: "prompts/reviewer_prompt.md"  # path or inline content
+    system_prompt: ""                                     # inline content
+    system_prompt_file: "prompts/reviewer_prompt.md"      # or a file path
     max_turns: 8
   explorer:                   # optional; provider/model fall back to reviewer
     provider: ""
     model: ""
-    system_prompt: "prompts/explore/explorer.md"  # path or inline content
+    system_prompt: ""
+    system_prompt_file: "prompts/explore/explorer.md"
     max_turns: 32
 
 access:
@@ -55,7 +57,8 @@ workspace:
   base_dir: "/tmp/nominal-code"
 
 prompts:
-  coding_guidelines: "prompts/coding_guidelines.md"
+  coding_guidelines: ""
+  coding_guidelines_file: "prompts/coding_guidelines.md"
   language_guidelines_dir: "prompts/languages"
 
 redis:
@@ -168,25 +171,36 @@ All sections and fields are optional — omitted fields use the defaults shown a
 
 ## Prompt File Configuration
 
-The bot loads system prompts and coding guidelines at startup from either a file or inline content. `REVIEWER_SYSTEM_PROMPT`, `EXPLORER_SYSTEM_PROMPT`, and `CODING_GUIDELINES` each accept either semantic transparently: if the value resolves to an existing file on disk, its contents are read; otherwise the value itself is used as the prompt body. The resolution branch is logged at INFO on startup so operators can confirm what was loaded.
+The bot loads system prompts and coding guidelines at startup. Each prompt has two override channels: an inline value and a file path. The source is declared by which setting you fill in — there is no filesystem probe and no ambiguity.
+
+Precedence for every prompt (highest wins):
+
+1. The `_file` setting (`system_prompt_file` / `coding_guidelines_file` or its env var). The path must point to a readable file; otherwise the loader raises `ValueError` and startup fails.
+2. The inline setting (`system_prompt` / `coding_guidelines` or its env var). Used verbatim.
+3. The bundled default (when one exists).
+
+If both the inline and `_file` variants are set, the `_file` variant wins and a warning is logged.
 
 ### Reviewer system prompt
 
-YAML: `agent.reviewer.system_prompt` / Env: `REVIEWER_SYSTEM_PROMPT`
+- Inline — YAML: `agent.reviewer.system_prompt` · Env: `REVIEWER_SYSTEM_PROMPT`
+- File — YAML: `agent.reviewer.system_prompt_file` · Env: `REVIEWER_SYSTEM_PROMPT_FILE`
 
-System prompt used when the reviewer agent runs. Either a file path or inline prompt content. Defaults to the bundled `prompts/reviewer_prompt.md`.
+System prompt used when the reviewer agent runs. Defaults to the bundled `prompts/reviewer_prompt.md`.
 
 ### Explorer system prompt
 
-YAML: `agent.explorer.system_prompt` / Env: `EXPLORER_SYSTEM_PROMPT`
+- Inline — YAML: `agent.explorer.system_prompt` · Env: `EXPLORER_SYSTEM_PROMPT`
+- File — YAML: `agent.explorer.system_prompt_file` · Env: `EXPLORER_SYSTEM_PROMPT_FILE`
 
-System prompt used by the explorer sub-agent that the reviewer can delegate codebase investigation to. Either a file path or inline prompt content. Defaults to the bundled `prompts/explore/explorer.md`.
+System prompt used by the explorer sub-agent that the reviewer can delegate codebase investigation to. Defaults to the bundled `prompts/explore/explorer.md`.
 
 ### Coding guidelines
 
-YAML: `prompts.coding_guidelines` / Env: `CODING_GUIDELINES`
+- Inline — YAML: `prompts.coding_guidelines` · Env: `CODING_GUIDELINES`
+- File — YAML: `prompts.coding_guidelines_file` · Env: `CODING_GUIDELINES_FILE`
 
-Coding guidelines that get appended to the reviewer system prompt. Either a file path or inline content. No bundled default — when unset, no general coding guidelines are appended.
+Coding guidelines that get appended to the reviewer system prompt. No bundled default — when neither setting is filled, no general coding guidelines are appended.
 
 ### Language guidelines directory
 

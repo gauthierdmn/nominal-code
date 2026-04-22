@@ -64,21 +64,27 @@ These can also be set in the YAML config file under `reviewer` and `access`.
 
 ## Prompts and Guidelines
 
+Each prompt override has two env vars: a `<NAME>` variant for inline content and a `<NAME>_FILE` variant for a path to a file. The name declares the mode — no ambiguity, no filesystem probe.
+
 | Variable | YAML path | Modes | Default | Description |
 |---|---|---|---|---|
-| `REVIEWER_SYSTEM_PROMPT` | `agent.reviewer.system_prompt` | `webhook` `cli` | Bundled `reviewer_prompt.md` | Reviewer agent system prompt. Accepts either a path to a file or the raw prompt content (see [Dual semantics](#dual-semantics-path-or-inline-content)) |
-| `EXPLORER_SYSTEM_PROMPT` | `agent.explorer.system_prompt` | `webhook` `cli` `ci` | Bundled `explore/explorer.md` | Explorer sub-agent system prompt. Accepts either a path or raw content |
-| `CODING_GUIDELINES` | `prompts.coding_guidelines` | `webhook` `cli` `ci` | — | Coding guidelines appended to the reviewer system prompt. Accepts either a path or raw content |
+| `REVIEWER_SYSTEM_PROMPT` | `agent.reviewer.system_prompt` | `webhook` `cli` | Bundled `reviewer_prompt.md` | Reviewer agent system prompt, inline content. Used verbatim. |
+| `REVIEWER_SYSTEM_PROMPT_FILE` | `agent.reviewer.system_prompt_file` | `webhook` `cli` | — | Path to a file whose contents override the reviewer system prompt. |
+| `EXPLORER_SYSTEM_PROMPT` | `agent.explorer.system_prompt` | `webhook` `cli` `ci` | Bundled `explore/explorer.md` | Explorer sub-agent system prompt, inline content. Used verbatim. |
+| `EXPLORER_SYSTEM_PROMPT_FILE` | `agent.explorer.system_prompt_file` | `webhook` `cli` `ci` | — | Path to a file whose contents override the explorer system prompt. |
+| `CODING_GUIDELINES` | `prompts.coding_guidelines` | `webhook` `cli` `ci` | — | Coding guidelines appended to the reviewer system prompt, inline content. |
+| `CODING_GUIDELINES_FILE` | `prompts.coding_guidelines_file` | `webhook` `cli` `ci` | — | Path to a file whose contents override the coding guidelines. |
 | `LANGUAGE_GUIDELINES_DIR` | `prompts.language_guidelines_dir` | `webhook` `cli` | `prompts/languages` | Directory containing language-specific guideline files (e.g. `python.md`) |
 
-### Dual semantics: path or inline content
+### Resolution rules
 
-`REVIEWER_SYSTEM_PROMPT`, `EXPLORER_SYSTEM_PROMPT`, and `CODING_GUIDELINES` each accept either of:
+For each prompt, precedence is (highest wins):
 
-- **File path** — an absolute or relative path that exists on disk. The file contents are read and stripped.
-- **Inline content** — any non-empty string that does not resolve to an existing file. The value is used as the prompt body verbatim.
+1. **`<NAME>_FILE`** — file contents are used. If the path does not point to a readable file, the loader raises `ValueError` and startup fails. A typo in a `_FILE` path is always a hard error, never a silent fallback.
+2. **`<NAME>`** — the raw value is used verbatim as inline content. No filesystem probe is performed.
+3. **Bundled default** — the shipped prompt (if any) is used.
 
-Detection happens at load time via `Path(value).is_file()`. The chosen branch is logged at INFO on startup, e.g. `Loaded reviewer_system_prompt from file: /etc/prompts/reviewer.md` or `Loaded coding_guidelines as inline content (1284 chars)`. A typo'd path therefore becomes a short, visibly-wrong inline prompt rather than a silent empty string — check the startup logs to confirm.
+If both `<NAME>` and `<NAME>_FILE` are set, the `_FILE` variant wins and a warning is logged.
 
 See [Prompt File Configuration](configuration.md#prompt-file-configuration) for how these files are loaded and composed.
 
