@@ -97,6 +97,7 @@ See [Prompt File Configuration](configuration.md#prompt-file-configuration) for 
 | `PR_TITLE_INCLUDE_TAGS` | `access.pr_title_include_tags` | `webhook` | — | Comma-separated allowlist of tags. Only events whose PR title contains `[tag]` are processed |
 | `PR_TITLE_EXCLUDE_TAGS` | `access.pr_title_exclude_tags` | `webhook` | — | Comma-separated blocklist of tags. Events whose PR title contains `[tag]` are skipped |
 | `WORKSPACE_BASE_DIR` | `workspace.base_dir` | `webhook` `cli` | System temp dir | Directory for cloning repos |
+| `IGNORE_EXISTING_COMMENTS` | `ignore_existing_comments` | `webhook` `cli` `ci` | `false` | When `true`, skip fetching existing PR/MR comments so they are not included in the reviewer prompt. Useful for re-running reviews on a PR whose prior review output would otherwise bias the run. |
 
 See [Repository Filtering](configuration.md#repository-filtering), [Auto-Trigger](configuration.md#auto-trigger), and [PR Title Tag Filtering](configuration.md#pr-title-tag-filtering) for rules and examples.
 

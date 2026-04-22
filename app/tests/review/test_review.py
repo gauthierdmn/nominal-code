@@ -46,6 +46,7 @@ def _make_config(allowed_users=None):
     config.prompts.language_guidelines = {"python": "Python style rules."}
     config.worker = None
     config.dry_run = False
+    config.ignore_existing_comments = False
     config.reviewer = ReviewerConfig(
         bot_username="claude-reviewer",
     )
@@ -161,6 +162,46 @@ class TestReviewerProcessComment:
                 repo_full_name="owner/repo",
                 pr_number=42,
             )
+
+    @pytest.mark.asyncio
+    async def test_reviewer_skips_fetch_pr_comments_when_configured_to_ignore(self):
+        config = _make_config(allowed_users=["alice"])
+        config.ignore_existing_comments = True
+        platform = _make_platform()
+        comment = _make_comment(author="alice")
+        conversation_store = MemoryConversationStore()
+
+        review_json = json.dumps({"summary": "Looks good", "comments": []})
+
+        with patch(
+            "nominal_code.agent.invoke.run_cli_agent",
+            new_callable=AsyncMock,
+        ) as mock_run:
+            mock_run.return_value = AgentResult(
+                output=review_json,
+                is_error=False,
+                num_turns=1,
+                duration_ms=1000,
+                conversation_id="sess-1",
+            )
+
+            with patch(
+                "nominal_code.workspace.setup.GitWorkspace",
+            ) as mock_ws_class:
+                mock_ws = MagicMock()
+                mock_ws.ensure_ready = AsyncMock()
+                mock_ws.repo_path = Path("/tmp/workspaces/owner/repo/pr-42")
+                mock_ws_class.return_value = mock_ws
+
+                await run_and_post_review(
+                    event=comment,
+                    prompt="review",
+                    config=config,
+                    platform=platform,
+                    conversation_store=conversation_store,
+                )
+
+        platform.fetch_pr_comments.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_reviewer_raises_when_fetch_pr_diff_returns_empty(self):

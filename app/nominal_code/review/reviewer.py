@@ -641,10 +641,7 @@ async def _prepare_review_context(
                 repo_full_name=event.repo_full_name,
                 pr_number=event.pr_number,
             ),
-            platform.fetch_pr_comments(
-                repo_full_name=event.repo_full_name,
-                pr_number=event.pr_number,
-            ),
+            _fetch_pr_comments_or_empty(platform, event, config),
             platform.fetch_pr_metadata(
                 repo_full_name=event.repo_full_name,
                 pr_number=event.pr_number,
@@ -677,10 +674,7 @@ async def _prepare_review_context(
             repo_full_name=event.repo_full_name,
             pr_number=event.pr_number,
         ),
-        platform.fetch_pr_comments(
-            repo_full_name=event.repo_full_name,
-            pr_number=event.pr_number,
-        ),
+        _fetch_pr_comments_or_empty(platform, event, config),
         platform.fetch_pr_metadata(
             repo_full_name=event.repo_full_name,
             pr_number=event.pr_number,
@@ -704,6 +698,38 @@ async def _prepare_review_context(
         existing_comments=existing_comments,
         metadata=results[2],
         workspace=workspace,
+    )
+
+
+async def _fetch_pr_comments_or_empty(
+    platform: Platform,
+    event: PullRequestEvent,
+    config: Config,
+) -> list[ExistingComment]:
+    """
+    Fetch existing PR comments unless ``ignore_existing_comments`` is set.
+
+    Returning an empty list lets a review run against a PR whose prior
+    comments (including previous bot reviews) would otherwise bias the
+    prompt — useful for iterating on prompt/model changes against a PR
+    that has already been reviewed.
+
+    Args:
+        platform (Platform): The platform client.
+        event (PullRequestEvent): The event carrying the PR coordinates.
+        config (Config): Application configuration.
+
+    Returns:
+        list[ExistingComment]: Fetched comments, or ``[]`` when
+            ``config.ignore_existing_comments`` is ``True``.
+    """
+
+    if config.ignore_existing_comments:
+        return []
+
+    return await platform.fetch_pr_comments(
+        repo_full_name=event.repo_full_name,
+        pr_number=event.pr_number,
     )
 
 

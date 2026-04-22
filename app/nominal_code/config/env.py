@@ -46,6 +46,7 @@ ENV_MAP: list[tuple[str, list[str]]] = [
     ("EXPLORER_SYSTEM_PROMPT", ["agent", "explorer", "system_prompt"]),
     ("EXPLORER_SYSTEM_PROMPT_FILE", ["agent", "explorer", "system_prompt_file"]),
     ("DRY_RUN_REVIEW", ["dry_run"]),
+    ("IGNORE_EXISTING_COMMENTS", ["ignore_existing_comments"]),
     ("REDIS_URL", ["redis", "url"]),
     ("REDIS_KEY_TTL_SECONDS", ["redis", "key_ttl_seconds"]),
     ("K8S_IMAGE", ["kubernetes", "image"]),
@@ -94,6 +95,7 @@ BOOL_KEYS: frozenset[str] = frozenset(
     {
         "INLINE_SUGGESTIONS",
         "DRY_RUN_REVIEW",
+        "IGNORE_EXISTING_COMMENTS",
     }
 )
 

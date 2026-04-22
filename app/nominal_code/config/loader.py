@@ -137,6 +137,7 @@ def load_config(
         ),
         webhook=webhook,
         dry_run=settings.dry_run,
+        ignore_existing_comments=settings.ignore_existing_comments,
     )
 
 

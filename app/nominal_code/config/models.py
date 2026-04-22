@@ -280,3 +280,4 @@ class AppSettings(BaseModel):
     redis: RedisSettings = Field(default_factory=RedisSettings)
     kubernetes: KubernetesSettings = Field(default_factory=KubernetesSettings)
     dry_run: bool = False
+    ignore_existing_comments: bool = False
