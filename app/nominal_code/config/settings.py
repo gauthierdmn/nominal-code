@@ -169,6 +169,10 @@ class Config(BaseModel):
             posting results to the platform and writing to the conversation
             store. Used by manual dry-run review dispatches for prompt
             iteration.
+        ignore_existing_comments (bool): When True, skip fetching existing
+            PR comments so they don't get included in the reviewer prompt.
+            Useful for re-running a review on a PR that already carries
+            prior review output, without that output biasing the new run.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -181,6 +185,7 @@ class Config(BaseModel):
     prompts: PromptsConfig = PromptsConfig()
     webhook: WebhookConfig | None = None
     dry_run: bool = False
+    ignore_existing_comments: bool = False
 
     @classmethod
     def from_env(cls, **kwargs: object) -> Config:
