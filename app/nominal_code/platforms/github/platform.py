@@ -185,24 +185,36 @@ class GitHubPlatform:
             **kwargs,
         )
 
-    async def authenticate(self, *, webhook_body: bytes | None = None) -> None:
+    async def authenticate(
+        self,
+        *,
+        webhook_body: bytes | None = None,
+        account_id: int | None = None,
+    ) -> None:
         """
         Ensure the platform has valid authentication.
 
         In webhook mode, extracts ``installation.id`` from the payload,
         sets the request-scoped ContextVar, and refreshes the token. In
-        CLI/CI mode, call with no arguments.
+        CLI/CI mode, call with no arguments. When ``account_id`` is
+        provided, it overrides any installation ID derived from
+        ``webhook_body``.
 
         Args:
             webhook_body (bytes | None): The raw webhook request body,
                 or None for non-webhook modes.
+            account_id (int | None): Optional explicit installation ID.
+                Takes precedence over ``webhook_body`` when both are
+                supplied.
         """
 
-        if webhook_body is not None:
-            account_id: int = self.extract_installation_id(webhook_body)
+        if account_id:
+            _installation_ctx.set(account_id)
+        elif webhook_body is not None:
+            extracted: int = self.extract_installation_id(webhook_body)
 
-            if account_id:
-                _installation_ctx.set(account_id)
+            if extracted:
+                _installation_ctx.set(extracted)
 
         active_id: int = self._active_installation_id()
 

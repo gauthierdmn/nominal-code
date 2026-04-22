@@ -299,17 +299,26 @@ class Platform(Protocol):
 
         ...
 
-    async def authenticate(self, *, webhook_body: bytes | None = None) -> None:
+    async def authenticate(
+        self,
+        *,
+        webhook_body: bytes | None = None,
+        account_id: int | None = None,
+    ) -> None:
         """
         Ensure the platform has valid authentication.
 
         In webhook mode, pass the raw body so the platform can extract
         account context (e.g. GitHub installation ID). In CLI/CI/job
-        mode, call with no arguments.
+        mode, call with no arguments. When ``account_id`` is provided,
+        it overrides any account context derived from ``webhook_body``.
 
         Args:
             webhook_body (bytes | None): The raw webhook request body,
                 or None for non-webhook modes.
+            account_id (int | None): Optional explicit account context
+                (e.g. GitHub installation ID). Takes precedence over
+                ``webhook_body`` when both are supplied.
         """
 
         ...

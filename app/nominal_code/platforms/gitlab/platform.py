@@ -706,17 +706,23 @@ class GitLabPlatform:
                     pr_number,
                 )
 
-    async def authenticate(self, *, webhook_body: bytes | None = None) -> None:
+    async def authenticate(
+        self,
+        *,
+        webhook_body: bytes | None = None,
+        account_id: int | None = None,
+    ) -> None:
         """
         Ensure the platform has valid authentication.
 
-        GitLab does not extract account context from the payload.
-        Refreshes the HTTP client headers with the current token from
-        the auth strategy.
+        GitLab uses PAT auth and does not consume ``webhook_body`` or
+        ``account_id``; both are accepted for signature compatibility
+        with the ``Platform`` protocol. Refreshes the HTTP client
+        headers with the current token from the auth strategy.
 
         Args:
-            webhook_body (bytes | None): The raw webhook request body
-                (unused for GitLab PAT auth).
+            webhook_body (bytes | None): Unused for GitLab PAT auth.
+            account_id (int | None): Unused for GitLab PAT auth.
         """
 
         await self.auth.ensure_auth()
