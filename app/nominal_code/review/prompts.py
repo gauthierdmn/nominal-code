@@ -87,8 +87,7 @@ def build_reviewer_prompt(
 
     review_instruction: str = (
         "Review the above changes. Each diff line is annotated with its "
-        "actual line number — use these directly. Call the submit_review "
-        "tool with your complete review.\n\n"
+        "actual line number — use these directly.\n\n"
         "For comments on deleted lines (prefixed with `-` in the diff), "
         'set `"side": "LEFT"`. For additions (`+`) and context lines '
         'omit `side` or use `"RIGHT"`.'
