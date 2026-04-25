@@ -27,9 +27,11 @@ from nominal_code.review.prompts import (
     build_reviewer_prompt,
     format_existing_comments,
 )
+from nominal_code.review.prompts import build_codebase_reviewer_prompt
 from nominal_code.review.reviewer import (
     MAX_EXISTING_COMMENTS,
     ReviewResult,
+    ReviewScope,
     review,
     run_and_post_review,
 )
@@ -1521,3 +1523,178 @@ class TestAgenticReviewer:
         assert mock_invoke.call_count == 2
         assert result.agent_review is not None
         assert result.agent_review.summary == "Fallback review"
+
+
+class TestCodebaseScopeReview:
+    @pytest.mark.asyncio
+    async def test_codebase_scope_requires_workspace_path(self):
+        config = _make_config()
+        platform = _make_platform()
+        comment = _make_comment()
+
+        with pytest.raises(ValueError, match="workspace_path is required"):
+            await review(
+                event=comment,
+                prompt="",
+                config=config,
+                platform=platform,
+                scope=ReviewScope.CODEBASE,
+            )
+
+    @pytest.mark.asyncio
+    async def test_codebase_scope_skips_platform_api_calls(self):
+        config = _make_config()
+        platform = _make_platform()
+        comment = _make_comment()
+        review_json = json.dumps({"summary": "All good", "comments": []})
+
+        with patch(
+            "nominal_code.agent.invoke.run_cli_agent",
+            new_callable=AsyncMock,
+        ) as mock_run:
+            mock_run.return_value = AgentResult(
+                output=review_json,
+                is_error=False,
+                num_turns=1,
+                duration_ms=500,
+                conversation_id="sess-audit",
+            )
+
+            await review(
+                event=comment,
+                prompt="",
+                config=config,
+                platform=platform,
+                workspace_path="/tmp/repo",
+                scope=ReviewScope.CODEBASE,
+            )
+
+        platform.fetch_pr_diff.assert_not_called()
+        platform.fetch_pr_comments.assert_not_called()
+        platform.fetch_pr_metadata.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_codebase_scope_all_findings_valid(self):
+        config = _make_config()
+        platform = _make_platform()
+        comment = _make_comment()
+
+        review_json = json.dumps(
+            {
+                "summary": "Found issues",
+                "comments": [
+                    {
+                        "path": "untracked/new_file.py",
+                        "line": 10,
+                        "body": "Missing error handling",
+                        "side": "RIGHT",
+                    }
+                ],
+            }
+        )
+
+        with patch(
+            "nominal_code.agent.invoke.run_cli_agent",
+            new_callable=AsyncMock,
+        ) as mock_run:
+            mock_run.return_value = AgentResult(
+                output=review_json,
+                is_error=False,
+                num_turns=1,
+                duration_ms=500,
+                conversation_id="sess-audit",
+            )
+
+            result = await review(
+                event=comment,
+                prompt="",
+                config=config,
+                platform=platform,
+                workspace_path="/tmp/repo",
+                scope=ReviewScope.CODEBASE,
+            )
+
+        assert len(result.valid_findings) == 1
+        assert result.valid_findings[0].file_path == "untracked/new_file.py"
+        assert result.rejected_findings == []
+
+    @pytest.mark.asyncio
+    async def test_codebase_scope_prompt_header(self):
+        config = _make_config()
+        platform = _make_platform()
+        comment = _make_comment(repo="owner/myrepo", branch="main")
+        review_json = json.dumps({"summary": "Done", "comments": []})
+
+        with patch(
+            "nominal_code.agent.invoke.run_cli_agent",
+            new_callable=AsyncMock,
+        ) as mock_run:
+            mock_run.return_value = AgentResult(
+                output=review_json,
+                is_error=False,
+                num_turns=1,
+                duration_ms=500,
+                conversation_id="sess-audit",
+            )
+
+            await review(
+                event=comment,
+                prompt="",
+                config=config,
+                platform=platform,
+                workspace_path="/tmp/repo",
+                scope=ReviewScope.CODEBASE,
+            )
+
+        captured_prompt = mock_run.call_args[1]["prompt"]
+        assert captured_prompt.startswith("## Codebase review: owner/myrepo")
+        assert "Pull request" not in captured_prompt
+        assert "## Changed files" not in captured_prompt
+
+    def test_build_codebase_reviewer_prompt_structure(self):
+        from nominal_code.models import EventType
+        from nominal_code.platforms.base import CommentEvent, PlatformName
+
+        event = CommentEvent(
+            platform=PlatformName.GITHUB,
+            repo_full_name="acme/backend",
+            pr_number=0,
+            pr_branch="main",
+            clone_url="",
+            event_type=EventType.PR_OPENED,
+            comment_id=0,
+            author_username="",
+            body="",
+        )
+
+        prompt = build_codebase_reviewer_prompt(event=event, user_prompt="")
+
+        assert prompt.startswith("## Codebase review: acme/backend")
+        assert "main" in prompt
+        assert "Pull request" not in prompt
+        assert "## Changed files" not in prompt
+        assert "workspace root" in prompt
+
+    def test_build_codebase_reviewer_prompt_with_user_instructions(self):
+        from nominal_code.models import EventType
+        from nominal_code.platforms.base import CommentEvent, PlatformName
+
+        event = CommentEvent(
+            platform=PlatformName.GITHUB,
+            repo_full_name="acme/backend",
+            pr_number=0,
+            pr_branch="main",
+            clone_url="",
+            event_type=EventType.PR_OPENED,
+            comment_id=0,
+            author_username="",
+            body="",
+        )
+
+        prompt = build_codebase_reviewer_prompt(
+            event=event,
+            user_prompt="Focus on error handling",
+        )
+
+        assert "Focus on error handling" in prompt
+        assert "Additional instructions" in prompt

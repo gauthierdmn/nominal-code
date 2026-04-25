@@ -18,6 +18,7 @@ from nominal_code.llm.cost import format_cost_summary
 from nominal_code.models import ProviderName
 from nominal_code.platforms import build_platform
 from nominal_code.platforms.base import Platform, PlatformName
+from nominal_code.review.reviewer import ReviewScope
 
 _env: Env = Env()
 
@@ -27,6 +28,8 @@ logger: logging.Logger = logging.getLogger(__name__)
 async def run_job_main(
     pre_cloned: bool = False,
     context: str = "",
+    scope: ReviewScope = ReviewScope.PR,
+    workspace_path: str | None = None,
 ) -> JobResult | None:
     """
     Entry point for the ``run-job`` CLI subcommand.
@@ -39,6 +42,10 @@ async def run_job_main(
         pre_cloned (bool): When True, the repository was pre-cloned by
             an external process and clone URL resolution is skipped.
         context (str): Pre-review context to include in the user message.
+        scope (ReviewScope): Whether this is a PR diff review or a
+            whole-repository codebase review.
+        workspace_path (str): Pre-existing workspace path. Required when
+            ``scope`` is ``ReviewScope.CODEBASE``.
 
     Returns:
         JobResult | None: The job result on success, or ``None`` on
@@ -85,6 +92,8 @@ async def run_job_main(
         conversation_store=conversation_store,
         pre_cloned=pre_cloned,
         context=context,
+        scope=scope,
+        workspace_path=workspace_path,
     )
 
     succeeded: bool = result is not None
@@ -101,6 +110,8 @@ async def _run_job(
     conversation_store: ConversationStore | None = None,
     pre_cloned: bool = False,
     context: str = "",
+    scope: ReviewScope = ReviewScope.PR,
+    workspace_path: str | None = None,
 ) -> JobResult | None:
     """
     Execute a job via the unified dispatch pipeline.
@@ -114,6 +125,10 @@ async def _run_job(
             for conversation continuity.
         pre_cloned (bool): When True, skip clone URL resolution.
         context (str): Pre-review context to include in the user message.
+        scope (ReviewScope): Whether this is a PR diff review or a
+            whole-repository codebase review.
+        workspace_path (str): Pre-existing workspace path. Required when
+            ``scope`` is ``ReviewScope.CODEBASE``.
 
     Returns:
         JobResult | None: The job result on success, or ``None`` on
@@ -136,6 +151,8 @@ async def _run_job(
             conversation_store=conversation_store,
             pre_cloned=pre_cloned,
             context=context,
+            scope=scope,
+            workspace_path=workspace_path,
         )
     except Exception:
         logger.exception(

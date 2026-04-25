@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from nominal_code.commands.webhook.jobs.handler import JobHandler
 from nominal_code.commands.webhook.jobs.payload import JobPayload
 from nominal_code.platforms.base import CommentEvent
+from nominal_code.review.reviewer import ReviewScope
 from nominal_code.workspace.setup import prepare_job_event
 
 if TYPE_CHECKING:
@@ -60,6 +61,8 @@ async def execute_job(
     conversation_store: ConversationStore | None = None,
     pre_cloned: bool = False,
     context: str = "",
+    scope: ReviewScope = ReviewScope.PR,
+    workspace_path: str | None = None,
 ) -> JobResult:
     """
     Execute a review job.
@@ -77,6 +80,10 @@ async def execute_job(
         pre_cloned (bool): When True, the repository was pre-cloned by
             an external process and clone URL resolution is skipped.
         context (str): Pre-review context to include in the user message.
+        scope (ReviewScope): Whether this is a PR diff review or a
+            whole-repository codebase review.
+        workspace_path (str): Pre-existing workspace path. Required when
+            ``scope`` is ``ReviewScope.CODEBASE``.
 
     Returns:
         JobResult: The execution result.
@@ -100,6 +107,8 @@ async def execute_job(
         conversation_store=conversation_store,
         namespace=job.namespace,
         context=context,
+        scope=scope,
+        workspace_path=workspace_path,
     )
 
     return JobResult(review_result=review_result)
