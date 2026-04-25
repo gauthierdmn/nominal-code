@@ -5,6 +5,7 @@ import logging
 import shutil
 import tempfile
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -45,6 +46,7 @@ from nominal_code.review.output import (
     repair_review_output,
 )
 from nominal_code.review.prompts import (
+    build_codebase_reviewer_prompt,
     build_fallback_review_prompt,
     build_reviewer_prompt,
 )
@@ -60,6 +62,21 @@ if TYPE_CHECKING:
     from nominal_code.models import AgentReview
     from nominal_code.platforms.base import Platform
     from nominal_code.workspace.git import GitWorkspace
+
+
+class ReviewScope(StrEnum):
+    """
+    Determines what the reviewer is scoped to.
+
+    PR: standard pull-request review — fetches diff, comments, and
+        metadata from the platform; filters findings to diff lines only.
+    CODEBASE: whole-repository review with no diff. All platform API
+        calls for diff/comments/metadata are skipped; ``workspace_path``
+        is required; all findings are accepted as valid.
+    """
+
+    PR = "pr"
+    CODEBASE = "codebase"
 
 
 MAX_EXISTING_COMMENTS: int = 50
@@ -153,10 +170,11 @@ async def review(
     config: Config,
     platform: Platform,
     bot_username: str = "",
-    workspace_path: str = "",
+    workspace_path: str | None = None,
     conversation_store: ConversationStore | None = None,
     namespace: str = "",
     context: str = "",
+    scope: ReviewScope = ReviewScope.PR,
 ) -> ReviewResult:
     """
     Run the core review logic without posting results to the platform.
@@ -170,20 +188,25 @@ async def review(
         config (Config): Application configuration.
         platform (Platform): The platform client with reviewer capabilities.
         bot_username (str): Bot username to filter from existing comments.
-        workspace_path (str): Pre-existing workspace path (skips cloning). Used
-            in CI mode where the repo is already checked out.
+        workspace_path (str | None): Pre-existing workspace path (skips cloning).
+            Used in CI mode where the repo is already checked out. Required when
+            ``scope`` is ``ReviewScope.CODEBASE``.
         conversation_store (ConversationStore | None): Conversation store for
             conversation continuity.
         namespace (str): Logical namespace for conversation key isolation.
         context (str): Pre-review context to include in the user message.
             Inserted verbatim before the review instruction. Typically
             the output from codebase exploration sub-agents.
+        scope (ReviewScope): Whether this is a PR diff review or a
+            whole-repository codebase review. Defaults to ``ReviewScope.PR``.
 
     Returns:
         ReviewResult: The review result with findings and summary.
 
     Raises:
         RuntimeError: If workspace setup fails.
+        ValueError: If ``scope`` is ``ReviewScope.CODEBASE`` and
+            ``workspace_path`` is not provided.
     """
 
     review_context: ReviewContext = await _prepare_review_context(
@@ -192,9 +215,10 @@ async def review(
         platform=platform,
         workspace_path=workspace_path,
         bot_username=bot_username,
+        scope=scope,
     )
 
-    if not review_context.changed_files:
+    if not review_context.changed_files and scope is ReviewScope.PR:
         raise ValueError(
             f"{platform.name} returned no changed files for "
             f"{event.repo_full_name}#{event.pr_number}; "
@@ -206,15 +230,22 @@ async def review(
 
     reviewer_config = config.reviewer
 
-    full_prompt: str = build_reviewer_prompt(
-        event=event,
-        user_prompt=prompt,
-        changed_files=review_context.changed_files,
-        existing_comments=review_context.existing_comments,
-        inline_suggestions=bool(reviewer_config.suggestions_prompt),
-        context=context,
-        metadata=review_context.metadata,
-    )
+    if scope is ReviewScope.CODEBASE:
+        full_prompt: str = build_codebase_reviewer_prompt(
+            event=event,
+            user_prompt=prompt,
+            context=context,
+        )
+    else:
+        full_prompt = build_reviewer_prompt(
+            event=event,
+            user_prompt=prompt,
+            changed_files=review_context.changed_files,
+            existing_comments=review_context.existing_comments,
+            inline_suggestions=bool(reviewer_config.suggestions_prompt),
+            context=context,
+            metadata=review_context.metadata,
+        )
 
     if isinstance(config.agent, ApiAgentConfig):
         base_system_prompt: str = config.agent.reviewer.system_prompt
@@ -443,10 +474,14 @@ async def review(
             reviewer_system_prompt=combined_system_prompt,
         )
 
-    valid_findings, rejected_findings = filter_findings(
-        findings=review_result.findings,
-        changed_files=review_context.changed_files,
-    )
+    if scope is ReviewScope.CODEBASE:
+        valid_findings: list[ReviewFinding] = list(review_result.findings)
+        rejected_findings: list[ReviewFinding] = []
+    else:
+        valid_findings, rejected_findings = filter_findings(
+            findings=review_result.findings,
+            changed_files=review_context.changed_files,
+        )
 
     if rejected_findings:
         logger.warning(
@@ -547,10 +582,11 @@ async def run_and_post_review(
     prompt: str,
     config: Config,
     platform: Platform,
-    workspace_path: str = "",
+    workspace_path: str | None = None,
     conversation_store: ConversationStore | None = None,
     namespace: str = "",
     context: str = "",
+    scope: ReviewScope = ReviewScope.PR,
 ) -> ReviewResult:
     """
     Run a review and post the results to the platform.
@@ -564,11 +600,14 @@ async def run_and_post_review(
         prompt (str): The extracted prompt.
         config (Config): Application configuration.
         platform (Platform): The platform client with reviewer capabilities.
-        workspace_path (str): Pre-existing workspace path (skips cloning).
+        workspace_path (str | None): Pre-existing workspace path (skips cloning).
+            Required when ``scope`` is ``ReviewScope.CODEBASE``.
         conversation_store (ConversationStore | None): Conversation store for
             conversation continuity.
         namespace (str): Logical namespace for conversation key isolation.
         context (str): Pre-review context to include in the user message.
+        scope (ReviewScope): Whether this is a PR diff review or a
+            whole-repository codebase review. Defaults to ``ReviewScope.PR``.
 
     Returns:
         ReviewResult: The review result with findings and summary.
@@ -589,6 +628,7 @@ async def run_and_post_review(
         conversation_store=conversation_store,
         namespace=namespace,
         context=context,
+        scope=scope,
     )
 
     if not config.dry_run:
@@ -605,27 +645,46 @@ async def _prepare_review_context(
     event: PullRequestEvent,
     config: Config,
     platform: Platform,
-    workspace_path: str,
+    workspace_path: str | None,
     bot_username: str,
+    scope: ReviewScope = ReviewScope.PR,
 ) -> ReviewContext:
     """
     Set up workspace and fetch PR data for a review.
 
     Handles both CI mode (pre-existing workspace) and clone mode. Fetches
     the diff and existing comments in parallel with workspace setup.
+    For ``ReviewScope.CODEBASE``, all platform API calls are skipped and
+    the pre-cloned workspace is used directly.
 
     Args:
         event (PullRequestEvent): The parsed event that triggered the review.
         config (Config): Application configuration.
         platform (Platform): The platform client.
-        workspace_path (str): Pre-existing workspace path (skips cloning).
+        workspace_path (str | None): Pre-existing workspace path (skips cloning).
+            Required when ``scope`` is ``ReviewScope.CODEBASE``.
         bot_username (str): Bot username to filter from existing comments.
+        scope (ReviewScope): Review scope. Defaults to ``ReviewScope.PR``.
 
     Returns:
         ReviewContext: The prepared workspace and PR data.
     """
 
-    if workspace_path:
+    if scope is ReviewScope.CODEBASE:
+        if workspace_path is None:
+            raise ValueError(
+                "workspace_path is required for ReviewScope.CODEBASE",
+            )
+
+        return ReviewContext(
+            repo_path=Path(workspace_path),
+            deps_path=None,
+            changed_files=[],
+            existing_comments=[],
+            metadata=PullRequestMetadata(),
+        )
+
+    if workspace_path is not None:
         repo_path: Path = Path(workspace_path)
 
         changed_files_result: list[ChangedFile]

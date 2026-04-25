@@ -26,7 +26,7 @@ The call chain follows four conceptual layers:
 
 1. **Receive** — `commands/webhook/main.py` (webhooks), `commands/` (CLI/CI).
 2. **Prepare** — `workspace/setup.py::prepare_job_event()` resolves clone URLs and branches; `commands/webhook/jobs/runner/process.py` wraps with error handling and queue management.
-3. **Orchestrate** — `review/reviewer.py` (business logic: diff fetching, PR metadata fetching, prompt building, sub-agent configuration, output parsing).
+3. **Orchestrate** — `review/reviewer.py` (business logic: diff fetching, PR metadata fetching, prompt building, sub-agent configuration, output parsing). `ReviewScope.CODEBASE` skips all platform API calls (diff/comments/metadata), skips diff-line filtering, and uses a codebase-review prompt header — intended for whole-repo audit passes that have no associated PR.
 4. **Invoke** — `agent/invoke.py` provides agent execution with explicit conversation lifecycle (`prepare_conversation`, `invoke_agent`, `save_conversation`).
 
 ## Agent runner selection

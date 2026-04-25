@@ -128,6 +128,19 @@ Before running the agent, the bot fetches all existing comments on the PR to avo
 - On GitHub, both conversation comments and inline review comments are fetched.
 - On GitLab, all discussion notes are fetched (excluding system notes).
 
+## Review Scope
+
+`review()` and `run_and_post_review()` accept a `scope` parameter (`ReviewScope` enum) that controls what the reviewer receives and how findings are validated.
+
+| Scope | Default | Behaviour |
+|-------|---------|-----------|
+| `ReviewScope.PR` | Yes | Standard PR diff review. Fetches diff, comments, and metadata from the platform; filters findings to diff lines only. |
+| `ReviewScope.CODEBASE` | No | Whole-repository review with no diff. All platform API calls for diff/comments/metadata are skipped; `workspace_path` is required; all findings are accepted without diff-line filtering. |
+
+`ReviewScope.CODEBASE` is intended for audit passes that review an entire repository on a branch rather than a specific pull request. The reviewer prompt header changes from `## Pull request #N` to `## Codebase review: owner/repo` and instructs the agent to walk the workspace with Read, Glob, and Grep.
+
+`workspace_path` defaults to `None` for both scopes. For `ReviewScope.PR`, a `None` workspace_path triggers an in-process clone; for `ReviewScope.CODEBASE`, a `None` workspace_path raises `ValueError` — the caller must provide a pre-cloned path.
+
 ## Running in Different Modes
 
 The bot is available in all three modes:

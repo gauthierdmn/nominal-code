@@ -22,6 +22,44 @@ MAX_DESCRIPTION_CHARS: int = 5_000
 MAX_COMMIT_MESSAGES: int = 20
 
 
+def build_codebase_reviewer_prompt(
+    event: PullRequestEvent,
+    user_prompt: str,
+    context: str = "",
+) -> str:
+    """
+    Build a prompt for a whole-repository review (no diff context).
+
+    Used when ``scope`` is ``ReviewScope.CODEBASE``. Produces a header
+    that identifies the repo and branch without referencing a PR number
+    or diff. The LLM is expected to explore the workspace via its tools.
+
+    Args:
+        event (PullRequestEvent): Event carrying the repo name and branch.
+        user_prompt (str): Optional caller-supplied instructions.
+        context (str): Pre-review exploration notes to insert before
+            the review instruction.
+
+    Returns:
+        str: The full prompt to send to the codebase reviewer.
+    """
+
+    parts: list[str] = [
+        f"## Codebase review: {event.repo_full_name}\n\n"
+        f"**Branch**: <{TAG_BRANCH_NAME}>{event.pr_branch}</{TAG_BRANCH_NAME}>"
+    ]
+
+    if user_prompt:
+        parts.append(
+            f"Additional instructions:\n{wrap_tag(TAG_UNTRUSTED_REQUEST, user_prompt)}"
+        )
+
+    if context:
+        parts.append(context)
+
+    return "\n\n".join(parts)
+
+
 def build_reviewer_prompt(
     event: PullRequestEvent,
     user_prompt: str,
@@ -87,8 +125,7 @@ def build_reviewer_prompt(
 
     review_instruction: str = (
         "Review the above changes. Each diff line is annotated with its "
-        "actual line number — use these directly. Call the submit_review "
-        "tool with your complete review.\n\n"
+        "actual line number — use these directly.\n\n"
         "For comments on deleted lines (prefixed with `-` in the diff), "
         'set `"side": "LEFT"`. For additions (`+`) and context lines '
         'omit `side` or use `"RIGHT"`.'
