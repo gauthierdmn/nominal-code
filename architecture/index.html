@@ -1,0 +1,2592 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="AI-powered code review bot for GitHub PRs and GitLab MRs">
+      
+      
+      
+        <link rel="canonical" href="https://gauthierdmn.github.io/nominal-code/architecture/">
+      
+      
+        <link rel="prev" href="../reference/env-vars/">
+      
+      
+        <link rel="next" href="../security/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Architecture - Nominal Code</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#architecture" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Nominal Code" class="md-header__button md-logo" aria-label="Nominal Code" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Nominal Code
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Architecture
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/gauthierdmn/nominal-code" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    gauthierdmn/nominal-code
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Nominal Code" class="md-nav__button md-logo" aria-label="Nominal Code" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Nominal Code
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/gauthierdmn/nominal-code" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    gauthierdmn/nominal-code
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Modes
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Modes
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../modes/ci/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../modes/cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../modes/webhook/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Webhook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Platforms
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Platforms
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../platforms/github/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GitHub
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../platforms/gitlab/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GitLab
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../review/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Review Process
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/env-vars/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environment Variables
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#request-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Request Flow
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Request Flow">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#webhook-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Webhook Mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cli-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLI Flow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ci-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CI Flow
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#agent-runners" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agent Runners
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Agent Runners">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#claude-code-cli-runner" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Claude Code CLI Runner
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#llm-provider-api-runner" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LLM Provider API Runner
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#runner-selection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Runner Selection
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sub-agents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sub-Agents
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Sub-Agents">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#agent-tool-dispatch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agent Tool Dispatch
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#subagentconfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SubAgentConfig
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#writenotes-tool" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WriteNotes Tool
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#explore-sub-agent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Explore Sub-Agent
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cost-tracking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cost Tracking
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#prompts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prompts
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#policies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Policies
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration Architecture
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Configuration Architecture">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#layer-1-settings-input-configmodelspy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Layer 1: Settings (input) — config/models.py
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#layer-2-config-output-configsettingspy-configkubernetespy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Layer 2: Config (output) — config/settings.py, config/kubernetes.py
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-bridge-configloaderpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The bridge: config/loader.py
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-two-layers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why two layers?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#adding-a-new-config-field" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding a new config field
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#components" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Components
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Components">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#webhook-server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Webhook Server
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pre-flight-checks-commandswebhookhelperspy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pre-flight Checks (commands/webhook/helpers.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#job-processing-commandswebhookjobsrunnerprocesspy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Job Processing (commands/webhook/jobs/runner/process.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#handlers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Handlers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cli-module-commandsclimainpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLI Module (commands/cli/main.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ci-module-commandscimainpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CI Module (commands/ci/main.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#platform-ci-modules-commandscigithubgitlabpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Platform CI Modules (commands/ci/{github,gitlab}.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#agent-dispatcher-agentinvokepy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agent Dispatcher (agent/invoke.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#api-runner-agentapirunnerpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        API Runner (agent/api/runner.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#api-tools-agentapitoolspy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        API Tools (agent/api/tools.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cli-runner-agentclirunnerpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLI Runner (agent/cli/runner.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#prompt-composition" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prompt Composition
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#conversation-store-and-job-queue" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Conversation Store and Job Queue
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cost-tracking-llmcostpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cost Tracking (llm/cost.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#git-workspace-workspacegitpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Git Workspace (workspace/git.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#workspace-setup-workspacesetuppy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workspace Setup (workspace/setup.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#error-handling-agenterrorspy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error Handling (agent/errors.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#workspace-directory-layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workspace Directory Layout
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#job-queue" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Job Queue
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#source-layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Source Layout
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Deployment
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../deployment/standalone/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Standalone
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../deployment/kubernetes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Kubernetes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#request-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Request Flow
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Request Flow">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#webhook-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Webhook Mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cli-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLI Flow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ci-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CI Flow
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#agent-runners" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agent Runners
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Agent Runners">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#claude-code-cli-runner" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Claude Code CLI Runner
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#llm-provider-api-runner" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LLM Provider API Runner
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#runner-selection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Runner Selection
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sub-agents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sub-Agents
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Sub-Agents">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#agent-tool-dispatch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agent Tool Dispatch
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#subagentconfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SubAgentConfig
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#writenotes-tool" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WriteNotes Tool
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#explore-sub-agent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Explore Sub-Agent
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cost-tracking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cost Tracking
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#prompts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prompts
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#policies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Policies
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration Architecture
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Configuration Architecture">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#layer-1-settings-input-configmodelspy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Layer 1: Settings (input) — config/models.py
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#layer-2-config-output-configsettingspy-configkubernetespy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Layer 2: Config (output) — config/settings.py, config/kubernetes.py
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-bridge-configloaderpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The bridge: config/loader.py
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-two-layers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why two layers?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#adding-a-new-config-field" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding a new config field
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#components" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Components
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Components">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#webhook-server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Webhook Server
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pre-flight-checks-commandswebhookhelperspy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pre-flight Checks (commands/webhook/helpers.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#job-processing-commandswebhookjobsrunnerprocesspy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Job Processing (commands/webhook/jobs/runner/process.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#handlers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Handlers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cli-module-commandsclimainpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLI Module (commands/cli/main.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ci-module-commandscimainpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CI Module (commands/ci/main.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#platform-ci-modules-commandscigithubgitlabpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Platform CI Modules (commands/ci/{github,gitlab}.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#agent-dispatcher-agentinvokepy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agent Dispatcher (agent/invoke.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#api-runner-agentapirunnerpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        API Runner (agent/api/runner.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#api-tools-agentapitoolspy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        API Tools (agent/api/tools.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cli-runner-agentclirunnerpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLI Runner (agent/cli/runner.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#prompt-composition" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prompt Composition
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#conversation-store-and-job-queue" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Conversation Store and Job Queue
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cost-tracking-llmcostpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cost Tracking (llm/cost.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#git-workspace-workspacegitpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Git Workspace (workspace/git.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#workspace-setup-workspacesetuppy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workspace Setup (workspace/setup.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#error-handling-agenterrorspy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error Handling (agent/errors.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#workspace-directory-layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workspace Directory Layout
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#job-queue" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Job Queue
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#source-layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Source Layout
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="architecture">Architecture<a class="headerlink" href="#architecture" title="Permanent link">&para;</a></h1>
+<h2 id="request-flow">Request Flow<a class="headerlink" href="#request-flow" title="Permanent link">&para;</a></h2>
+<h3 id="webhook-mode">Webhook Mode<a class="headerlink" href="#webhook-mode" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>PR comment &quot;@bot do something&quot;  ──or──  PR opened/pushed/reopened
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>        │                                        │
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>        ▼                                        ▼
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>GitHub/GitLab sends webhook             GitHub/GitLab sends webhook
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>        │                                        │
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>        └──────────────┬─────────────────────────┘
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>                       ▼
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>            POST /webhooks/{platform}
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>                       │
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>                       ├─ verify_webhook()         ← signature/token check
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>                       ├─ parse_event()            ← normalize into PullRequestEvent
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>                       ├─ [repo in ALLOWED_REPOS?] ← skip if not listed
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>                       │
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>                       ├─ [lifecycle event in REVIEWER_TRIGGERS?]
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>                       │       ▼
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>                       │   enqueue_job()            ← no auth check, no reaction
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>                       │       │
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>                       │       ▼
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>                       │   job_queue.enqueue()  ← reviewer with empty prompt
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>                       │
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>                       ├─ [comment event?]
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>                       │       ▼
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>                       │   extract_mention()        ← identify bot type + prompt
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>                       │       │
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>                       │       ▼
+<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>                       │   enqueue_job()
+<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>                       │       │
+<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>                       │       ├─ allowed_users check
+<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a>                       │       ├─ post_reaction(&quot;eyes&quot;)
+<a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a>                       │       │
+<a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a>                       │       ▼
+<a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a>                       │   job_queue.enqueue()
+<a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a>                       │
+<a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a>                       └─ [otherwise] → ignored
+<a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a>                               │
+<a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a>                               ▼
+<a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a>                    job runs serially per PR
+<a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a>                               │
+<a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a>                    └─ clone/update → fetch diff + comments → run agent (read-only) → submit review
+</code></pre></div>
+<h3 id="cli-flow">CLI Flow<a class="headerlink" href="#cli-flow" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>nominal-code review owner/repo#42 [--dry-run] [--prompt &quot;...&quot;]
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>        │
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>        ▼
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>_parse_pr_ref()                     ← validate owner/repo#N format
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>        │
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>        ▼
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>build_platform()                    ← construct platform from env token
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>        │
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>        ├─ fetch_pr_branch()       ← resolve HEAD branch via API
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>        │
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>        ▼
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>review()
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>        │
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>        ├─ clone/update workspace
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>        ├─ fetch diff + comments (parallel)
+<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>        ├─ build prompt + run agent (Claude Code CLI)
+<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>        ├─ parse JSON + filter findings
+<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>        │
+<a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a>        ▼
+<a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a>_print_review()                     ← format results for terminal
+<a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a>        │
+<a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a>        ├─ [unless --dry-run] submit_review() or post_reply()
+<a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a>        │
+<a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a>        ▼
+<a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a>exit 0
+</code></pre></div>
+<h3 id="ci-flow">CI Flow<a class="headerlink" href="#ci-flow" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>nominal-code ci {platform}
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>        │
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>        ▼
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>build_platform(name, config)        ← construct platform from CI config
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>        │                              GitHub: commands/ci/github.py
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>        │                              GitLab: commands/ci/gitlab.py
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>        │
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>        ├─ build_event()            ← read event from CI env vars
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>        ├─ resolve_workspace()      ← use CI runner checkout
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>        │
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>        ▼
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>Config.for_ci()                     ← build config with ApiAgentConfig
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>        │
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>        ▼
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a>review()
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>        │
+<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a>        ├─ diff + comments (parallel fetch)
+<a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a>        ├─ build prompt + run agent (LLM provider API)
+<a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a>        ├─ parse JSON + filter findings
+<a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a>        │
+<a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a>        ▼
+<a id="__codelineno-2-22" name="__codelineno-2-22" href="#__codelineno-2-22"></a>submit_review() or post_reply()
+<a id="__codelineno-2-23" name="__codelineno-2-23" href="#__codelineno-2-23"></a>        │
+<a id="__codelineno-2-24" name="__codelineno-2-24" href="#__codelineno-2-24"></a>        ▼
+<a id="__codelineno-2-25" name="__codelineno-2-25" href="#__codelineno-2-25"></a>exit 0
+</code></pre></div>
+<h2 id="agent-runners">Agent Runners<a class="headerlink" href="#agent-runners" title="Permanent link">&para;</a></h2>
+<p>Nominal Code supports two agent execution backends. The mode is selected automatically based on the execution context.</p>
+<h3 id="claude-code-cli-runner">Claude Code CLI Runner<a class="headerlink" href="#claude-code-cli-runner" title="Permanent link">&para;</a></h3>
+<p>Used by <strong>CLI mode</strong> and <strong>webhook server mode</strong>. Wraps the <a href="https://github.com/anthropics/claude-code-sdk-python">Claude Code SDK</a> to spawn the Claude Code CLI as a subprocess.</p>
+<ul>
+<li>Streams messages from the CLI process and captures the conversation ID for multi-turn continuity.</li>
+<li>Monkey-patches the SDK message parser to gracefully handle unknown message types (e.g. <code>rate_limit_event</code>), preventing the stream from crashing.</li>
+<li>Supports conversation resumption via stored conversation IDs.</li>
+<li>Requires the Claude Code CLI to be installed and on <code>PATH</code> (or set via <code>AGENT_CLI_PATH</code>).</li>
+<li>Uses the CLI's configured login method — supports Claude Pro and Claude Max subscriptions as an alternative to per-token API billing.</li>
+<li>Captures token usage and cost from the SDK's <code>ResultMessage</code> when available.</li>
+</ul>
+<h3 id="llm-provider-api-runner">LLM Provider API Runner<a class="headerlink" href="#llm-provider-api-runner" title="Permanent link">&para;</a></h3>
+<p>Used by <strong>CI mode</strong>. Calls the LLM provider API directly with tool use. Supports multiple providers (Anthropic, OpenAI, Google Gemini, DeepSeek, Groq, Together, Fireworks).</p>
+<ul>
+<li>Implements an agentic loop: sends a prompt, processes <code>tool_use</code> blocks by executing tools locally, sends results back, and repeats until the model produces a final text answer or the turn limit is reached.</li>
+<li>Provides tools: <code>Read</code> (file contents), <code>Glob</code> (file search), <code>Grep</code> (content search), <code>Bash</code> (shell commands with allowlist validation), <code>WriteNotes</code> (structured findings for explore agents), and <code>submit_review</code> (structured output for the review agent).</li>
+<li>Does not require the Claude Code CLI — only a provider API key (per-token billing).</li>
+<li>Accumulates token usage across all turns and computes dollar cost using a bundled pricing table.</li>
+</ul>
+<h3 id="runner-selection">Runner Selection<a class="headerlink" href="#runner-selection" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Execution Mode</th>
+<th>Agent Runner</th>
+<th>Selected By</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CI (<code>nominal-code ci</code>)</td>
+<td>LLM provider API</td>
+<td><code>ApiAgentConfig</code></td>
+</tr>
+<tr>
+<td>CLI (<code>nominal-code review</code>)</td>
+<td>Claude Code CLI</td>
+<td><code>CliAgentConfig</code></td>
+</tr>
+<tr>
+<td>Webhook server</td>
+<td>Claude Code CLI</td>
+<td><code>CliAgentConfig</code></td>
+</tr>
+</tbody>
+</table>
+<p>The dispatcher in <code>agent/invoke.py</code> routes to the appropriate backend based on whether the config is a <code>CliAgentConfig</code> or <code>ApiAgentConfig</code>.</p>
+<h2 id="sub-agents">Sub-Agents<a class="headerlink" href="#sub-agents" title="Permanent link">&para;</a></h2>
+<p>The API runner (<code>agent/api/runner.py</code>) supports spawning sub-agents via the <code>Agent</code> tool. When <code>sub_agent_configs</code> is passed to <code>run_api_agent()</code>, the tool is dynamically added with the available sub-agent types. The reviewer in <code>review/reviewer.py</code> configures an "explore" sub-agent type for codebase investigation.</p>
+<h3 id="agent-tool-dispatch">Agent Tool Dispatch<a class="headerlink" href="#agent-tool-dispatch" title="Permanent link">&para;</a></h3>
+<p>When the model calls the <code>Agent</code> tool, <code>_dispatch_tools()</code> creates an <code>asyncio.Task</code> for each Agent call. Multiple Agent calls in the same turn run concurrently. Each task runs <code>_handle_agent_tool()</code>, which:</p>
+<ol>
+<li>Validates the <code>subagent_type</code> against the provided configs.</li>
+<li>Creates a temporary notes directory with a header file.</li>
+<li>Recursively calls <code>run_api_agent()</code> with the sub-agent's provider, model, tools, and turn budget.</li>
+<li>Reads the notes file content after completion.</li>
+<li>Returns the notes (or the agent's text output if no notes were written) to the parent agent.</li>
+</ol>
+<p>Sub-agents cannot spawn other sub-agents (no recursive Agent tool) or produce reviews (no <code>submit_review</code> tool).</p>
+<h3 id="subagentconfig">SubAgentConfig<a class="headerlink" href="#subagentconfig" title="Permanent link">&para;</a></h3>
+<p>Defined in <code>agent/sub_agent.py</code>, this frozen dataclass configures a sub-agent type:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>provider</code></td>
+<td><code>LLMProvider</code></td>
+<td>LLM provider instance</td>
+</tr>
+<tr>
+<td><code>model</code></td>
+<td><code>str</code></td>
+<td>Model identifier</td>
+</tr>
+<tr>
+<td><code>provider_name</code></td>
+<td><code>ProviderName</code></td>
+<td>Provider name for cost tracking</td>
+</tr>
+<tr>
+<td><code>system_prompt</code></td>
+<td><code>str</code></td>
+<td>Full system prompt</td>
+</tr>
+<tr>
+<td><code>max_turns</code></td>
+<td><code>int</code></td>
+<td>Turn budget (default 32)</td>
+</tr>
+<tr>
+<td><code>allowed_tools</code></td>
+<td><code>list[str]</code></td>
+<td>Tool names the sub-agent may use</td>
+</tr>
+<tr>
+<td><code>description</code></td>
+<td><code>str</code></td>
+<td>Description shown in Agent tool schema</td>
+</tr>
+</tbody>
+</table>
+<h3 id="writenotes-tool">WriteNotes Tool<a class="headerlink" href="#writenotes-tool" title="Permanent link">&para;</a></h3>
+<p>Agents with a notes file (both the reviewer and explore sub-agents) have access to a <code>WriteNotes</code> tool that appends structured findings to a pre-assigned markdown file. The agent writes findings incrementally — callers, tests, type definitions, knock-on effects — organized under markdown headings.</p>
+<p>Each sub-agent gets its own notes file (no write conflicts during concurrent execution). Files are created in a temporary directory that is cleaned up after notes are read back. The notes content is the sub-agent's primary deliverable: the reviewer receives the notes, not the raw exploration conversation.</p>
+<p>See <a href="../reference/compaction/">Compaction</a> for how notes files also serve as the compaction summary.</p>
+<h3 id="explore-sub-agent">Explore Sub-Agent<a class="headerlink" href="#explore-sub-agent" title="Permanent link">&para;</a></h3>
+<p>The reviewer configures a <code>"explore"</code> sub-agent with these tools:</p>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Read</td>
+<td>Read file contents</td>
+</tr>
+<tr>
+<td>Glob</td>
+<td>Find files by pattern</td>
+</tr>
+<tr>
+<td>Grep</td>
+<td>Search file contents</td>
+</tr>
+<tr>
+<td>Bash</td>
+<td>Shell commands</td>
+</tr>
+<tr>
+<td>WriteNotes</td>
+<td>Record structured findings</td>
+</tr>
+</tbody>
+</table>
+<p>The reviewer decides when to spawn explorers based on the diffs it sees. It provides a task prompt describing what to investigate (e.g. "find all callers of <code>process_event</code> and check if they handle the new return type"). The explore sub-agent discovers everything through its tools.</p>
+<h3 id="cost-tracking">Cost Tracking<a class="headerlink" href="#cost-tracking" title="Permanent link">&para;</a></h3>
+<p>Sub-agent costs are collected as <code>tuple[CostSummary, ...]</code> on <code>AgentResult.sub_agent_costs</code> and propagated to <code>ReviewResult.sub_agent_costs</code>. Each <code>CostSummary</code> carries token counts, API call count, and dollar cost for one sub-agent invocation.</p>
+<h3 id="prompts">Prompts<a class="headerlink" href="#prompts" title="Permanent link">&para;</a></h3>
+<p>Bundled prompt files in <code>prompts/explore/</code>:
+- <code>explorer.md</code> — system prompt for explore sub-agents (read-only context gathering via tools).
+- <code>suffix.md</code> — sub-agent suffix template appended to system prompts ("You are a background sub-agent...").</p>
+<h2 id="policies">Policies<a class="headerlink" href="#policies" title="Permanent link">&para;</a></h2>
+<p>Event handling is governed by two frozen Pydantic models that separate <strong>what</strong> gets processed from <strong>how</strong> it gets dispatched:</p>
+<ul>
+<li><strong><code>FilteringPolicy</code></strong> — repository allowlists, user authorization, and PR title tag matching. Applied before any dispatch decision.</li>
+<li><strong><code>RoutingPolicy</code></strong> — reviewer auto-trigger events and bot usernames for <code>@mention</code> matching.</li>
+</ul>
+<p>Both policies are fields on the top-level <code>Config</code> (<code>config.filtering</code>, <code>config.routing</code>) and are constructed from the YAML file and environment variables at startup.</p>
+<p>The webhook handler's public dispatch functions (<code>dispatch_lifecycle_event</code>, <code>dispatch_comment_event</code>, <code>filter_event</code>) accept policies directly rather than the full <code>Config</code>, making them reusable in contexts that construct their own policies — such as a multi-tenant enterprise wrapper that builds per-organization policies from a database.</p>
+<p>See <strong><a href="../reference/policies/">Policies</a></strong> for the full reference.</p>
+<h2 id="configuration-architecture">Configuration Architecture<a class="headerlink" href="#configuration-architecture" title="Permanent link">&para;</a></h2>
+<p>The <code>config/</code> package uses a two-layer pattern: mutable <strong>Settings</strong> models for input, frozen <strong>Config</strong> models for output.</p>
+<h3 id="layer-1-settings-input-configmodelspy">Layer 1: Settings (input) — <code>config/models.py</code><a class="headerlink" href="#layer-1-settings-input-configmodelspy" title="Permanent link">&para;</a></h3>
+<p><code>AppSettings</code> and its nested <code>*Settings</code> models (<code>KubernetesSettings</code>, <code>RedisSettings</code>, etc.) are mutable Pydantic models that mirror the shape of the YAML file and environment variables. Their job is purely structural — they hold raw values exactly as the user provided them.</p>
+<p><code>config/env.py</code> provides <code>load_app_settings()</code>, which merges three sources in priority order: model defaults → YAML file → environment variables. The <code>ENV_MAP</code> table in <code>env.py</code> flattens env var names (e.g. <code>K8S_NAMESPACE</code>) into the nested structure (<code>["kubernetes", "namespace"]</code>).</p>
+<h3 id="layer-2-config-output-configsettingspy-configkubernetespy">Layer 2: Config (output) — <code>config/settings.py</code>, <code>config/kubernetes.py</code><a class="headerlink" href="#layer-2-config-output-configsettingspy-configkubernetespy" title="Permanent link">&para;</a></h3>
+<p><code>Config</code>, <code>WebhookConfig</code>, <code>KubernetesConfig</code>, <code>RedisConfig</code>, etc. are frozen (<code>frozen=True</code>) Pydantic models that represent the validated, resolved configuration the application consumes. They are immutable and safe to pass around.</p>
+<h3 id="the-bridge-configloaderpy">The bridge: <code>config/loader.py</code><a class="headerlink" href="#the-bridge-configloaderpy" title="Permanent link">&para;</a></h3>
+<p><code>loader.py</code> transforms Settings into Config. This is where business logic lives:</p>
+<ul>
+<li><strong>Validation</strong> — e.g. "at least one bot must be configured", "ALLOWED_USERS is required".</li>
+<li><strong>Derivation</strong> — reading prompt files from disk, parsing trigger strings into <code>EventType</code> frozensets, resolving agent provider configs.</li>
+<li><strong>Reshaping</strong> — the Config models don't mirror the YAML structure. Fields get flattened, renamed, or combined (e.g. <code>resources.requests.cpu</code> → <code>resource_requests_cpu</code>).</li>
+<li><strong>Conditional construction</strong> — <code>KubernetesConfig</code> is <code>None</code> when no image is set, <code>RedisConfig</code> is <code>None</code> when no URL is set.</li>
+</ul>
+<h3 id="why-two-layers">Why two layers?<a class="headerlink" href="#why-two-layers" title="Permanent link">&para;</a></h3>
+<p>Settings and Config serve different masters:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Settings</th>
+<th>Config</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Serves</strong></td>
+<td>The user writing YAML/env vars</td>
+<td>The application code consuming config</td>
+</tr>
+<tr>
+<td><strong>Shape</strong></td>
+<td>Mirrors the config file structure</td>
+<td>Mirrors what the code needs</td>
+</tr>
+<tr>
+<td><strong>Mutability</strong></td>
+<td>Mutable (intermediate merge target)</td>
+<td>Frozen (safe to pass around)</td>
+</tr>
+<tr>
+<td><strong>Content</strong></td>
+<td>Raw strings, file paths, lists</td>
+<td>Resolved values — file contents loaded, enums parsed, frozensets built</td>
+</tr>
+<tr>
+<td><strong>Optionality</strong></td>
+<td>Everything has defaults</td>
+<td>Missing-means-disabled expressed as <code>None</code></td>
+</tr>
+</tbody>
+</table>
+<p>A single-layer approach would force one model to serve both roles — you'd either leak file paths and parsing logic into application code, or leak validation rules into the YAML schema. The two-layer split keeps the config file ergonomic for users while giving application code exactly the types it needs.</p>
+<h3 id="adding-a-new-config-field">Adding a new config field<a class="headerlink" href="#adding-a-new-config-field" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Add the field with a default to the appropriate <code>*Settings</code> model in <code>models.py</code>.</li>
+<li>If it needs an env var, add a <code>(ENV_NAME, ["section", "field"])</code> entry to <code>ENV_MAP</code> in <code>env.py</code> and the appropriate type set (<code>INT_KEYS</code>, <code>BOOL_KEYS</code>, or <code>COMMA_LIST_KEYS</code>).</li>
+<li>Add the field to the corresponding <code>*Config</code> model in <code>settings.py</code> or <code>kubernetes.py</code>.</li>
+<li>Forward the value in the relevant <code>_resolve_*()</code> or <code>load_config()</code> function in <code>loader.py</code>.</li>
+<li>Add tests for the env var override in <code>tests/test_config.py</code>.</li>
+</ol>
+<h2 id="components">Components<a class="headerlink" href="#components" title="Permanent link">&para;</a></h2>
+<h3 id="webhook-server">Webhook Server<a class="headerlink" href="#webhook-server" title="Permanent link">&para;</a></h3>
+<p>An <a href="https://docs.aiohttp.org/">aiohttp</a> application that exposes:</p>
+<ul>
+<li><code>GET /health</code> — returns <code>{"status": "ok"}</code></li>
+<li><code>POST /webhooks/{platform}</code> — one route per enabled platform</li>
+</ul>
+<p>Each incoming request is verified, parsed, and dispatched. The HTTP response is returned immediately; actual processing happens asynchronously via the job queue.</p>
+<h3 id="pre-flight-checks-commandswebhookhelperspy">Pre-flight Checks (<code>commands/webhook/helpers.py</code>)<a class="headerlink" href="#pre-flight-checks-commandswebhookhelperspy" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong><code>run_pre_flight()</code></strong> — central pre-flight for all events. For comment events: validates the author against <code>ALLOWED_USERS</code>, logs the event, posts the eyes reaction. For lifecycle events: logs with event type/title/author, posts a PR reaction, and skips auth and comment reaction. Returns whether the job should proceed.</li>
+</ul>
+<h3 id="job-processing-commandswebhookjobsrunnerprocesspy">Job Processing (<code>commands/webhook/jobs/runner/process.py</code>)<a class="headerlink" href="#job-processing-commandswebhookjobsrunnerprocesspy" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong><code>ProcessRunner</code></strong> — sets clone URLs on the event, builds the handler closure, and enqueues jobs for serial execution via the job queue.</li>
+</ul>
+<h3 id="handlers">Handlers<a class="headerlink" href="#handlers" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong><code>review.handler.review()</code></strong> — core review logic (clone, fetch diff + comments, build annotated diffs, run multi-turn reviewer agent with optional sub-agents, parse JSON, filter findings). Returns a <code>ReviewResult</code> without posting. Used by webhook, CLI, and CI modes.</li>
+<li><strong><code>review.handler.run_and_post_review()</code></strong> — webhook/CI entry point. Calls <code>review()</code> then posts results to the platform.</li>
+</ul>
+<h3 id="cli-module-commandsclimainpy">CLI Module (<code>commands/cli/main.py</code>)<a class="headerlink" href="#cli-module-commandsclimainpy" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong><code>_parse_pr_ref()</code></strong> — parses <code>owner/repo#42</code> into a repo name and PR number.</li>
+<li><strong><code>_run_review()</code></strong> — orchestrates the CLI flow: resolve branch, call <code>review()</code>, print results, optionally post. Uses <code>build_platform()</code> from <code>platforms/</code> to construct the platform client.</li>
+</ul>
+<h3 id="ci-module-commandscimainpy">CI Module (<code>commands/ci/main.py</code>)<a class="headerlink" href="#ci-module-commandscimainpy" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong><code>run_ci_review()</code></strong> — main entry point for CI-triggered reviews. Dispatches to the platform-specific CI module, runs the review, and posts results.</li>
+</ul>
+<h3 id="platform-ci-modules-commandscigithubgitlabpy">Platform CI Modules (<code>commands/ci/{github,gitlab}.py</code>)<a class="headerlink" href="#platform-ci-modules-commandscigithubgitlabpy" title="Permanent link">&para;</a></h3>
+<p>Each platform provides a CI module with three functions:</p>
+<ul>
+<li><strong><code>build_event()</code></strong> — reads CI environment variables and returns a <code>PullRequestEvent</code>. GitHub reads <code>$GITHUB_EVENT_PATH</code>; GitLab reads <code>$CI_PROJECT_PATH</code>, <code>$CI_MERGE_REQUEST_IID</code>, etc.</li>
+<li><strong><code>build_platform()</code></strong> — constructs a <code>Platform</code> from CI config (<code>GitHubConfig</code> or <code>GitLabConfig</code>).</li>
+<li><strong><code>resolve_workspace()</code></strong> — returns the CI runner's checkout directory (<code>$GITHUB_WORKSPACE</code> or <code>$CI_PROJECT_DIR</code>).</li>
+</ul>
+<h3 id="agent-dispatcher-agentinvokepy">Agent Dispatcher (<code>agent/invoke.py</code>)<a class="headerlink" href="#agent-dispatcher-agentinvokepy" title="Permanent link">&para;</a></h3>
+<p>Single entry point for agent execution. Routes to the API or CLI runner based on the agent config type (<code>CliAgentConfig</code> or <code>ApiAgentConfig</code>), with conversation persistence. See <a href="#agent-runners">Agent Runners</a> above.</p>
+<h3 id="api-runner-agentapirunnerpy">API Runner (<code>agent/api/runner.py</code>)<a class="headerlink" href="#api-runner-agentapirunnerpy" title="Permanent link">&para;</a></h3>
+<p>Implements the LLM provider API agentic loop with local tool execution. See <a href="#llm-provider-api-runner">LLM Provider API Runner</a> above.</p>
+<h3 id="api-tools-agentapitoolspy">API Tools (<code>agent/api/tools.py</code>)<a class="headerlink" href="#api-tools-agentapitoolspy" title="Permanent link">&para;</a></h3>
+<p>Defines and executes tools for the API runner: <code>Read</code>, <code>Glob</code>, <code>Grep</code>, <code>Bash</code>, <code>WriteNotes</code>, and <code>submit_review</code>. Bash commands are validated against an allowlist when <code>allowed_tools</code> restricts the agent. <code>WriteNotes</code> is restricted to a pre-assigned file path controlled by the orchestrator — agents cannot write to arbitrary locations.</p>
+<h3 id="cli-runner-agentclirunnerpy">CLI Runner (<code>agent/cli/runner.py</code>)<a class="headerlink" href="#cli-runner-agentclirunnerpy" title="Permanent link">&para;</a></h3>
+<p>Wraps the Claude Code SDK to stream messages from the CLI subprocess. See <a href="#claude-code-cli-runner">Claude Code CLI Runner</a> above.</p>
+<h3 id="prompt-composition">Prompt Composition<a class="headerlink" href="#prompt-composition" title="Permanent link">&para;</a></h3>
+<p>The reviewer prompt is composed from multiple sources across two layers:</p>
+<p><strong>System prompt</strong> (instructions — who you are, how to behave):
+1. Base reviewer prompt (<code>prompts/reviewer_prompt.md</code>)
+2. Suggestions instructions (<code>prompts/reviewer_suggestions.md</code>) — appended when <code>inline_suggestions</code> is enabled in config
+3. Repository guidelines (<code>.nominal/guidelines.md</code> or built-in) — wrapped in <code>&lt;repo-guidelines&gt;</code> tags</p>
+<p><strong>User message</strong> (the review input — what to review):
+1. Branch header and user prompt (wrapped in <code>&lt;untrusted-request&gt;</code>)
+2. Changed files with annotated diffs (wrapped in <code>&lt;untrusted-diff&gt;</code>) — each line prefixed with its actual line number
+3. Existing PR comments (wrapped in <code>&lt;untrusted-comment&gt;</code>)
+4. Exploration notes — structured findings from concern-partitioned sub-agents
+5. Review instruction (use annotated line numbers, call <code>submit_review</code>)</p>
+<p>The review agent runs as a multi-turn agentic loop with access to Read, Glob, Grep, Bash, WriteNotes, the Agent tool (for spawning explore sub-agents), and <code>submit_review</code>. It can investigate the codebase directly or delegate to sub-agents before producing its review.</p>
+<p>System prompt composition is handled by <code>agent/prompts.py</code>, which loads guidelines from the <code>.nominal/</code> directory with per-repo and per-language overrides. Language detection is based on file extensions in the PR diff.</p>
+<h3 id="conversation-store-and-job-queue">Conversation Store and Job Queue<a class="headerlink" href="#conversation-store-and-job-queue" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>ConversationStore</strong> (<code>conversation/memory.py</code>) — a unified in-memory store with two parallel dicts keyed by <code>(platform, repo, pr_number)</code>: lightweight conversation IDs and full message histories (API mode only). Used to resume conversations across multiple interactions on the same PR.</li>
+<li><strong>AsyncioJobQueue</strong> (<code>commands/webhook/jobs/queue/asyncio.py</code>) — per-PR async job queue for in-process mode. Each PR key gets its own <code>asyncio.Queue</code> with a single consumer task, ensuring that agent invocations on the same PR run serially (no race conditions). The consumer and queue are cleaned up when drained.</li>
+<li><strong>RedisJobQueue</strong> (<code>commands/webhook/jobs/queue/redis.py</code>) — Redis-backed per-PR job queue for Kubernetes mode. Uses Redis lists for serial execution and Redis pub/sub for event-driven job completion. Each PR key gets a consumer task that loops with <code>BRPOP</code>, creates K8s Jobs, and awaits completion signals — no K8s API polling required.</li>
+</ul>
+<h3 id="cost-tracking-llmcostpy">Cost Tracking (<code>llm/cost.py</code>)<a class="headerlink" href="#cost-tracking-llmcostpy" title="Permanent link">&para;</a></h3>
+<p>Both agent runners capture token usage and compute dollar costs per invocation:</p>
+<ul>
+<li><strong>Pricing data</strong> — a bundled <code>llm/data/pricing.json</code> file maps model IDs to per-token rates (input, output, cache write, cache read). Generated from the <a href="https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json">LiteLLM community pricing database</a> by <code>scripts/update_pricing.py</code> and auto-updated weekly via a GitHub Actions workflow.</li>
+<li><strong>API runner</strong> — accumulates <code>TokenUsage</code> from each provider response across the agentic loop, then calls <code>build_cost_summary()</code> to compute the total cost.</li>
+<li><strong>CLI runner</strong> — extracts <code>total_cost_usd</code> and token usage from the SDK's <code>ResultMessage</code>.</li>
+<li><strong>Output</strong> — cost is attached to <code>AgentResult.cost</code> and <code>ReviewResult.cost</code>, logged by the review handler, and formatted for CI output.</li>
+</ul>
+<h3 id="git-workspace-workspacegitpy">Git Workspace (<code>workspace/git.py</code>)<a class="headerlink" href="#git-workspace-workspacegitpy" title="Permanent link">&para;</a></h3>
+<p>Manages per-PR cloned repositories. Handles initial cloning, updating (fetch + reset), pushing changes, and provides a shared <code>.deps/</code> directory for private dependency cloning.</p>
+<h3 id="workspace-setup-workspacesetuppy">Workspace Setup (<code>workspace/setup.py</code>)<a class="headerlink" href="#workspace-setup-workspacesetuppy" title="Permanent link">&para;</a></h3>
+<p>Helper functions for branch resolution and workspace construction. <code>resolve_branch()</code> fetches the PR branch from the platform API when the webhook payload doesn't include it. <code>create_workspace()</code> and <code>setup_workspace()</code> construct and initialise <code>GitWorkspace</code> instances.</p>
+<h3 id="error-handling-agenterrorspy">Error Handling (<code>agent/errors.py</code>)<a class="headerlink" href="#error-handling-agenterrorspy" title="Permanent link">&para;</a></h3>
+<p>An async context manager (<code>handle_agent_errors()</code>) that wraps handler execution. Catches workspace setup failures and agent runtime errors, posts user-facing error messages to the platform, and prevents unhandled exceptions from crashing the event loop.</p>
+<h2 id="workspace-directory-layout">Workspace Directory Layout<a class="headerlink" href="#workspace-directory-layout" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>{WORKSPACE_BASE_DIR}/
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>└── {owner}/
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    └── {repo}/
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>        ├── .deps/           ← shared private dependency clones
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>        ├── pr-1/            ← workspace for PR #1
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>        ├── pr-2/            ← workspace for PR #2
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>        └── pr-N/
+</code></pre></div>
+<p>Each <code>pr-{N}</code> directory is a shallow clone of the repository checked out to the PR's head branch.</p>
+<p>In CI mode, the workspace is the CI runner's checkout directory (e.g. <code>$GITHUB_WORKSPACE</code> or <code>$CI_PROJECT_DIR</code>) — no cloning is needed.</p>
+<h2 id="job-queue">Job Queue<a class="headerlink" href="#job-queue" title="Permanent link">&para;</a></h2>
+<p>The job queue ensures that only one agent runs per PR at a time. This prevents race conditions when multiple comments arrive in quick succession on the same PR.</p>
+<p>Jobs are keyed by <code>(platform_name, repo_full_name, pr_number)</code>. When a job is enqueued:</p>
+<ol>
+<li>If no queue exists for that key, one is created along with a consumer task.</li>
+<li>The job is put into the queue.</li>
+<li>The consumer processes jobs serially, one at a time.</li>
+<li>When the queue drains, the consumer task and queue are cleaned up.</li>
+</ol>
+<p>In <strong>Kubernetes mode</strong>, the <code>RedisJobQueue</code> replaces the in-memory <code>AsyncioJobQueue</code>. The flow is:</p>
+<ol>
+<li>Webhook arrives → <code>KubernetesRunner.run()</code> enqueues the job payload to a Redis list keyed by <code>nc:queue:{platform}:{repo}:{pr}</code>.</li>
+<li>A per-PR consumer task <code>BRPOP</code>s from the list and creates a K8s Job for each dequeued payload.</li>
+<li>The Job pod runs <code>nominal-code run-job</code>, performs the review, and publishes a completion signal to <code>nc:job:{job_name}:done</code> via Redis pub/sub.</li>
+<li>The server receives the signal and the consumer moves on to the next queued job.</li>
+</ol>
+<h2 id="source-layout">Source Layout<a class="headerlink" href="#source-layout" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>nominal_code/
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>├── main.py              # Entry point: dispatches to webhook server, CLI, or CI
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>├── config/
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>│   ├── models.py        # Mutable *Settings models (YAML/env input layer)
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>│   ├── settings.py      # Frozen *Config models (application output layer)
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>│   ├── env.py           # ENV_MAP, type sets, load_app_settings() (YAML + env merge)
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>│   ├── loader.py        # Settings → Config transformation with validation
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>│   ├── policies.py      # FilteringPolicy and RoutingPolicy (frozen Pydantic models)
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>│   ├── agent.py         # AgentConfig, CliAgentConfig, ApiAgentConfig
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>│   └── kubernetes.py    # KubernetesConfig
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>├── models.py            # Shared enums (EventType, FileStatus) and dataclasses
+<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>├── commands/
+<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a>│   ├── cli/             # One-shot review CLI (package)
+<a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a>│   │   └── main.py      # argparse, platform construction, review orchestration
+<a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a>│   ├── ci/              # CI mode
+<a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a>│   │   ├── main.py      # CI review entry point (run_ci_review)
+<a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a>│   │   ├── github.py    # CI mode: build event, platform, and workspace from GitHub Actions env vars
+<a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a>│   │   └── gitlab.py    # CI mode: build event, platform, and workspace from GitLab CI env vars
+<a id="__codelineno-4-19" name="__codelineno-4-19" href="#__codelineno-4-19"></a>│   └── webhook/         # Webhook server and K8s job entrypoint
+<a id="__codelineno-4-20" name="__codelineno-4-20" href="#__codelineno-4-20"></a>│       ├── main.py      # aiohttp app with /health and /webhooks/{platform} routes
+<a id="__codelineno-4-21" name="__codelineno-4-21" href="#__codelineno-4-21"></a>│       ├── helpers.py   # Pre-flight checks (auth, reactions, logging), mention extraction
+<a id="__codelineno-4-22" name="__codelineno-4-22" href="#__codelineno-4-22"></a>│       ├── result.py    # DispatchResult dataclass
+<a id="__codelineno-4-23" name="__codelineno-4-23" href="#__codelineno-4-23"></a>│       └── jobs/        # Job processing
+<a id="__codelineno-4-24" name="__codelineno-4-24" href="#__codelineno-4-24"></a>│           ├── main.py          # K8s pod entry point (run-job)
+<a id="__codelineno-4-25" name="__codelineno-4-25" href="#__codelineno-4-25"></a>│           ├── payload.py       # JobPayload serializable dataclass
+<a id="__codelineno-4-26" name="__codelineno-4-26" href="#__codelineno-4-26"></a>│           ├── dispatch.py      # Job dispatch logic (execute_job)
+<a id="__codelineno-4-27" name="__codelineno-4-27" href="#__codelineno-4-27"></a>│           ├── handler.py       # JobHandler protocol
+<a id="__codelineno-4-28" name="__codelineno-4-28" href="#__codelineno-4-28"></a>│           ├── runner/          # Job runner implementations
+<a id="__codelineno-4-29" name="__codelineno-4-29" href="#__codelineno-4-29"></a>│           │   ├── base.py      # JobRunner protocol + build_runner() factory
+<a id="__codelineno-4-30" name="__codelineno-4-30" href="#__codelineno-4-30"></a>│           │   ├── process.py   # ProcessRunner: job enqueueing and handler dispatch
+<a id="__codelineno-4-31" name="__codelineno-4-31" href="#__codelineno-4-31"></a>│           │   └── kubernetes.py # Kubernetes Job dispatcher with Redis queue integration
+<a id="__codelineno-4-32" name="__codelineno-4-32" href="#__codelineno-4-32"></a>│           └── queue/           # Job queue implementations
+<a id="__codelineno-4-33" name="__codelineno-4-33" href="#__codelineno-4-33"></a>│               ├── base.py      # JobQueue protocol
+<a id="__codelineno-4-34" name="__codelineno-4-34" href="#__codelineno-4-34"></a>│               ├── asyncio.py   # AsyncioJobQueue (per-PR in-memory async queue)
+<a id="__codelineno-4-35" name="__codelineno-4-35" href="#__codelineno-4-35"></a>│               └── redis.py     # RedisJobQueue (Redis-backed per-PR queue + pub/sub)
+<a id="__codelineno-4-36" name="__codelineno-4-36" href="#__codelineno-4-36"></a>├── llm/
+<a id="__codelineno-4-37" name="__codelineno-4-37" href="#__codelineno-4-37"></a>│   ├── provider.py      # LLM provider protocol and base classes
+<a id="__codelineno-4-38" name="__codelineno-4-38" href="#__codelineno-4-38"></a>│   ├── registry.py      # Provider registry and factory
+<a id="__codelineno-4-39" name="__codelineno-4-39" href="#__codelineno-4-39"></a>│   ├── messages.py      # Canonical message types (LLMResponse, TokenUsage, etc.)
+<a id="__codelineno-4-40" name="__codelineno-4-40" href="#__codelineno-4-40"></a>│   ├── cost.py          # CostSummary, pricing loader, cost computation
+<a id="__codelineno-4-41" name="__codelineno-4-41" href="#__codelineno-4-41"></a>│   ├── data/
+<a id="__codelineno-4-42" name="__codelineno-4-42" href="#__codelineno-4-42"></a>│   │   └── pricing.json # Bundled model pricing (auto-updated from LiteLLM)
+<a id="__codelineno-4-43" name="__codelineno-4-43" href="#__codelineno-4-43"></a>│   ├── anthropic.py     # Anthropic provider implementation
+<a id="__codelineno-4-44" name="__codelineno-4-44" href="#__codelineno-4-44"></a>│   ├── openai.py        # OpenAI provider implementation (also used by DeepSeek, Groq, Together, Fireworks)
+<a id="__codelineno-4-45" name="__codelineno-4-45" href="#__codelineno-4-45"></a>│   └── google.py        # Google Gemini provider implementation
+<a id="__codelineno-4-46" name="__codelineno-4-46" href="#__codelineno-4-46"></a>├── agent/
+<a id="__codelineno-4-47" name="__codelineno-4-47" href="#__codelineno-4-47"></a>│   ├── invoke.py        # Single entry point: invoke_agent() (with persistence)
+<a id="__codelineno-4-48" name="__codelineno-4-48" href="#__codelineno-4-48"></a>│   ├── result.py        # AgentResult dataclass (output, turns, conversation ID, cost, sub_agent_costs)
+<a id="__codelineno-4-49" name="__codelineno-4-49" href="#__codelineno-4-49"></a>│   ├── sub_agent.py     # SubAgentConfig dataclass (max_turns defaults to EXPLORER_DEFAULT_MAX_TURNS)
+<a id="__codelineno-4-50" name="__codelineno-4-50" href="#__codelineno-4-50"></a>│   ├── prompts.py       # Guideline loading, language detection, system prompt composition
+<a id="__codelineno-4-51" name="__codelineno-4-51" href="#__codelineno-4-51"></a>│   ├── errors.py        # Async context manager for handler error handling
+<a id="__codelineno-4-52" name="__codelineno-4-52" href="#__codelineno-4-52"></a>│   ├── compaction.py    # Notes-based message compaction
+<a id="__codelineno-4-53" name="__codelineno-4-53" href="#__codelineno-4-53"></a>│   ├── sandbox.py       # Output sanitization and environment building
+<a id="__codelineno-4-54" name="__codelineno-4-54" href="#__codelineno-4-54"></a>│   ├── api/
+<a id="__codelineno-4-55" name="__codelineno-4-55" href="#__codelineno-4-55"></a>│   │   ├── runner.py    # LLM provider API agentic loop with sub-agent dispatch
+<a id="__codelineno-4-56" name="__codelineno-4-56" href="#__codelineno-4-56"></a>│   │   └── tools.py     # Tool definitions and execution (Read, Glob, Grep, Bash, WriteNotes, Agent, submit_review)
+<a id="__codelineno-4-57" name="__codelineno-4-57" href="#__codelineno-4-57"></a>│   └── cli/
+<a id="__codelineno-4-58" name="__codelineno-4-58" href="#__codelineno-4-58"></a>│       └── runner.py    # Claude Code CLI subprocess wrapper (SDK integration)
+<a id="__codelineno-4-59" name="__codelineno-4-59" href="#__codelineno-4-59"></a>├── conversation/
+<a id="__codelineno-4-60" name="__codelineno-4-60" href="#__codelineno-4-60"></a>│   ├── base.py          # Conversation store protocol
+<a id="__codelineno-4-61" name="__codelineno-4-61" href="#__codelineno-4-61"></a>│   ├── memory.py        # In-memory conversation store
+<a id="__codelineno-4-62" name="__codelineno-4-62" href="#__codelineno-4-62"></a>│   └── redis.py         # Redis-backed conversation store
+<a id="__codelineno-4-63" name="__codelineno-4-63" href="#__codelineno-4-63"></a>├── prompts/
+<a id="__codelineno-4-64" name="__codelineno-4-64" href="#__codelineno-4-64"></a>│   ├── reviewer_prompt.md       # Base reviewer system prompt
+<a id="__codelineno-4-65" name="__codelineno-4-65" href="#__codelineno-4-65"></a>│   ├── reviewer_suggestions.md  # Inline suggestions instructions
+<a id="__codelineno-4-66" name="__codelineno-4-66" href="#__codelineno-4-66"></a>│   ├── languages/
+<a id="__codelineno-4-67" name="__codelineno-4-67" href="#__codelineno-4-67"></a>│   │   └── python.md            # Built-in Python language guidelines
+<a id="__codelineno-4-68" name="__codelineno-4-68" href="#__codelineno-4-68"></a>│   ├── explore/
+<a id="__codelineno-4-69" name="__codelineno-4-69" href="#__codelineno-4-69"></a>│   │   ├── explorer.md          # Explore sub-agent system prompt
+<a id="__codelineno-4-70" name="__codelineno-4-70" href="#__codelineno-4-70"></a>│   │   └── suffix.md            # Sub-agent suffix template
+<a id="__codelineno-4-71" name="__codelineno-4-71" href="#__codelineno-4-71"></a>│   └── output/
+<a id="__codelineno-4-72" name="__codelineno-4-72" href="#__codelineno-4-72"></a>│       ├── json_fix_system.md   # JSON repair system prompt
+<a id="__codelineno-4-73" name="__codelineno-4-73" href="#__codelineno-4-73"></a>│       ├── json_fix_user.md     # JSON repair user prompt
+<a id="__codelineno-4-74" name="__codelineno-4-74" href="#__codelineno-4-74"></a>│       └── json_fix_retry.md    # JSON repair retry prompt
+<a id="__codelineno-4-75" name="__codelineno-4-75" href="#__codelineno-4-75"></a>├── review/
+<a id="__codelineno-4-76" name="__codelineno-4-76" href="#__codelineno-4-76"></a>│   ├── reviewer.py      # Review orchestration: diff fetching, sub-agent config, output parsing
+<a id="__codelineno-4-77" name="__codelineno-4-77" href="#__codelineno-4-77"></a>│   ├── prompts.py       # Reviewer prompt building, fallback prompt, comment formatting
+<a id="__codelineno-4-78" name="__codelineno-4-78" href="#__codelineno-4-78"></a>│   ├── diff.py          # Diff handling utilities
+<a id="__codelineno-4-79" name="__codelineno-4-79" href="#__codelineno-4-79"></a>│   └── output.py        # Output parsing and JSON repair
+<a id="__codelineno-4-80" name="__codelineno-4-80" href="#__codelineno-4-80"></a>├── platforms/
+<a id="__codelineno-4-81" name="__codelineno-4-81" href="#__codelineno-4-81"></a>│   ├── base.py          # Platform protocol and shared dataclasses
+<a id="__codelineno-4-82" name="__codelineno-4-82" href="#__codelineno-4-82"></a>│   ├── http.py          # request_with_retry(): HTTP request helper with transient error retries
+<a id="__codelineno-4-83" name="__codelineno-4-83" href="#__codelineno-4-83"></a>│   ├── github/
+<a id="__codelineno-4-84" name="__codelineno-4-84" href="#__codelineno-4-84"></a>│   │   ├── auth.py      # GitHubAuth ABC, PAT and App auth implementations
+<a id="__codelineno-4-85" name="__codelineno-4-85" href="#__codelineno-4-85"></a>│   │   └── platform.py  # GitHub webhook handler and REST API client
+<a id="__codelineno-4-86" name="__codelineno-4-86" href="#__codelineno-4-86"></a>│   └── gitlab/
+<a id="__codelineno-4-87" name="__codelineno-4-87" href="#__codelineno-4-87"></a>│       ├── auth.py      # GitLabAuth: PAT auth implementation
+<a id="__codelineno-4-88" name="__codelineno-4-88" href="#__codelineno-4-88"></a>│       └── platform.py  # GitLab webhook handler and REST API client
+<a id="__codelineno-4-89" name="__codelineno-4-89" href="#__codelineno-4-89"></a>└── workspace/
+<a id="__codelineno-4-90" name="__codelineno-4-90" href="#__codelineno-4-90"></a>    ├── git.py           # GitWorkspace: clone, update, push per-PR workspaces
+<a id="__codelineno-4-91" name="__codelineno-4-91" href="#__codelineno-4-91"></a>    └── setup.py         # Branch resolution and workspace construction helpers
+</code></pre></div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.sections", "navigation.expand", "search.highlight", "search.suggest", "content.code.copy", "content.tabs.link"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
