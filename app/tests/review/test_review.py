@@ -24,10 +24,10 @@ from nominal_code.models import (
 from nominal_code.platforms.base import CommentEvent, ExistingComment, PlatformName
 from nominal_code.review.output import FALLBACK_MESSAGE
 from nominal_code.review.prompts import (
+    build_codebase_reviewer_prompt,
     build_reviewer_prompt,
     format_existing_comments,
 )
-from nominal_code.review.prompts import build_codebase_reviewer_prompt
 from nominal_code.review.reviewer import (
     MAX_EXISTING_COMMENTS,
     ReviewResult,

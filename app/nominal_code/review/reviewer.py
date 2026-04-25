@@ -5,7 +5,7 @@ import logging
 import shutil
 import tempfile
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -64,7 +64,7 @@ if TYPE_CHECKING:
     from nominal_code.workspace.git import GitWorkspace
 
 
-class ReviewScope(str, Enum):
+class ReviewScope(StrEnum):
     """
     Determines what the reviewer is scoped to.
 
