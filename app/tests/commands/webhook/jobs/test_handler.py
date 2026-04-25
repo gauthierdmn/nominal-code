@@ -19,7 +19,7 @@ class TestDefaultJobHandler:
         mock_result = MagicMock()
 
         with patch(
-            "nominal_code.review.reviewer.run_and_post_review",
+            "nominal_code.commands.webhook.jobs.handler.run_and_post_review",
             new_callable=AsyncMock,
             return_value=mock_result,
         ) as mock_fn:

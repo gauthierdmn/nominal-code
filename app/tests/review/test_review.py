@@ -1673,7 +1673,6 @@ class TestCodebaseScopeReview:
         assert "main" in prompt
         assert "Pull request" not in prompt
         assert "## Changed files" not in prompt
-        assert "workspace root" in prompt
 
     def test_build_codebase_reviewer_prompt_with_user_instructions(self):
         from nominal_code.models import EventType

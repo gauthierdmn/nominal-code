@@ -51,8 +51,7 @@ def build_codebase_reviewer_prompt(
 
     if user_prompt:
         parts.append(
-            f"Additional instructions:\n"
-            f"{wrap_tag(TAG_UNTRUSTED_REQUEST, user_prompt)}"
+            f"Additional instructions:\n{wrap_tag(TAG_UNTRUSTED_REQUEST, user_prompt)}"
         )
 
     if context:
