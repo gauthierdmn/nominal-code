@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import fnmatch
 import re
+from collections.abc import Iterable
 
 from nominal_code.models import ChangedFile, DiffSide, ReviewFinding
 
@@ -130,6 +132,44 @@ def build_diff_index(
             index[changed_file.file_path] = parse_diff_lines(changed_file.patch)
 
     return index
+
+
+def filter_changed_files(
+    changed_files: list[ChangedFile],
+    ignore_patterns: Iterable[str],
+) -> tuple[list[ChangedFile], list[str]]:
+    """
+    Split changed files by ignore-pattern match.
+
+    Walks ``changed_files`` and excludes any whose ``file_path`` matches
+    at least one fnmatch pattern in ``ignore_patterns``. fnmatch shell-glob
+    semantics apply: ``*`` matches any characters including ``/``, so
+    ``vendor/**`` matches recursively.
+
+    Args:
+        changed_files (list[ChangedFile]): Files in the PR diff.
+        ignore_patterns (Iterable[str]): Glob patterns to exclude. Empty
+            means no filtering.
+
+    Returns:
+        tuple[list[ChangedFile], list[str]]: A pair of (kept, removed-paths).
+    """
+
+    patterns: tuple[str, ...] = tuple(ignore_patterns)
+
+    if not patterns:
+        return changed_files, []
+
+    kept: list[ChangedFile] = []
+    removed: list[str] = []
+
+    for changed_file in changed_files:
+        if any(fnmatch.fnmatch(changed_file.file_path, pat) for pat in patterns):
+            removed.append(changed_file.file_path)
+        else:
+            kept.append(changed_file)
+
+    return kept, removed
 
 
 def filter_findings(

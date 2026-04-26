@@ -9,9 +9,87 @@ from nominal_code.review.diff import (
     annotate_diff,
     build_diff_index,
     build_effective_summary,
+    filter_changed_files,
     filter_findings,
     parse_diff_lines,
 )
+
+
+def _changed(file_path):
+    return ChangedFile(
+        file_path=file_path,
+        status=FileStatus.MODIFIED,
+        patch="@@ -1,1 +1,1 @@\n-a\n+b\n",
+    )
+
+
+class TestFilterChangedFiles:
+    def test_empty_patterns_returns_all_files_unchanged(self):
+        files = [_changed("src/main.py"), _changed("README.md")]
+
+        kept, removed = filter_changed_files(files, [])
+
+        assert kept == files
+        assert removed == []
+
+    def test_single_glob_excludes_matching_extension(self):
+        files = [_changed("foo.lock"), _changed("src/main.py")]
+
+        kept, removed = filter_changed_files(files, ["*.lock"])
+
+        assert [changed.file_path for changed in kept] == ["src/main.py"]
+        assert removed == ["foo.lock"]
+
+    def test_double_star_glob_matches_recursively(self):
+        files = [
+            _changed("vendor/a.py"),
+            _changed("vendor/sub/b.py"),
+            _changed("src/c.py"),
+        ]
+
+        kept, removed = filter_changed_files(files, ["vendor/**"])
+
+        assert [changed.file_path for changed in kept] == ["src/c.py"]
+        assert sorted(removed) == ["vendor/a.py", "vendor/sub/b.py"]
+
+    def test_multiple_patterns_match_any(self):
+        files = [
+            _changed("foo.lock"),
+            _changed("dist/bundle.js"),
+            _changed("src/main.py"),
+        ]
+
+        kept, removed = filter_changed_files(
+            files,
+            ["*.lock", "dist/**"],
+        )
+
+        assert [changed.file_path for changed in kept] == ["src/main.py"]
+        assert sorted(removed) == ["dist/bundle.js", "foo.lock"]
+
+    def test_all_files_filtered_returns_empty_kept(self):
+        files = [_changed("foo.lock"), _changed("bar.lock")]
+
+        kept, removed = filter_changed_files(files, ["*.lock"])
+
+        assert kept == []
+        assert sorted(removed) == ["bar.lock", "foo.lock"]
+
+    def test_no_match_returns_all_files(self):
+        files = [_changed("src/main.py"), _changed("README.md")]
+
+        kept, removed = filter_changed_files(files, ["*.lock"])
+
+        assert kept == files
+        assert removed == []
+
+    def test_pattern_iterable_is_consumed_safely(self):
+        files = [_changed("foo.lock"), _changed("src/main.py")]
+
+        kept, removed = filter_changed_files(files, iter(["*.lock"]))
+
+        assert [changed.file_path for changed in kept] == ["src/main.py"]
+        assert removed == ["foo.lock"]
 
 
 class TestParseDiffLines:
