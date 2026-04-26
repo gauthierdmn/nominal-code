@@ -63,22 +63,28 @@ class WebhookSettings(BaseModel):
 
 class ReviewerSettings(BaseModel):
     """
-    Reviewer bot identity settings.
+    Settings governing the reviewer bot.
 
-    These control how the bot appears on pull requests. Runtime concerns
-    (LLM provider, model, system prompt, max turns) live under
-    ``AgentSettings.reviewer``.
+    Covers the bot's identity, the events that trigger it, and how it
+    shapes reviews. Runtime concerns (LLM provider, model, system
+    prompt, max turns) live under ``AgentSettings.reviewer``.
 
     Attributes:
         bot_username (str): The @mention name for the reviewer bot.
         triggers (list[str]): PR lifecycle events that auto-trigger the reviewer.
         inline_suggestions (bool): Whether to enable one-click-apply code
             suggestions in review comments.
+        ignore_patterns (list[str]): fnmatch shell-glob patterns of file
+            paths to exclude from the diff before it reaches the reviewer.
+            Empty list means no filtering. ``*`` matches across path
+            separators, so ``vendor/**`` matches recursively.
+
     """
 
     bot_username: str | None = None
     triggers: list[str] = Field(default_factory=list)
     inline_suggestions: bool = True
+    ignore_patterns: list[str] = Field(default_factory=list)
 
 
 class AgentRoleSettings(BaseModel):

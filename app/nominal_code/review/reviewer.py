@@ -38,6 +38,7 @@ from nominal_code.platforms.base import (
 from nominal_code.prompts import load_prompt
 from nominal_code.review.diff import (
     build_effective_summary,
+    filter_changed_files,
     filter_findings,
 )
 from nominal_code.review.output import (
@@ -716,7 +717,11 @@ async def _prepare_review_context(
         return ReviewContext(
             repo_path=repo_path,
             deps_path=None,
-            changed_files=changed_files_result,
+            changed_files=_apply_ignore_patterns(
+                changed_files_result,
+                config=config,
+                event=event,
+            ),
             existing_comments=existing_comments,
             metadata=metadata_result,
         )
@@ -753,11 +758,58 @@ async def _prepare_review_context(
     return ReviewContext(
         repo_path=workspace.repo_path,
         deps_path=workspace.deps_path,
-        changed_files=results[0],
+        changed_files=_apply_ignore_patterns(
+            results[0],
+            config=config,
+            event=event,
+        ),
         existing_comments=existing_comments,
         metadata=results[2],
         workspace=workspace,
     )
+
+
+def _apply_ignore_patterns(
+    changed_files: list[ChangedFile],
+    *,
+    config: Config,
+    event: PullRequestEvent,
+) -> list[ChangedFile]:
+    """
+    Apply org-configured ignore patterns to the diff before review.
+
+    Reads ``config.reviewer.ignore_patterns`` and excludes any matching
+    file paths. When at least one file is excluded, logs a single
+    WARNING line that mirrors ``filter_findings`` so observability is
+    consistent across diff filtering and finding filtering.
+
+    Args:
+        changed_files (list[ChangedFile]): Files in the PR diff.
+        config (Config): Application configuration.
+        event (PullRequestEvent): The event being reviewed; used only
+            for the log line.
+
+    Returns:
+        list[ChangedFile]: The retained files. Identical to ``changed_files``
+            when no patterns are configured.
+    """
+
+    patterns: frozenset[str] = (
+        config.reviewer.ignore_patterns if config.reviewer else frozenset()
+    )
+
+    kept, removed = filter_changed_files(changed_files, patterns)
+
+    if removed:
+        logger.warning(
+            "Excluded %d of %d files by ignore_patterns for %s#%d",
+            len(removed),
+            len(changed_files),
+            event.repo_full_name,
+            event.pr_number,
+        )
+
+    return kept
 
 
 async def _fetch_pr_comments_or_empty(

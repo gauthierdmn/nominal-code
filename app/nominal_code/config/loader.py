@@ -223,6 +223,8 @@ def _build_reviewer(
     if settings.reviewer.inline_suggestions:
         suggestions_prompt = load_prompt("reviewer_suggestions.md")
 
+    ignore_patterns: frozenset[str] = frozenset(settings.reviewer.ignore_patterns)
+
     if require_webhook:
         if not settings.reviewer.bot_username:
             raise ValueError("REVIEWER_BOT_USERNAME must be set")
@@ -230,11 +232,13 @@ def _build_reviewer(
         return ReviewerConfig(
             bot_username=settings.reviewer.bot_username,
             suggestions_prompt=suggestions_prompt,
+            ignore_patterns=ignore_patterns,
         )
 
     return ReviewerConfig(
         bot_username="",
         suggestions_prompt=suggestions_prompt,
+        ignore_patterns=ignore_patterns,
     )
 
 

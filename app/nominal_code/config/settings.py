@@ -60,23 +60,30 @@ class GitLabConfig(BaseModel):
 
 class ReviewerConfig(BaseModel):
     """
-    Reviewer bot identity configuration.
+    Resolved reviewer bot configuration.
 
-    Holds only bot-identity concerns (user-facing behavior on the PR).
-    The reviewer's LLM runtime (provider, model, system prompt, max
-    turns) lives on ``AgentConfig.reviewer``.
+    Bundles bot identity, output style, and the diff-shaping rules the
+    reviewer applies when assembling the review context. The reviewer's
+    LLM runtime (provider, model, system prompt, max turns) lives on
+    ``AgentConfig.reviewer``; PR lifecycle triggers live on
+    ``WebhookConfig.routing`` since they govern dispatch, not the review.
 
     Attributes:
         bot_username (str): The @mention name for the reviewer bot.
         suggestions_prompt (str): Prompt section appended to the reviewer
             system prompt when non-empty, enabling one-click-apply code
             suggestions.
+        ignore_patterns (frozenset[str]): fnmatch shell-glob patterns of
+            file paths to exclude from the diff before it reaches the
+            reviewer agent. Empty means no filtering. ``*`` matches across
+            path separators, so ``vendor/**`` matches recursively.
     """
 
     model_config = ConfigDict(frozen=True)
 
     bot_username: str
     suggestions_prompt: str = ""
+    ignore_patterns: frozenset[str] = frozenset()
 
 
 class PromptsConfig(BaseModel):

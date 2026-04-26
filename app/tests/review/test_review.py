@@ -32,6 +32,7 @@ from nominal_code.review.reviewer import (
     MAX_EXISTING_COMMENTS,
     ReviewResult,
     ReviewScope,
+    _prepare_review_context,
     review,
     run_and_post_review,
 )
@@ -1697,3 +1698,136 @@ class TestCodebaseScopeReview:
 
         assert "Focus on error handling" in prompt
         assert "Additional instructions" in prompt
+
+
+def _make_lifecycle_event():
+    from nominal_code.platforms.base import LifecycleEvent
+
+    return LifecycleEvent(
+        platform=PlatformName.GITHUB,
+        repo_full_name="owner/repo",
+        pr_number=42,
+        pr_branch="feat/x",
+        event_type=EventType.PR_OPENED,
+        clone_url="https://token@github.com/owner/repo.git",
+        base_branch="main",
+        pr_author="alice",
+    )
+
+
+class TestPrepareReviewContextIgnorePatterns:
+    @pytest.mark.asyncio
+    async def test_files_matching_patterns_are_excluded(self, tmp_path):
+        config = _make_config(allowed_users=["alice"])
+        config.reviewer = ReviewerConfig(
+            bot_username="claude-reviewer",
+            ignore_patterns=frozenset({"*.lock", "vendor/**"}),
+        )
+        platform = _make_platform()
+        platform.fetch_pr_diff = AsyncMock(
+            return_value=[
+                ChangedFile(
+                    file_path="Cargo.lock",
+                    status=FileStatus.MODIFIED,
+                    patch="@@ -1 +1 @@\n-x\n+y\n",
+                ),
+                ChangedFile(
+                    file_path="vendor/foo.go",
+                    status=FileStatus.MODIFIED,
+                    patch="@@ -1 +1 @@\n-x\n+y\n",
+                ),
+                ChangedFile(
+                    file_path="src/main.py",
+                    status=FileStatus.MODIFIED,
+                    patch="@@ -1 +1 @@\n-x\n+y\n",
+                ),
+            ],
+        )
+        event = _make_lifecycle_event()
+
+        review_context = await _prepare_review_context(
+            event=event,
+            config=config,
+            platform=platform,
+            workspace_path=str(tmp_path),
+            bot_username="claude-reviewer",
+        )
+
+        kept_paths = [changed.file_path for changed in review_context.changed_files]
+        assert kept_paths == ["src/main.py"]
+
+    @pytest.mark.asyncio
+    async def test_empty_patterns_keeps_all_files(self, tmp_path):
+        config = _make_config(allowed_users=["alice"])
+        config.reviewer = ReviewerConfig(
+            bot_username="claude-reviewer",
+            ignore_patterns=frozenset(),
+        )
+        platform = _make_platform()
+        platform.fetch_pr_diff = AsyncMock(
+            return_value=[
+                ChangedFile(
+                    file_path="Cargo.lock",
+                    status=FileStatus.MODIFIED,
+                    patch="@@ -1 +1 @@\n-x\n+y\n",
+                ),
+                ChangedFile(
+                    file_path="src/main.py",
+                    status=FileStatus.MODIFIED,
+                    patch="@@ -1 +1 @@\n-x\n+y\n",
+                ),
+            ],
+        )
+        event = _make_lifecycle_event()
+
+        review_context = await _prepare_review_context(
+            event=event,
+            config=config,
+            platform=platform,
+            workspace_path=str(tmp_path),
+            bot_username="claude-reviewer",
+        )
+
+        kept_paths = [changed.file_path for changed in review_context.changed_files]
+        assert kept_paths == ["Cargo.lock", "src/main.py"]
+
+    @pytest.mark.asyncio
+    async def test_excluded_files_logged_at_warning(self, tmp_path, caplog):
+        import logging
+
+        config = _make_config(allowed_users=["alice"])
+        config.reviewer = ReviewerConfig(
+            bot_username="claude-reviewer",
+            ignore_patterns=frozenset({"*.lock"}),
+        )
+        platform = _make_platform()
+        platform.fetch_pr_diff = AsyncMock(
+            return_value=[
+                ChangedFile(
+                    file_path="Cargo.lock",
+                    status=FileStatus.MODIFIED,
+                    patch="@@ -1 +1 @@\n-x\n+y\n",
+                ),
+                ChangedFile(
+                    file_path="src/main.py",
+                    status=FileStatus.MODIFIED,
+                    patch="@@ -1 +1 @@\n-x\n+y\n",
+                ),
+            ],
+        )
+        event = _make_lifecycle_event()
+
+        with caplog.at_level(logging.WARNING, logger="nominal_code.review.reviewer"):
+            await _prepare_review_context(
+                event=event,
+                config=config,
+                platform=platform,
+                workspace_path=str(tmp_path),
+                bot_username="claude-reviewer",
+            )
+
+        assert any(
+            "Excluded 1 of 2 files by ignore_patterns" in record.message
+            and "owner/repo#42" in record.message
+            for record in caplog.records
+        )

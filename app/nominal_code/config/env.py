@@ -29,6 +29,7 @@ ENV_MAP: list[tuple[str, list[str]]] = [
     ("REVIEWER_SYSTEM_PROMPT", ["agent", "reviewer", "system_prompt"]),
     ("REVIEWER_SYSTEM_PROMPT_FILE", ["agent", "reviewer", "system_prompt_file"]),
     ("REVIEWER_TRIGGERS", ["reviewer", "triggers"]),
+    ("REVIEWER_IGNORE_PATTERNS", ["reviewer", "ignore_patterns"]),
     ("INLINE_SUGGESTIONS", ["reviewer", "inline_suggestions"]),
     ("AGENT_PROVIDER", ["agent", "reviewer", "provider"]),
     ("AGENT_MODEL", ["agent", "reviewer", "model"]),
@@ -76,6 +77,7 @@ COMMA_LIST_KEYS: frozenset[str] = frozenset(
         "PR_TITLE_INCLUDE_TAGS",
         "PR_TITLE_EXCLUDE_TAGS",
         "REVIEWER_TRIGGERS",
+        "REVIEWER_IGNORE_PATTERNS",
         "K8S_ENV_FROM_SECRETS",
     }
 )
