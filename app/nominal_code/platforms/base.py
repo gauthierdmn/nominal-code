@@ -19,6 +19,32 @@ class PlatformName(StrEnum):
     GITLAB = "gitlab"
 
 
+class PullRequestState(StrEnum):
+    """
+    Normalized lifecycle state of a PR/MR across platforms.
+
+    GitHub exposes ``state`` (``"open"``/``"closed"``) plus a separate
+    ``merged`` boolean; GitLab exposes a single ``state`` enum
+    (``"opened"``/``"closed"``/``"merged"``/``"locked"``). This enum
+    collapses both shapes into a small alphabet that callers can act on
+    without knowing which platform they're talking to.
+
+    Values:
+        OPEN: PR/MR is open and reviewable.
+        CLOSED: PR/MR was closed without merging (rare; also covers
+            GitLab's ``locked`` since both leave nothing to review).
+        MERGED: PR/MR was merged into the base branch.
+        UNKNOWN: State could not be determined (API failure, unmappable
+            value, etc.). Callers should typically fall through to their
+            existing behavior rather than blocking on this signal.
+    """
+
+    OPEN = "open"
+    CLOSED = "closed"
+    MERGED = "merged"
+    UNKNOWN = "unknown"
+
+
 @dataclass(frozen=True)
 class PullRequestEvent:
     """
@@ -295,6 +321,34 @@ class Platform(Protocol):
 
         Returns:
             str: The head branch name, or empty string if unavailable.
+        """
+
+        ...
+
+    async def fetch_pr_state(
+        self,
+        repo_full_name: str,
+        pr_number: int,
+    ) -> PullRequestState:
+        """
+        Fetch the lifecycle state of a PR/MR.
+
+        Used by callers that need to short-circuit on PRs that aren't
+        worth reviewing — typically merged or closed ones, whose head
+        branch is often gone (auto-delete on merge) and would otherwise
+        cause a downstream clone to fail.
+
+        Returns ``PullRequestState.UNKNOWN`` on API failure or for any
+        platform-specific state value that doesn't map cleanly so
+        callers can fall through to their existing behavior rather than
+        blocking on a flaky check.
+
+        Args:
+            repo_full_name (str): Full repository name (e.g. ``owner/repo``).
+            pr_number (int): Pull request or merge request number.
+
+        Returns:
+            PullRequestState: Normalized state enum.
         """
 
         ...
