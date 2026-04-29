@@ -389,7 +389,7 @@ async def review(
             sub_agent_configs=sub_agent_configs,
         )
 
-        if result.exhausted_without_review:
+        if result.max_turns_reached:
             logger.warning(
                 "Reviewer exhausted turns for %s#%d, "
                 "falling back to notes-based review",

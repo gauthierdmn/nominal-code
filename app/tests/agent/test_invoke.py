@@ -73,7 +73,8 @@ class TestRunClaude:
             result = await invoke_agent(prompt="test", cwd="/tmp")
 
         assert result.error is not None
-        assert result.output == "No result received from the agent."
+        assert result.output == ""
+        assert result.error.message == "No result received from the agent."
 
     @pytest.mark.asyncio
     async def test_run_agent_empty_result(self):
@@ -90,7 +91,9 @@ class TestRunClaude:
         with patch("nominal_code.agent.cli.runner.query", mock_query):
             result = await invoke_agent(prompt="test", cwd="/tmp")
 
-        assert result.output == "Done, no output."
+        # Empty SDK ``result`` field → empty ``output``. No sentinel.
+        assert result.output == ""
+        assert result.error is None
 
     @pytest.mark.asyncio
     async def test_run_agent_forwards_system_prompt(self):

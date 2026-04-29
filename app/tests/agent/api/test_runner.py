@@ -82,7 +82,11 @@ class TestRunAgentApi:
             provider_name=ProviderName.GOOGLE,
         )
 
-        assert result.output == "Done, no output."
+        # Empty response from the model → empty ``output``. The runner
+        # no longer fabricates a "Done, no output." sentinel; consumers
+        # see the absence honestly.
+        assert result.output == ""
+        assert result.error is None
 
     @pytest.mark.asyncio
     async def test_tool_use_loop(self, tmp_path):
@@ -169,8 +173,13 @@ class TestRunAgentApi:
             max_turns=2,
         )
 
-        assert result.output == "Max turns reached."
+        # Mid-tool-use cap fires with no last assistant text → empty
+        # output. ``max_turns_reached`` is the structural signal, not
+        # a fabricated string in ``output``.
+        assert result.output == ""
         assert result.num_turns == 2
+        assert result.max_turns_reached is True
+        assert result.error is None
 
     @pytest.mark.asyncio
     async def test_provider_error_returns_error_result(self, tmp_path):
@@ -190,10 +199,10 @@ class TestRunAgentApi:
         )
 
         assert result.error is not None
-        assert "API error" in result.output
-        # Structured error fields let downstream observability route
-        # provider failures separately from runtime bugs without
-        # pattern-matching on ``output``.
+        # ``output`` is empty on failure — error info lives entirely on
+        # the structured ``error`` field, not duplicated as a prefixed
+        # output string.
+        assert result.output == ""
         assert result.error.type == ErrorType.PROVIDER_ERROR
         assert result.error.message == "API down"
 
@@ -213,7 +222,7 @@ class TestRunAgentApi:
         )
 
         assert result.error is not None
-        assert "Unexpected error" in result.output
+        assert result.output == ""
         assert result.error.type == ErrorType.RUNTIME_ERROR
         assert result.error.message == "boom"
 
@@ -496,7 +505,7 @@ class TestLastTurnWarning:
         assert any("last turn" in text.lower() for text in user_texts)
 
     @pytest.mark.asyncio
-    async def test_exhausted_without_review_flag_set(self, tmp_path):
+    async def test_max_turns_reached_flag_set(self, tmp_path):
         mock_provider = AsyncMock()
         mock_provider.send = AsyncMock(
             return_value=_make_tool_use_response(
@@ -516,10 +525,15 @@ class TestLastTurnWarning:
             allowed_tools=["Glob", "submit_review"],
         )
 
-        assert result.exhausted_without_review is True
+        assert result.max_turns_reached is True
 
     @pytest.mark.asyncio
-    async def test_exhausted_flag_false_without_submit_review(self, tmp_path):
+    async def test_max_turns_reached_flag_set_without_submit_review(self, tmp_path):
+        """``max_turns_reached`` is purely structural — it fires whenever
+        the budget is hit, regardless of whether ``submit_review`` was
+        in the tool set. The reviewer's notes-fallback gating was
+        previously coupled to this flag's old name; the rename makes
+        the signal honest about what actually happened."""
         mock_provider = AsyncMock()
         mock_provider.send = AsyncMock(
             return_value=_make_tool_use_response(
@@ -538,7 +552,7 @@ class TestLastTurnWarning:
             max_turns=1,
         )
 
-        assert result.exhausted_without_review is False
+        assert result.max_turns_reached is True
 
 
 class TestAgentToolDispatch:

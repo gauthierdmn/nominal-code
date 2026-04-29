@@ -1505,7 +1505,7 @@ class TestAgenticReviewer:
         mock_agent_result.messages = ()
         mock_agent_result.is_error = False
         mock_agent_result.conversation_id = None
-        mock_agent_result.exhausted_without_review = False
+        mock_agent_result.max_turns_reached = False
 
         mock_provider = AsyncMock()
         mock_provider.close = AsyncMock()
@@ -1572,7 +1572,7 @@ class TestAgenticReviewer:
         exhausted_result.messages = ()
         exhausted_result.is_error = False
         exhausted_result.conversation_id = None
-        exhausted_result.exhausted_without_review = True
+        exhausted_result.max_turns_reached = True
 
         fallback_result = MagicMock()
         fallback_result.output = '{"summary": "Fallback review", "findings": []}'
@@ -1582,7 +1582,7 @@ class TestAgenticReviewer:
         fallback_result.messages = ()
         fallback_result.is_error = False
         fallback_result.conversation_id = None
-        fallback_result.exhausted_without_review = False
+        fallback_result.max_turns_reached = False
 
         mock_provider = AsyncMock()
         mock_provider.close = AsyncMock()

@@ -131,7 +131,7 @@ async def run_cli_agent(
             returned_conversation_id = message.data.get("session_id", None)
 
         if isinstance(message, ResultMessage):
-            output: str = message.result or "Done, no output."
+            output: str = message.result or ""
             returned_conversation_id = message.session_id or returned_conversation_id
 
             cli_cost: CostSummary | None = None
@@ -156,25 +156,36 @@ async def run_cli_agent(
                     model=options.model or "",
                 )
 
-            error: InvocationError | None = (
-                InvocationError(type=ErrorType.RUNTIME_ERROR, message=output)
-                if message.is_error
-                else None
-            )
-            result = AgentResult(
-                output=output,
-                num_turns=message.num_turns,
-                duration_ms=message.duration_ms,
-                conversation_id=returned_conversation_id,
-                cost=cli_cost,
-                error=error,
-            )
+            # On error the SDK puts the failure description in
+            # ``output``; route it to ``error.message`` and leave
+            # ``output`` empty so the success-vs-failure separation is
+            # structural rather than convention.
+            if message.is_error:
+                result = AgentResult(
+                    output="",
+                    num_turns=message.num_turns,
+                    duration_ms=message.duration_ms,
+                    conversation_id=returned_conversation_id,
+                    cost=cli_cost,
+                    error=InvocationError(
+                        type=ErrorType.RUNTIME_ERROR,
+                        message=output,
+                    ),
+                )
+            else:
+                result = AgentResult(
+                    output=output,
+                    num_turns=message.num_turns,
+                    duration_ms=message.duration_ms,
+                    conversation_id=returned_conversation_id,
+                    cost=cli_cost,
+                )
 
     if result is not None:
         return result
 
     return AgentResult(
-        output="No result received from the agent.",
+        output="",
         num_turns=0,
         duration_ms=0,
         conversation_id=returned_conversation_id,
