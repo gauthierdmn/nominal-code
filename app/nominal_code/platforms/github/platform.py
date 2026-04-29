@@ -25,6 +25,7 @@ from nominal_code.platforms.base import (
     PlatformName,
     PullRequestEvent,
     PullRequestMetadata,
+    PullRequestState,
 )
 from nominal_code.platforms.github.auth import (
     NO_INSTALLATION,
@@ -480,6 +481,58 @@ class GitHubPlatform:
             )
 
             return ""
+
+    async def fetch_pr_state(
+        self,
+        repo_full_name: str,
+        pr_number: int,
+    ) -> PullRequestState:
+        """
+        Fetch the lifecycle state of a GitHub PR.
+
+        GitHub exposes ``state`` (``"open"``/``"closed"``) plus a separate
+        ``merged`` boolean, so a closed-and-merged PR has both
+        ``state == "closed"`` and ``merged is True``. This implementation
+        prioritises the ``merged`` flag over ``state`` so the caller sees
+        ``MERGED`` (semantically more useful) instead of ``CLOSED`` for
+        merged PRs.
+
+        Args:
+            repo_full_name (str): Full repository name (e.g. ``owner/repo``).
+            pr_number (int): Pull request number.
+
+        Returns:
+            PullRequestState: Normalized state, or ``UNKNOWN`` on API
+                failure or unmappable response.
+        """
+
+        url: str = f"/repos/{repo_full_name}/pulls/{pr_number}"
+
+        try:
+            response: httpx.Response = await self._request("GET", url)
+            response.raise_for_status()
+            data: dict[str, Any] = response.json()
+        except httpx.HTTPError:
+            logger.exception(
+                "Failed to fetch PR state for %s#%d",
+                repo_full_name,
+                pr_number,
+            )
+
+            return PullRequestState.UNKNOWN
+
+        if data.get("merged"):
+            return PullRequestState.MERGED
+
+        raw_state: object = data.get("state")
+
+        if raw_state == "open":
+            return PullRequestState.OPEN
+
+        if raw_state == "closed":
+            return PullRequestState.CLOSED
+
+        return PullRequestState.UNKNOWN
 
     async def fetch_pr_comments(
         self,

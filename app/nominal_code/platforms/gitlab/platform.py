@@ -30,6 +30,7 @@ from nominal_code.platforms.base import (
     PlatformName,
     PullRequestEvent,
     PullRequestMetadata,
+    PullRequestState,
 )
 from nominal_code.platforms.gitlab.auth import GitLabPatAuth
 from nominal_code.platforms.http import request_with_retry
@@ -343,6 +344,57 @@ class GitLabPlatform:
         """
 
         return ""
+
+    async def fetch_pr_state(
+        self,
+        repo_full_name: str,
+        pr_number: int,
+    ) -> PullRequestState:
+        """
+        Fetch the lifecycle state of a GitLab MR.
+
+        GitLab's MR ``state`` is a single enum
+        (``opened``/``closed``/``merged``/``locked``); ``locked`` is
+        treated as ``CLOSED`` because the MR is no longer reviewable
+        either way.
+
+        Args:
+            repo_full_name (str): Full repository name (e.g. ``group/repo``).
+            pr_number (int): Merge request IID.
+
+        Returns:
+            PullRequestState: Normalized state, or ``UNKNOWN`` on API
+                failure or unmappable response.
+        """
+
+        encoded_project: str = quote(repo_full_name, safe="")
+        url: str = f"/projects/{encoded_project}/merge_requests/{pr_number}"
+
+        try:
+            response: httpx.Response = await self._request("GET", url)
+            response.raise_for_status()
+            data: dict[str, Any] = response.json()
+        except httpx.HTTPError:
+            logger.exception(
+                "Failed to fetch MR state for %s!%d",
+                repo_full_name,
+                pr_number,
+            )
+
+            return PullRequestState.UNKNOWN
+
+        raw_state: object = data.get("state")
+
+        if raw_state == "opened":
+            return PullRequestState.OPEN
+
+        if raw_state == "merged":
+            return PullRequestState.MERGED
+
+        if raw_state in {"closed", "locked"}:
+            return PullRequestState.CLOSED
+
+        return PullRequestState.UNKNOWN
 
     async def fetch_pr_comments(
         self,
