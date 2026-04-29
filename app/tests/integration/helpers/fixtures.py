@@ -144,7 +144,6 @@ BUGGY_REVIEW_JSON = json.dumps(
 
 BUGGY_AGENT_RESULT = AgentResult(
     output=BUGGY_REVIEW_JSON,
-    is_error=False,
     num_turns=2,
     duration_ms=3000,
     conversation_id=None,
@@ -159,7 +158,6 @@ CLEAN_REVIEW_JSON = json.dumps(
 
 CLEAN_AGENT_RESULT = AgentResult(
     output=CLEAN_REVIEW_JSON,
-    is_error=False,
     num_turns=1,
     duration_ms=1500,
     conversation_id=None,

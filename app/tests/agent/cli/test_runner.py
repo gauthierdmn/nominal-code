@@ -42,7 +42,6 @@ def _make_config():
 def _make_agent_result(conversation_id="new-sess-42"):
     return AgentResult(
         output="Done",
-        is_error=False,
         num_turns=2,
         duration_ms=1000,
         conversation_id=conversation_id,

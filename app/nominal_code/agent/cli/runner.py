@@ -25,7 +25,7 @@ from claude_agent_sdk.types import (
 
 from nominal_code.agent.result import AgentResult
 from nominal_code.llm.cost import CostSummary
-from nominal_code.models import ProviderName
+from nominal_code.models import ErrorType, InvocationError, ProviderName
 
 CONVERSATION_ID_INIT_SUBTYPE: str = "init"
 MAX_TOOL_RESULT_LOG_LENGTH: int = 500
@@ -156,13 +156,18 @@ async def run_cli_agent(
                     model=options.model or "",
                 )
 
+            error: InvocationError | None = (
+                InvocationError(type=ErrorType.RUNTIME_ERROR, message=output)
+                if message.is_error
+                else None
+            )
             result = AgentResult(
                 output=output,
-                is_error=message.is_error,
                 num_turns=message.num_turns,
                 duration_ms=message.duration_ms,
                 conversation_id=returned_conversation_id,
                 cost=cli_cost,
+                error=error,
             )
 
     if result is not None:
@@ -170,10 +175,13 @@ async def run_cli_agent(
 
     return AgentResult(
         output="No result received from the agent.",
-        is_error=True,
         num_turns=0,
         duration_ms=0,
         conversation_id=returned_conversation_id,
+        error=InvocationError(
+            type=ErrorType.RUNTIME_ERROR,
+            message="No result received from the agent.",
+        ),
     )
 
 

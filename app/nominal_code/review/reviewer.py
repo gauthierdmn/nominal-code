@@ -27,6 +27,8 @@ from nominal_code.llm.messages import ToolChoice
 from nominal_code.llm.registry import create_provider
 from nominal_code.models import (
     ChangedFile,
+    ErrorType,
+    InvocationError,
     ReviewFinding,
 )
 from nominal_code.platforms.base import (
@@ -122,6 +124,8 @@ class ReviewResult:
             reviewer agent — ``reviewer_base_system_prompt`` plus the
             tag-wrapped ``coding_guidelines``. This is what the reviewer
             LLM actually saw.
+        error (InvocationError | None): ``None`` on success; otherwise
+            wraps the failure classification and message.
     """
 
     agent_review: AgentReview | None
@@ -139,6 +143,7 @@ class ReviewResult:
     coding_guidelines: str = ""
     notes: str = ""
     reviewer_system_prompt: str = ""
+    error: InvocationError | None = None
 
 
 @dataclass(frozen=True)
@@ -455,7 +460,24 @@ async def review(
             event.pr_number,
         )
 
+        # IMPORTANT: ``raw_output`` here is what gets posted to the PR
+        # via ``post_review_result`` — keep it as the generic fallback
+        # comment regardless of why the agent failed. The structured
+        # ``error`` field below carries the underlying cause (e.g.
+        # "Gemini 503") for callers to consume internally; it must
+        # never leak into the PR comment.
         fallback_comment: str = build_fallback_comment(raw_output=result.output)
+
+        # Agent-level failures (provider / runtime) flow through
+        # unchanged. If the agent succeeded, the failure is ours: parse
+        # + repair both came up empty.
+        error: InvocationError = result.error or InvocationError(
+            type=ErrorType.PARSE_ERROR,
+            message=(
+                "Reviewer output could not be parsed as structured "
+                "JSON, and JSON repair did not recover a valid review."
+            ),
+        )
 
         return ReviewResult(
             agent_review=None,
@@ -473,6 +495,7 @@ async def review(
             coding_guidelines=effective_guidelines,
             notes=captured_notes,
             reviewer_system_prompt=combined_system_prompt,
+            error=error,
         )
 
     if scope is ReviewScope.CODEBASE:

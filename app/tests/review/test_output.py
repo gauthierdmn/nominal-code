@@ -441,7 +441,6 @@ class TestRepairReviewOutput:
             new_callable=AsyncMock,
             return_value=AgentResult(
                 output=valid_json,
-                is_error=False,
                 num_turns=1,
                 duration_ms=100,
             ),
@@ -465,13 +464,11 @@ class TestRepairReviewOutput:
             side_effect=[
                 AgentResult(
                     output="still broken",
-                    is_error=False,
                     num_turns=1,
                     duration_ms=100,
                 ),
                 AgentResult(
                     output=valid_json,
-                    is_error=False,
                     num_turns=1,
                     duration_ms=100,
                 ),
@@ -496,7 +493,6 @@ class TestRepairReviewOutput:
             new_callable=AsyncMock,
             return_value=AgentResult(
                 output=valid_json,
-                is_error=False,
                 num_turns=1,
                 duration_ms=100,
             ),
@@ -519,7 +515,6 @@ class TestRepairReviewOutput:
             new_callable=AsyncMock,
             return_value=AgentResult(
                 output="gibberish",
-                is_error=False,
                 num_turns=1,
                 duration_ms=100,
             ),

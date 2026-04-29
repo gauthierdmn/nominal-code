@@ -22,7 +22,7 @@ from nominal_code.llm.messages import (
     TokenUsage,
     ToolUseBlock,
 )
-from nominal_code.models import EventType, ProviderName
+from nominal_code.models import ErrorType, EventType, InvocationError, ProviderName
 from nominal_code.platforms.base import CommentEvent, PlatformName
 
 
@@ -62,7 +62,7 @@ class TestRunAgentApi:
 
         assert isinstance(result, AgentResult)
         assert result.output == "All good!"
-        assert result.is_error is False
+        assert result.error is None
 
     @pytest.mark.asyncio
     async def test_empty_text_response(self, tmp_path):
@@ -147,7 +147,7 @@ class TestRunAgentApi:
         parsed = json.loads(result.output)
 
         assert parsed["summary"] == "Looks good"
-        assert result.is_error is False
+        assert result.error is None
 
     @pytest.mark.asyncio
     async def test_max_turns_stops_loop(self, tmp_path):
@@ -189,8 +189,13 @@ class TestRunAgentApi:
             provider_name=ProviderName.GOOGLE,
         )
 
-        assert result.is_error is True
+        assert result.error is not None
         assert "API error" in result.output
+        # Structured error fields let downstream observability route
+        # provider failures separately from runtime bugs without
+        # pattern-matching on ``output``.
+        assert result.error.type == ErrorType.PROVIDER_ERROR
+        assert result.error.message == "API down"
 
     @pytest.mark.asyncio
     async def test_unexpected_error_returns_error_result(self, tmp_path):
@@ -207,8 +212,10 @@ class TestRunAgentApi:
             provider_name=ProviderName.GOOGLE,
         )
 
-        assert result.is_error is True
+        assert result.error is not None
         assert "Unexpected error" in result.output
+        assert result.error.type == ErrorType.RUNTIME_ERROR
+        assert result.error.message == "boom"
 
     @pytest.mark.asyncio
     async def test_prior_messages_prepended(self, tmp_path):
@@ -278,7 +285,7 @@ class TestRunAgentApi:
             provider_name=ProviderName.GOOGLE,
         )
 
-        assert result.is_error is True
+        assert result.error is not None
         assert result.messages == ()
 
 
@@ -298,7 +305,7 @@ class TestCompactionIntegration:
             provider_name=ProviderName.GOOGLE,
         )
 
-        assert result.is_error is False
+        assert result.error is None
 
     @pytest.mark.asyncio
     async def test_compaction_skipped_without_notes_file(self, tmp_path):
@@ -315,7 +322,7 @@ class TestCompactionIntegration:
             provider_name=ProviderName.GOOGLE,
         )
 
-        assert result.is_error is False
+        assert result.error is None
 
     @pytest.mark.asyncio
     async def test_compaction_skipped_when_notes_empty(self, tmp_path):
@@ -591,7 +598,7 @@ class TestAgentToolDispatch:
             sub_agent_configs=sub_configs,
         )
 
-        assert result.is_error is False
+        assert result.error is None
         sub_provider.send.assert_called()
 
     @pytest.mark.asyncio
@@ -639,7 +646,7 @@ class TestAgentToolDispatch:
             sub_agent_configs=sub_configs,
         )
 
-        assert result.is_error is False
+        assert result.error is None
 
     @pytest.mark.asyncio
     async def test_parallel_agent_calls_run_concurrently(self, tmp_path):
@@ -725,7 +732,7 @@ class TestAgentToolDispatch:
                 sub_agent_configs=sub_configs,
             )
 
-        assert result.is_error is False
+        assert result.error is None
         assert concurrent_high_water == 2
 
 
@@ -805,7 +812,7 @@ class TestRunAgentApiCost:
             provider_name=ProviderName.OPENAI,
         )
 
-        assert result.is_error is True
+        assert result.error is not None
         assert result.cost is not None
         assert result.cost.num_api_calls == 0
 
@@ -876,7 +883,6 @@ class TestConversationLifecycle:
 
             return AgentResult(
                 output="Done",
-                is_error=False,
                 num_turns=1,
                 duration_ms=100,
                 messages=(
@@ -927,7 +933,6 @@ class TestConversationLifecycle:
         )
         agent_result = AgentResult(
             output="hi",
-            is_error=False,
             num_turns=1,
             duration_ms=100,
             messages=result_messages,
@@ -966,9 +971,12 @@ class TestConversationLifecycle:
 
         agent_result = AgentResult(
             output="API error: boom",
-            is_error=True,
             num_turns=0,
             duration_ms=100,
+            error=InvocationError(
+                type=ErrorType.PROVIDER_ERROR,
+                message="boom",
+            ),
         )
 
         save_conversation(
@@ -997,7 +1005,6 @@ class TestConversationLifecycle:
 
             return AgentResult(
                 output="Done",
-                is_error=False,
                 num_turns=1,
                 duration_ms=100,
                 messages=(Message(role="user", content=[TextBlock(text="x")]),),
@@ -1038,7 +1045,6 @@ class TestConversationLifecycle:
 
         agent_result = AgentResult(
             output="Done",
-            is_error=False,
             num_turns=1,
             duration_ms=100,
             conversation_id="api-sess",

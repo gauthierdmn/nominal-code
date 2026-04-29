@@ -32,7 +32,7 @@ from nominal_code.llm.messages import (
     ToolUseBlock,
 )
 from nominal_code.llm.provider import LLMProvider, ProviderError
-from nominal_code.models import ProviderName
+from nominal_code.models import ErrorType, InvocationError, ProviderName
 
 MAX_RESPONSE_TOKENS: int = 16384
 COMPACTION_TOKEN_THRESHOLD: int = 100_000
@@ -188,7 +188,6 @@ async def run_api_agent(
 
                 return AgentResult(
                     output=output or "Done, no output.",
-                    is_error=False,
                     num_turns=turns,
                     duration_ms=duration_ms,
                     messages=tuple(messages),
@@ -215,7 +214,6 @@ async def run_api_agent(
 
                     return AgentResult(
                         output=json.dumps(block.input),
-                        is_error=False,
                         num_turns=turns,
                         duration_ms=duration_ms,
                         messages=tuple(messages),
@@ -286,7 +284,6 @@ async def run_api_agent(
 
                 return AgentResult(
                     output=output or "Max turns reached.",
-                    is_error=False,
                     num_turns=turns,
                     duration_ms=duration_ms,
                     messages=tuple(messages),
@@ -308,7 +305,6 @@ async def run_api_agent(
 
         return AgentResult(
             output=f"API error: {exc}",
-            is_error=True,
             num_turns=turns,
             duration_ms=duration_ms,
             cost=build_cost_summary(
@@ -316,6 +312,10 @@ async def run_api_agent(
                 model=model,
                 provider=provider_name,
                 num_api_calls=api_call_count,
+            ),
+            error=InvocationError(
+                type=ErrorType.PROVIDER_ERROR,
+                message=str(exc),
             ),
         )
 
@@ -326,7 +326,6 @@ async def run_api_agent(
 
         return AgentResult(
             output=f"Unexpected error: {exc}",
-            is_error=True,
             num_turns=turns,
             duration_ms=duration_ms,
             cost=build_cost_summary(
@@ -334,6 +333,10 @@ async def run_api_agent(
                 model=model,
                 provider=provider_name,
                 num_api_calls=api_call_count,
+            ),
+            error=InvocationError(
+                type=ErrorType.RUNTIME_ERROR,
+                message=str(exc),
             ),
         )
 

@@ -3,26 +3,25 @@ import pytest
 
 from nominal_code.agent.result import AgentResult
 from nominal_code.llm.messages import Message, TextBlock
+from nominal_code.models import ErrorType, InvocationError
 
 
 class TestAgentResult:
     def test_create_minimal(self):
         result = AgentResult(
             output="done",
-            is_error=False,
             num_turns=3,
             duration_ms=1500,
         )
 
         assert result.output == "done"
-        assert result.is_error is False
+        assert result.error is None
         assert result.num_turns == 3
         assert result.duration_ms == 1500
 
     def test_defaults(self):
         result = AgentResult(
             output="done",
-            is_error=False,
             num_turns=1,
             duration_ms=100,
         )
@@ -30,11 +29,11 @@ class TestAgentResult:
         assert result.conversation_id is None
         assert result.messages == ()
         assert result.cost is None
+        assert result.error is None
 
     def test_with_conversation_id(self):
         result = AgentResult(
             output="done",
-            is_error=False,
             num_turns=1,
             duration_ms=100,
             conversation_id="conv-123",
@@ -50,7 +49,6 @@ class TestAgentResult:
 
         result = AgentResult(
             output="done",
-            is_error=False,
             num_turns=1,
             duration_ms=100,
             messages=messages,
@@ -62,7 +60,6 @@ class TestAgentResult:
     def test_is_frozen(self):
         result = AgentResult(
             output="done",
-            is_error=False,
             num_turns=1,
             duration_ms=100,
         )
@@ -73,10 +70,16 @@ class TestAgentResult:
     def test_error_result(self):
         result = AgentResult(
             output="Agent crashed",
-            is_error=True,
             num_turns=0,
             duration_ms=0,
+            error=InvocationError(
+                type=ErrorType.RUNTIME_ERROR,
+                message="boom",
+            ),
         )
 
-        assert result.is_error is True
+        # ``error is not None`` is the canonical "is this a failure?" check.
+        assert result.error is not None
+        assert result.error.type == ErrorType.RUNTIME_ERROR
+        assert result.error.message == "boom"
         assert result.output == "Agent crashed"
