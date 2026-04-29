@@ -60,7 +60,7 @@ class TestRunClaude:
 
         assert isinstance(result, AgentResult)
         assert result.output == "All fixed!"
-        assert result.is_error is False
+        assert result.error is None
         assert result.conversation_id == "sess-abc"
 
     @pytest.mark.asyncio
@@ -72,8 +72,9 @@ class TestRunClaude:
         with patch("nominal_code.agent.cli.runner.query", mock_query):
             result = await invoke_agent(prompt="test", cwd="/tmp")
 
-        assert result.is_error is True
-        assert result.output == "No result received from the agent."
+        assert result.error is not None
+        assert result.output == ""
+        assert result.error.message == "No result received from the agent."
 
     @pytest.mark.asyncio
     async def test_run_agent_empty_result(self):
@@ -90,7 +91,9 @@ class TestRunClaude:
         with patch("nominal_code.agent.cli.runner.query", mock_query):
             result = await invoke_agent(prompt="test", cwd="/tmp")
 
-        assert result.output == "Done, no output."
+        # Empty SDK ``result`` field → empty ``output``. No sentinel.
+        assert result.output == ""
+        assert result.error is None
 
     @pytest.mark.asyncio
     async def test_run_agent_forwards_system_prompt(self):
@@ -214,7 +217,6 @@ class TestAgentResult:
     def test_claude_result_is_frozen(self):
         result = AgentResult(
             output="test",
-            is_error=False,
             num_turns=1,
             duration_ms=100,
             conversation_id="s1",
@@ -308,7 +310,6 @@ class TestRunAgentApiDispatch:
 
             return AgentResult(
                 output="ok",
-                is_error=False,
                 num_turns=1,
                 duration_ms=100,
             )

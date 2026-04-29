@@ -25,7 +25,7 @@ from claude_agent_sdk.types import (
 
 from nominal_code.agent.result import AgentResult
 from nominal_code.llm.cost import CostSummary
-from nominal_code.models import ProviderName
+from nominal_code.models import ErrorType, InvocationError, ProviderName
 
 CONVERSATION_ID_INIT_SUBTYPE: str = "init"
 MAX_TOOL_RESULT_LOG_LENGTH: int = 500
@@ -131,7 +131,7 @@ async def run_cli_agent(
             returned_conversation_id = message.data.get("session_id", None)
 
         if isinstance(message, ResultMessage):
-            output: str = message.result or "Done, no output."
+            output: str = message.result or ""
             returned_conversation_id = message.session_id or returned_conversation_id
 
             cli_cost: CostSummary | None = None
@@ -156,24 +156,43 @@ async def run_cli_agent(
                     model=options.model or "",
                 )
 
-            result = AgentResult(
-                output=output,
-                is_error=message.is_error,
-                num_turns=message.num_turns,
-                duration_ms=message.duration_ms,
-                conversation_id=returned_conversation_id,
-                cost=cli_cost,
-            )
+            # On error the SDK puts the failure description in
+            # ``output``; route it to ``error.message`` and leave
+            # ``output`` empty so the success-vs-failure separation is
+            # structural rather than convention.
+            if message.is_error:
+                result = AgentResult(
+                    output="",
+                    num_turns=message.num_turns,
+                    duration_ms=message.duration_ms,
+                    conversation_id=returned_conversation_id,
+                    cost=cli_cost,
+                    error=InvocationError(
+                        type=ErrorType.RUNTIME_ERROR,
+                        message=output,
+                    ),
+                )
+            else:
+                result = AgentResult(
+                    output=output,
+                    num_turns=message.num_turns,
+                    duration_ms=message.duration_ms,
+                    conversation_id=returned_conversation_id,
+                    cost=cli_cost,
+                )
 
     if result is not None:
         return result
 
     return AgentResult(
-        output="No result received from the agent.",
-        is_error=True,
+        output="",
         num_turns=0,
         duration_ms=0,
         conversation_id=returned_conversation_id,
+        error=InvocationError(
+            type=ErrorType.RUNTIME_ERROR,
+            message="No result received from the agent.",
+        ),
     )
 
 

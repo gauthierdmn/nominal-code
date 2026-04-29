@@ -18,8 +18,10 @@ from nominal_code.config import CliAgentConfig, ReviewerConfig
 from nominal_code.conversation.memory import MemoryConversationStore
 from nominal_code.models import (
     ChangedFile,
+    ErrorType,
     EventType,
     FileStatus,
+    InvocationError,
 )
 from nominal_code.platforms.base import CommentEvent, ExistingComment, PlatformName
 from nominal_code.review.output import FALLBACK_MESSAGE
@@ -139,7 +141,6 @@ class TestReviewerProcessComment:
         ) as mock_run:
             mock_run.return_value = AgentResult(
                 output=review_json,
-                is_error=False,
                 num_turns=1,
                 duration_ms=1000,
                 conversation_id="sess-1",
@@ -182,7 +183,6 @@ class TestReviewerProcessComment:
         ) as mock_run:
             mock_run.return_value = AgentResult(
                 output=review_json,
-                is_error=False,
                 num_turns=1,
                 duration_ms=1000,
                 conversation_id="sess-1",
@@ -258,7 +258,6 @@ class TestReviewerProcessComment:
         ) as mock_run:
             mock_run.return_value = AgentResult(
                 output=review_json,
-                is_error=False,
                 num_turns=1,
                 duration_ms=1000,
                 conversation_id="sess-1",
@@ -308,7 +307,6 @@ class TestReviewerProcessComment:
         ) as mock_run:
             mock_run.return_value = AgentResult(
                 output=review_json,
-                is_error=False,
                 num_turns=1,
                 duration_ms=1000,
                 conversation_id="sess-1",
@@ -379,7 +377,6 @@ class TestReviewerProcessComment:
         ) as mock_run:
             mock_run.return_value = AgentResult(
                 output=review_json,
-                is_error=False,
                 num_turns=1,
                 duration_ms=1000,
                 conversation_id="sess-1",
@@ -434,14 +431,12 @@ class TestReviewerProcessComment:
         ):
             mock_tracking_run.return_value = AgentResult(
                 output="not valid json",
-                is_error=False,
                 num_turns=1,
                 duration_ms=1000,
                 conversation_id="sess-1",
             )
             mock_repair_run.return_value = AgentResult(
                 output=valid_json,
-                is_error=False,
                 num_turns=1,
                 duration_ms=200,
             )
@@ -476,7 +471,6 @@ class TestReviewerProcessComment:
 
         bad_result = AgentResult(
             output="still not json",
-            is_error=False,
             num_turns=1,
             duration_ms=500,
             conversation_id="sess-1",
@@ -850,7 +844,6 @@ class TestBotCommentFiltering:
         ) as mock_run:
             mock_run.return_value = AgentResult(
                 output=review_json,
-                is_error=False,
                 num_turns=1,
                 duration_ms=1000,
                 conversation_id="sess-1",
@@ -908,7 +901,6 @@ class TestBotCommentFiltering:
         ) as mock_run:
             mock_run.return_value = AgentResult(
                 output=review_json,
-                is_error=False,
                 num_turns=1,
                 duration_ms=1000,
                 conversation_id="sess-1",
@@ -978,7 +970,6 @@ class TestBotCommentFiltering:
         ) as mock_run:
             mock_run.return_value = AgentResult(
                 output=review_json,
-                is_error=False,
                 num_turns=1,
                 duration_ms=1000,
                 conversation_id="sess-1",
@@ -1055,7 +1046,6 @@ class TestReview:
         ) as mock_run:
             mock_run.return_value = AgentResult(
                 output=review_json,
-                is_error=False,
                 num_turns=1,
                 duration_ms=1000,
                 conversation_id="sess-1",
@@ -1091,7 +1081,6 @@ class TestReview:
 
         bad_result = AgentResult(
             output="not json",
-            is_error=False,
             num_turns=1,
             duration_ms=500,
             conversation_id="sess-1",
@@ -1126,6 +1115,116 @@ class TestReview:
 
         assert result.agent_review is None
         assert result.raw_output == FALLBACK_MESSAGE
+        # Agent returned successfully but its output couldn't be
+        # parsed → PARSE_ERROR (no underlying provider/runtime cause).
+        assert result.error.type == ErrorType.PARSE_ERROR
+        assert "could not be parsed" in result.error.message.lower()
+
+    @pytest.mark.asyncio
+    async def test_review_propagates_provider_error_from_agent(self):
+        """Provider failure flows: ``raw_output`` stays as the generic
+        fallback comment (so the PR doesn't see "API error: 503"), but
+        ``error_type``/``error_message`` carry the underlying cause for
+        callers to consume internally."""
+        config = _make_config()
+        platform = _make_platform()
+        comment = _make_comment()
+
+        provider_failure = AgentResult(
+            output="API error: 503 UNAVAILABLE",
+            num_turns=2,
+            duration_ms=500,
+            conversation_id="sess-1",
+            error=InvocationError(
+                type=ErrorType.PROVIDER_ERROR,
+                message="503 UNAVAILABLE",
+            ),
+        )
+
+        with (
+            patch(
+                "nominal_code.agent.invoke.run_cli_agent",
+                new_callable=AsyncMock,
+                return_value=provider_failure,
+            ),
+            patch(
+                "nominal_code.review.output.invoke_agent",
+                new_callable=AsyncMock,
+                return_value=provider_failure,
+            ),
+            patch(
+                "nominal_code.workspace.setup.GitWorkspace",
+            ) as mock_ws_class,
+        ):
+            mock_ws = MagicMock()
+            mock_ws.ensure_ready = AsyncMock()
+            mock_ws.repo_path = Path("/tmp/workspaces/owner/repo/pr-42")
+            mock_ws_class.return_value = mock_ws
+
+            result = await review(
+                event=comment,
+                prompt="review",
+                config=config,
+                platform=platform,
+            )
+
+        # User-facing comment is the generic fallback, NOT the API error.
+        assert result.raw_output == FALLBACK_MESSAGE
+        assert "API error" not in result.raw_output
+        # Internal-only structured fields carry the underlying cause.
+        assert result.error.type == ErrorType.PROVIDER_ERROR
+        assert result.error.message == "503 UNAVAILABLE"
+
+    @pytest.mark.asyncio
+    async def test_review_propagates_runtime_error_from_agent(self):
+        """Runtime failures (bugs in tool dispatch, etc.) get a distinct
+        classification so they can be alerted on separately from
+        provider flakes."""
+        config = _make_config()
+        platform = _make_platform()
+        comment = _make_comment()
+
+        runtime_failure = AgentResult(
+            output="Unexpected error: KeyError: 'foo'",
+            num_turns=0,
+            duration_ms=100,
+            conversation_id="sess-1",
+            error=InvocationError(
+                type=ErrorType.RUNTIME_ERROR,
+                message="KeyError: 'foo'",
+            ),
+        )
+
+        with (
+            patch(
+                "nominal_code.agent.invoke.run_cli_agent",
+                new_callable=AsyncMock,
+                return_value=runtime_failure,
+            ),
+            patch(
+                "nominal_code.review.output.invoke_agent",
+                new_callable=AsyncMock,
+                return_value=runtime_failure,
+            ),
+            patch(
+                "nominal_code.workspace.setup.GitWorkspace",
+            ) as mock_ws_class,
+        ):
+            mock_ws = MagicMock()
+            mock_ws.ensure_ready = AsyncMock()
+            mock_ws.repo_path = Path("/tmp/workspaces/owner/repo/pr-42")
+            mock_ws_class.return_value = mock_ws
+
+            result = await review(
+                event=comment,
+                prompt="review",
+                config=config,
+                platform=platform,
+            )
+
+        assert result.raw_output == FALLBACK_MESSAGE
+        assert result.error.type == ErrorType.RUNTIME_ERROR
+        assert result.error.message == "KeyError: 'foo'"
 
     @pytest.mark.asyncio
     async def test_review_without_conversation_store(self):
@@ -1146,7 +1245,6 @@ class TestReview:
         ) as mock_run:
             mock_run.return_value = AgentResult(
                 output=review_json,
-                is_error=False,
                 num_turns=1,
                 duration_ms=500,
                 conversation_id="sess-1",
@@ -1200,7 +1298,6 @@ class TestReview:
         ) as mock_run:
             mock_run.return_value = AgentResult(
                 output=review_json,
-                is_error=False,
                 num_turns=1,
                 duration_ms=1000,
                 conversation_id="sess-1",
@@ -1408,7 +1505,7 @@ class TestAgenticReviewer:
         mock_agent_result.messages = ()
         mock_agent_result.is_error = False
         mock_agent_result.conversation_id = None
-        mock_agent_result.exhausted_without_review = False
+        mock_agent_result.max_turns_reached = False
 
         mock_provider = AsyncMock()
         mock_provider.close = AsyncMock()
@@ -1475,7 +1572,7 @@ class TestAgenticReviewer:
         exhausted_result.messages = ()
         exhausted_result.is_error = False
         exhausted_result.conversation_id = None
-        exhausted_result.exhausted_without_review = True
+        exhausted_result.max_turns_reached = True
 
         fallback_result = MagicMock()
         fallback_result.output = '{"summary": "Fallback review", "findings": []}'
@@ -1485,7 +1582,7 @@ class TestAgenticReviewer:
         fallback_result.messages = ()
         fallback_result.is_error = False
         fallback_result.conversation_id = None
-        fallback_result.exhausted_without_review = False
+        fallback_result.max_turns_reached = False
 
         mock_provider = AsyncMock()
         mock_provider.close = AsyncMock()
@@ -1555,7 +1652,6 @@ class TestCodebaseScopeReview:
         ) as mock_run:
             mock_run.return_value = AgentResult(
                 output=review_json,
-                is_error=False,
                 num_turns=1,
                 duration_ms=500,
                 conversation_id="sess-audit",
@@ -1600,7 +1696,6 @@ class TestCodebaseScopeReview:
         ) as mock_run:
             mock_run.return_value = AgentResult(
                 output=review_json,
-                is_error=False,
                 num_turns=1,
                 duration_ms=500,
                 conversation_id="sess-audit",
@@ -1632,7 +1727,6 @@ class TestCodebaseScopeReview:
         ) as mock_run:
             mock_run.return_value = AgentResult(
                 output=review_json,
-                is_error=False,
                 num_turns=1,
                 duration_ms=500,
                 conversation_id="sess-audit",

@@ -185,7 +185,7 @@ def save_conversation(
 
     if (
         isinstance(agent_config, ApiAgentConfig)
-        and not result.is_error
+        and result.error is None
         and result.messages
     ):
         conversation_store.set_messages(

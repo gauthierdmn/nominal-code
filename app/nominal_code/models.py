@@ -71,6 +71,40 @@ class FileStatus(StrEnum):
     UNCHANGED = "unchanged"
 
 
+class ErrorType(StrEnum):
+    """
+    Classification of an agent / review failure.
+
+    Values:
+        PROVIDER_ERROR: LLM provider raised an error.
+        RUNTIME_ERROR: Unexpected exception escaped the agent loop
+            (tool dispatch failure, parsing crash, etc.).
+        PARSE_ERROR: Agent returned successfully but its output could
+            not be parsed as a structured review and JSON repair did
+            not recover it.
+    """
+
+    PROVIDER_ERROR = "provider_error"
+    RUNTIME_ERROR = "runtime_error"
+    PARSE_ERROR = "parse_error"
+
+
+@dataclass(frozen=True)
+class InvocationError:
+    """
+    Failure produced by an agent invocation or a review build.
+
+    Attributes:
+        type (ErrorType): Classification of the failure.
+        message (str): Underlying exception text or short description
+            of the failure, preserved verbatim so callers can route it
+            to logs / metrics.
+    """
+
+    type: ErrorType
+    message: str = ""
+
+
 @dataclass(frozen=True)
 class ReviewFinding:
     """

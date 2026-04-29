@@ -32,7 +32,7 @@ from nominal_code.llm.messages import (
     ToolUseBlock,
 )
 from nominal_code.llm.provider import LLMProvider, ProviderError
-from nominal_code.models import ProviderName
+from nominal_code.models import ErrorType, InvocationError, ProviderName
 
 MAX_RESPONSE_TOKENS: int = 16384
 COMPACTION_TOKEN_THRESHOLD: int = 100_000
@@ -83,8 +83,9 @@ async def run_api_agent(
 
     On the last turn (when ``max_turns`` is set), a warning is injected
     instructing the model to call ``submit_review`` immediately. If
-    ``max_turns`` is reached without ``submit_review``, the result has
-    ``exhausted_without_review=True``.
+    ``max_turns`` is reached, the result has ``max_turns_reached=True``
+    so callers can distinguish a budget exhaustion from a clean
+    completion (output may be empty or partial in that case).
 
     Args:
         prompt (str): The user's prompt to pass to the agent.
@@ -187,8 +188,7 @@ async def run_api_agent(
                 duration_ms: int = _now_ms() - start_time
 
                 return AgentResult(
-                    output=output or "Done, no output.",
-                    is_error=False,
+                    output=output,
                     num_turns=turns,
                     duration_ms=duration_ms,
                     messages=tuple(messages),
@@ -215,7 +215,6 @@ async def run_api_agent(
 
                     return AgentResult(
                         output=json.dumps(block.input),
-                        is_error=False,
                         num_turns=turns,
                         duration_ms=duration_ms,
                         messages=tuple(messages),
@@ -285,8 +284,7 @@ async def run_api_agent(
                 duration_ms = _now_ms() - start_time
 
                 return AgentResult(
-                    output=output or "Max turns reached.",
-                    is_error=False,
+                    output=output,
                     num_turns=turns,
                     duration_ms=duration_ms,
                     messages=tuple(messages),
@@ -297,7 +295,7 @@ async def run_api_agent(
                         provider=provider_name,
                         num_api_calls=api_call_count,
                     ),
-                    exhausted_without_review=has_submit_review,
+                    max_turns_reached=True,
                     sub_agent_costs=tuple(collected_sub_agent_costs),
                 )
 
@@ -307,8 +305,7 @@ async def run_api_agent(
         logger.exception("LLM provider error")
 
         return AgentResult(
-            output=f"API error: {exc}",
-            is_error=True,
+            output="",
             num_turns=turns,
             duration_ms=duration_ms,
             cost=build_cost_summary(
@@ -316,6 +313,10 @@ async def run_api_agent(
                 model=model,
                 provider=provider_name,
                 num_api_calls=api_call_count,
+            ),
+            error=InvocationError(
+                type=ErrorType.PROVIDER_ERROR,
+                message=str(exc),
             ),
         )
 
@@ -325,8 +326,7 @@ async def run_api_agent(
         logger.exception("Unexpected error in API runner")
 
         return AgentResult(
-            output=f"Unexpected error: {exc}",
-            is_error=True,
+            output="",
             num_turns=turns,
             duration_ms=duration_ms,
             cost=build_cost_summary(
@@ -334,6 +334,10 @@ async def run_api_agent(
                 model=model,
                 provider=provider_name,
                 num_api_calls=api_call_count,
+            ),
+            error=InvocationError(
+                type=ErrorType.RUNTIME_ERROR,
+                message=str(exc),
             ),
         )
 

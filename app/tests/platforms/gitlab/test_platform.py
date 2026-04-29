@@ -11,6 +11,7 @@ from nominal_code.platforms.base import (
     CommentReply,
     LifecycleEvent,
     PlatformName,
+    PullRequestState,
 )
 from nominal_code.platforms.gitlab import GitLabPlatform
 from nominal_code.platforms.gitlab.auth import GitLabPatAuth
@@ -309,6 +310,97 @@ class TestFetchPrBranch:
         result = await platform.fetch_pr_branch("group/repo", 10)
 
         assert result == ""
+
+
+class TestFetchPrState:
+    """``locked`` is folded into CLOSED — both leave nothing reviewable
+    so consumers shouldn't have to special-case GitLab's extra state."""
+
+    @pytest.mark.asyncio
+    async def test_returns_open_for_opened_state(self, platform):
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {"state": "opened"}
+
+        with patch.object(
+            platform,
+            "_request",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ):
+            state = await platform.fetch_pr_state("group/repo", 10)
+
+        assert state == PullRequestState.OPEN
+
+    @pytest.mark.asyncio
+    async def test_returns_merged_for_merged_state(self, platform):
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {"state": "merged"}
+
+        with patch.object(
+            platform,
+            "_request",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ):
+            state = await platform.fetch_pr_state("group/repo", 10)
+
+        assert state == PullRequestState.MERGED
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("raw_state", ["closed", "locked"])
+    async def test_returns_closed_for_closed_or_locked_state(
+        self,
+        platform,
+        raw_state,
+    ):
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {"state": raw_state}
+
+        with patch.object(
+            platform,
+            "_request",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ):
+            state = await platform.fetch_pr_state("group/repo", 10)
+
+        assert state == PullRequestState.CLOSED
+
+    @pytest.mark.asyncio
+    async def test_returns_unknown_on_http_error(self, platform):
+        import httpx
+
+        with patch.object(
+            platform,
+            "_request",
+            new_callable=AsyncMock,
+        ) as mock_request:
+            mock_request.side_effect = httpx.HTTPError("connection failed")
+            state = await platform.fetch_pr_state("group/repo", 10)
+
+        assert state == PullRequestState.UNKNOWN
+
+    @pytest.mark.asyncio
+    async def test_url_encodes_subgroup_paths(self, platform):
+        """``group/sub/repo`` must be URL-encoded so GitLab's project
+        lookup works."""
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {"state": "opened"}
+
+        with patch.object(
+            platform,
+            "_request",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ) as mock_request:
+            await platform.fetch_pr_state("grp/sub/repo", 11)
+
+        called_url = mock_request.call_args.args[1]
+        assert called_url == "/projects/grp%2Fsub%2Frepo/merge_requests/11"
 
 
 class TestBuildCloneUrl:

@@ -13,6 +13,7 @@ from nominal_code.platforms.base import (
     CommentReply,
     LifecycleEvent,
     PlatformName,
+    PullRequestState,
 )
 from nominal_code.platforms.github import (
     GitHubPatAuth,
@@ -606,6 +607,90 @@ class TestFetchPrDiff:
             files = await platform.fetch_pr_diff("owner/repo", 42)
 
         assert files == []
+
+
+class TestFetchPrState:
+    """``merged`` takes precedence over ``state`` so a merged PR comes
+    back as MERGED rather than CLOSED — consumers care about the
+    *reason* it's no longer reviewable, not just that it's terminal."""
+
+    @pytest.mark.asyncio
+    async def test_returns_open_for_open_pr(self, platform):
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {"state": "open", "merged": False}
+
+        with patch.object(
+            platform,
+            "_request",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ):
+            state = await platform.fetch_pr_state("owner/repo", 42)
+
+        assert state == PullRequestState.OPEN
+
+    @pytest.mark.asyncio
+    async def test_returns_merged_when_merged_flag_is_true(self, platform):
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {"state": "closed", "merged": True}
+
+        with patch.object(
+            platform,
+            "_request",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ):
+            state = await platform.fetch_pr_state("owner/repo", 42)
+
+        assert state == PullRequestState.MERGED
+
+    @pytest.mark.asyncio
+    async def test_returns_closed_for_closed_unmerged_pr(self, platform):
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {"state": "closed", "merged": False}
+
+        with patch.object(
+            platform,
+            "_request",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ):
+            state = await platform.fetch_pr_state("owner/repo", 42)
+
+        assert state == PullRequestState.CLOSED
+
+    @pytest.mark.asyncio
+    async def test_returns_unknown_on_http_error(self, platform):
+        import httpx
+
+        with patch.object(
+            platform,
+            "_request",
+            new_callable=AsyncMock,
+        ) as mock_request:
+            mock_request.side_effect = httpx.HTTPError("connection failed")
+            state = await platform.fetch_pr_state("owner/repo", 42)
+
+        assert state == PullRequestState.UNKNOWN
+
+    @pytest.mark.asyncio
+    async def test_returns_unknown_for_unrecognised_state(self, platform):
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {"state": "fictional", "merged": False}
+
+        with patch.object(
+            platform,
+            "_request",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ):
+            state = await platform.fetch_pr_state("owner/repo", 42)
+
+        assert state == PullRequestState.UNKNOWN
 
 
 class TestSubmitReview:
