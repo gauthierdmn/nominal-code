@@ -8,6 +8,7 @@ import pytest
 from nominal_code.llm.cost import (
     CostSummary,
     _get_pricing,
+    aggregate_cost_summary,
     build_cost_summary,
     compute_cost,
 )
@@ -190,6 +191,146 @@ class TestGetPricing:
 
         assert result["test-model"].cache_write_per_token == 0.0
         assert result["test-model"].cache_read_per_token == 0.0
+
+
+class TestAggregateCostSummary:
+    def test_returns_none_when_inputs_empty(self):
+        result = aggregate_cost_summary(reviewer=None, sub_agents=())
+
+        assert result is None
+
+    def test_reviewer_only(self):
+        reviewer = CostSummary(
+            total_input_tokens=100,
+            total_output_tokens=50,
+            total_cache_creation_tokens=10,
+            total_cache_read_tokens=5,
+            total_cost_usd=0.12,
+            provider=ProviderName.ANTHROPIC,
+            model="claude-sonnet-4-20250514",
+            num_api_calls=2,
+        )
+
+        result = aggregate_cost_summary(reviewer=reviewer, sub_agents=())
+
+        assert result is not None
+        assert result.total_input_tokens == 100
+        assert result.total_output_tokens == 50
+        assert result.total_cache_creation_tokens == 10
+        assert result.total_cache_read_tokens == 5
+        assert result.total_cost_usd == pytest.approx(0.12)
+        assert result.provider == ProviderName.ANTHROPIC
+        assert result.model == "claude-sonnet-4-20250514"
+        assert result.num_api_calls == 2
+
+    def test_sub_agents_only_uses_first_labels(self):
+        sub_agent_1 = CostSummary(
+            total_input_tokens=200,
+            total_output_tokens=100,
+            total_cost_usd=0.25,
+            provider=ProviderName.OPENAI,
+            model="gpt-4.1",
+            num_api_calls=3,
+        )
+        sub_agent_2 = CostSummary(
+            total_input_tokens=50,
+            total_output_tokens=25,
+            total_cost_usd=0.05,
+            provider=ProviderName.OPENAI,
+            model="gpt-4.1",
+            num_api_calls=1,
+        )
+
+        result = aggregate_cost_summary(
+            reviewer=None,
+            sub_agents=(sub_agent_1, sub_agent_2),
+        )
+
+        assert result is not None
+        assert result.total_input_tokens == 250
+        assert result.total_output_tokens == 125
+        assert result.total_cost_usd == pytest.approx(0.30)
+        assert result.provider == ProviderName.OPENAI
+        assert result.model == "gpt-4.1"
+        assert result.num_api_calls == 4
+
+    def test_sums_reviewer_and_sub_agents(self):
+        reviewer = CostSummary(
+            total_input_tokens=100,
+            total_output_tokens=50,
+            total_cache_creation_tokens=10,
+            total_cache_read_tokens=5,
+            total_cost_usd=0.10,
+            provider=ProviderName.ANTHROPIC,
+            model="claude-sonnet-4-20250514",
+            num_api_calls=2,
+        )
+        sub_agent = CostSummary(
+            total_input_tokens=200,
+            total_output_tokens=100,
+            total_cache_creation_tokens=20,
+            total_cache_read_tokens=15,
+            total_cost_usd=0.20,
+            provider=ProviderName.ANTHROPIC,
+            model="claude-sonnet-4-20250514",
+            num_api_calls=5,
+        )
+
+        result = aggregate_cost_summary(
+            reviewer=reviewer,
+            sub_agents=(sub_agent, sub_agent),
+        )
+
+        assert result is not None
+        assert result.total_input_tokens == 500
+        assert result.total_output_tokens == 250
+        assert result.total_cache_creation_tokens == 50
+        assert result.total_cache_read_tokens == 35
+        assert result.total_cost_usd == pytest.approx(0.50)
+        assert result.num_api_calls == 12
+        assert result.provider == ProviderName.ANTHROPIC
+        assert result.model == "claude-sonnet-4-20250514"
+
+    def test_returns_none_total_cost_when_all_costs_none(self):
+        reviewer = CostSummary(
+            total_input_tokens=100,
+            total_output_tokens=50,
+            total_cost_usd=None,
+        )
+        sub_agent = CostSummary(
+            total_input_tokens=200,
+            total_output_tokens=100,
+            total_cost_usd=None,
+        )
+
+        result = aggregate_cost_summary(
+            reviewer=reviewer,
+            sub_agents=(sub_agent,),
+        )
+
+        assert result is not None
+        assert result.total_cost_usd is None
+        assert result.total_input_tokens == 300
+
+    def test_treats_missing_costs_as_zero_when_some_present(self):
+        reviewer = CostSummary(
+            total_input_tokens=100,
+            total_output_tokens=50,
+            total_cost_usd=0.10,
+        )
+        sub_agent = CostSummary(
+            total_input_tokens=200,
+            total_output_tokens=100,
+            total_cost_usd=None,
+        )
+
+        result = aggregate_cost_summary(
+            reviewer=reviewer,
+            sub_agents=(sub_agent,),
+        )
+
+        assert result is not None
+        assert result.total_cost_usd == pytest.approx(0.10)
 
 
 class TestAllRegistryModelsHavePricing:

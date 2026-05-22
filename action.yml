@@ -15,27 +15,83 @@ inputs:
     description: "OpenAI-compatible API key (required when provider is 'openai', 'deepseek', 'groq', 'together', or 'fireworks')"
     required: false
     default: ""
+  google_api_key:
+    description: "Google API key (required when provider is 'google')"
+    required: false
+    default: ""
   github_token:
     description: "GitHub token for posting review comments (defaults to github.token)"
     required: true
   provider:
-    description: "LLM provider to use (anthropic, openai, deepseek, groq, together, fireworks)"
+    description: "LLM provider for the reviewer (anthropic, openai, google, deepseek, groq, together, fireworks). Also the default for the explorer."
     required: false
     default: "anthropic"
+  image:
+    description: "Docker image to use. The default all-in-one image works with any provider; provider-specific variants are available for smaller footprint."
+    required: false
+    default: "ghcr.io/gauthierdmn/nominal-code:latest"
   model:
-    description: "Model to use (e.g. claude-sonnet-4-20250514, gpt-4.1). Defaults to the provider's default model."
+    description: "Reviewer model (e.g. claude-sonnet-4-20250514, gpt-4.1). Empty uses the provider's default."
     required: false
     default: ""
   max_turns:
-    description: "Maximum agentic turns for the reviewer (0 = unlimited)"
+    description: "Maximum agentic turns for the reviewer. Empty uses the bundled default (8), 0 means unlimited."
     required: false
-    default: "0"
+    default: ""
+  explorer_provider:
+    description: "Explorer sub-agent provider. Empty inherits from `provider`."
+    required: false
+    default: ""
+  explorer_model:
+    description: "Explorer sub-agent model. Empty inherits from `model`. Useful for pairing a strong reviewer with a cheaper explorer."
+    required: false
+    default: ""
+  explorer_max_turns:
+    description: "Maximum turns for explorer sub-agents. Empty uses the bundled default (32), 0 means unlimited."
+    required: false
+    default: ""
   prompt:
-    description: "Custom review instructions appended to the default prompt"
+    description: "Custom review instructions appended to the default reviewer prompt."
     required: false
     default: ""
   coding_guidelines:
-    description: "Path to a coding guidelines file (relative to repo root)"
+    description: "Inline coding guidelines content. Appended to the reviewer system prompt."
+    required: false
+    default: ""
+  coding_guidelines_file:
+    description: "Path to a coding guidelines file (relative to repo root). Appended to the reviewer system prompt. Wins over `coding_guidelines` if both are set."
+    required: false
+    default: ""
+  reviewer_system_prompt:
+    description: "Inline reviewer system prompt that fully REPLACES the bundled prompt."
+    required: false
+    default: ""
+  reviewer_system_prompt_file:
+    description: "Path to a file whose contents fully REPLACE the bundled reviewer system prompt."
+    required: false
+    default: ""
+  explorer_system_prompt:
+    description: "Inline explorer sub-agent system prompt that fully REPLACES the bundled prompt."
+    required: false
+    default: ""
+  explorer_system_prompt_file:
+    description: "Path to a file whose contents fully REPLACE the bundled explorer system prompt."
+    required: false
+    default: ""
+  language_guidelines_dir:
+    description: "Directory containing per-language guideline files (e.g. python.md). Overrides the bundled language guidelines."
+    required: false
+    default: ""
+  inline_suggestions:
+    description: "Whether to render findings as inline code suggestions. Defaults to true; set 'false' to disable."
+    required: false
+    default: ""
+  ignore_existing_comments:
+    description: "When 'true', skip fetching prior PR comments so they don't bias the review (useful for re-runs)."
+    required: false
+    default: ""
+  dry_run:
+    description: "When 'true', run the full review pipeline but skip posting comments to the PR."
     required: false
     default: ""
 
@@ -46,27 +102,51 @@ runs:
       env:
         ANTHROPIC_API_KEY: ${{ inputs.anthropic_api_key }}
         OPENAI_API_KEY: ${{ inputs.openai_api_key }}
+        GOOGLE_API_KEY: ${{ inputs.google_api_key }}
         GITHUB_TOKEN: ${{ inputs.github_token }}
         AGENT_PROVIDER: ${{ inputs.provider }}
-        INPUT_MODEL: ${{ inputs.model }}
-        INPUT_MAX_TURNS: ${{ inputs.max_turns }}
+        AGENT_MODEL: ${{ inputs.model }}
+        AGENT_MAX_TURNS: ${{ inputs.max_turns }}
+        AGENT_EXPLORER_PROVIDER: ${{ inputs.explorer_provider }}
+        AGENT_EXPLORER_MODEL: ${{ inputs.explorer_model }}
+        AGENT_EXPLORER_MAX_TURNS: ${{ inputs.explorer_max_turns }}
         INPUT_PROMPT: ${{ inputs.prompt }}
-        INPUT_CODING_GUIDELINES: ${{ inputs.coding_guidelines }}
+        CODING_GUIDELINES: ${{ inputs.coding_guidelines }}
+        CODING_GUIDELINES_FILE: ${{ inputs.coding_guidelines_file }}
+        REVIEWER_SYSTEM_PROMPT: ${{ inputs.reviewer_system_prompt }}
+        REVIEWER_SYSTEM_PROMPT_FILE: ${{ inputs.reviewer_system_prompt_file }}
+        EXPLORER_SYSTEM_PROMPT: ${{ inputs.explorer_system_prompt }}
+        EXPLORER_SYSTEM_PROMPT_FILE: ${{ inputs.explorer_system_prompt_file }}
+        LANGUAGE_GUIDELINES_DIR: ${{ inputs.language_guidelines_dir }}
+        INLINE_SUGGESTIONS: ${{ inputs.inline_suggestions }}
+        IGNORE_EXISTING_COMMENTS: ${{ inputs.ignore_existing_comments }}
+        DRY_RUN_REVIEW: ${{ inputs.dry_run }}
       run: |
-        IMAGE="ghcr.io/gauthierdmn/nominal-code:latest"
-
         docker run --rm \
           -e GITHUB_ACTIONS=true \
           -e GITHUB_EVENT_PATH=/github/event.json \
           -e GITHUB_WORKSPACE=/github/workspace \
           -e ANTHROPIC_API_KEY \
           -e OPENAI_API_KEY \
+          -e GOOGLE_API_KEY \
           -e GITHUB_TOKEN \
           -e AGENT_PROVIDER \
-          -e INPUT_MODEL \
-          -e INPUT_MAX_TURNS \
+          -e AGENT_MODEL \
+          -e AGENT_MAX_TURNS \
+          -e AGENT_EXPLORER_PROVIDER \
+          -e AGENT_EXPLORER_MODEL \
+          -e AGENT_EXPLORER_MAX_TURNS \
           -e INPUT_PROMPT \
-          -e INPUT_CODING_GUIDELINES \
+          -e CODING_GUIDELINES \
+          -e CODING_GUIDELINES_FILE \
+          -e REVIEWER_SYSTEM_PROMPT \
+          -e REVIEWER_SYSTEM_PROMPT_FILE \
+          -e EXPLORER_SYSTEM_PROMPT \
+          -e EXPLORER_SYSTEM_PROMPT_FILE \
+          -e LANGUAGE_GUIDELINES_DIR \
+          -e INLINE_SUGGESTIONS \
+          -e IGNORE_EXISTING_COMMENTS \
+          -e DRY_RUN_REVIEW \
           -v "${GITHUB_EVENT_PATH}:/github/event.json:ro" \
           -v "${GITHUB_WORKSPACE}:/github/workspace" \
-          "$IMAGE"
+          "${{ inputs.image }}"

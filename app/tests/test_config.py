@@ -96,6 +96,8 @@ class TestFromEnv:
         assert config.workspace.base_dir == Path("/tmp/workspaces")
         assert config.agent.model == "claude-sonnet-4-20250514"
         assert config.agent.cli_path == "/usr/local/bin/claude"
+        assert isinstance(config.agent, CliAgentConfig)
+        assert config.agent.max_turns == 10
         assert config.prompts.coding_guidelines == "Use snake_case."
         assert config.prompts.language_guidelines == {}
 
@@ -369,6 +371,86 @@ class TestFromEnv:
 
         assert isinstance(config.agent, ApiAgentConfig)
         assert config.agent.reviewer.model == "claude-opus-4-6"
+
+    def test_from_env_max_turns_overrides_defaults(self, _reviewer_only_env):
+        with patch.dict(
+            os.environ,
+            {
+                "AGENT_PROVIDER": "anthropic",
+                "AGENT_MAX_TURNS": "16",
+                "AGENT_EXPLORER_MAX_TURNS": "64",
+            },
+        ):
+            config = Config.from_env(require_webhook=True)
+
+        assert isinstance(config.agent, ApiAgentConfig)
+        assert config.agent.reviewer.max_turns == 16
+        assert config.agent.explorer.max_turns == 64
+
+    def test_from_env_max_turns_zero_means_unlimited(self, _reviewer_only_env):
+        with patch.dict(
+            os.environ,
+            {"AGENT_PROVIDER": "anthropic", "AGENT_MAX_TURNS": "0"},
+        ):
+            config = Config.from_env(require_webhook=True)
+
+        assert isinstance(config.agent, ApiAgentConfig)
+        assert config.agent.reviewer.max_turns == 0
+
+    def test_from_env_max_turns_empty_falls_back_to_default(self, _reviewer_only_env):
+        with patch.dict(
+            os.environ,
+            {
+                "AGENT_PROVIDER": "anthropic",
+                "AGENT_MAX_TURNS": "",
+                "AGENT_EXPLORER_MAX_TURNS": "",
+            },
+        ):
+            config = Config.from_env(require_webhook=True)
+
+        assert isinstance(config.agent, ApiAgentConfig)
+        assert config.agent.reviewer.max_turns == 8
+        assert config.agent.explorer.max_turns == 32
+
+    def test_from_env_empty_bool_var_preserves_default(self, _reviewer_only_env):
+        with patch.dict(os.environ, {"INLINE_SUGGESTIONS": ""}):
+            config = Config.from_env(require_webhook=True)
+
+        assert config.reviewer is not None
+        assert config.reviewer.suggestions_prompt != ""
+
+    def test_from_env_cli_max_turns_overrides_default(self, _reviewer_only_env):
+        with patch.dict(os.environ, {"AGENT_MAX_TURNS": "16"}):
+            config = Config.from_env(require_webhook=True)
+
+        assert isinstance(config.agent, CliAgentConfig)
+        assert config.agent.max_turns == 16
+
+    def test_from_env_cli_max_turns_zero_means_unlimited(self, _reviewer_only_env):
+        with patch.dict(os.environ, {"AGENT_MAX_TURNS": "0"}):
+            config = Config.from_env(require_webhook=True)
+
+        assert isinstance(config.agent, CliAgentConfig)
+        assert config.agent.max_turns == 0
+
+    def test_from_env_cli_max_turns_empty_defaults_to_unlimited(
+        self,
+        _reviewer_only_env,
+    ):
+        with patch.dict(os.environ, {"AGENT_MAX_TURNS": ""}):
+            config = Config.from_env(require_webhook=True)
+
+        assert isinstance(config.agent, CliAgentConfig)
+        assert config.agent.max_turns == 0
+
+    def test_from_env_cli_max_turns_unset_defaults_to_unlimited(
+        self,
+        _reviewer_only_env,
+    ):
+        config = Config.from_env(require_webhook=True)
+
+        assert isinstance(config.agent, CliAgentConfig)
+        assert config.agent.max_turns == 0
 
     def test_from_env_unknown_agent_provider_raises(self, _reviewer_only_env):
         with patch.dict(os.environ, {"AGENT_PROVIDER": "unknown"}):

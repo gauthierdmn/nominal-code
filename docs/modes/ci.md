@@ -79,7 +79,7 @@ Run automated code reviews on every pull request directly from your CI pipeline.
       with:
         anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
         github_token: ${{ secrets.GITHUB_TOKEN }}
-        coding_guidelines: ".nominal/guidelines.md"
+        coding_guidelines_file: ".nominal/guidelines.md"
     ```
 
 The action uses the all-in-one `ghcr.io/gauthierdmn/nominal-code` image, which works with any provider.
@@ -100,25 +100,70 @@ Or track the latest changes on `main` (may include breaking changes):
 
 ### Inputs
 
+All inputs except `provider`, `image`, and `github_token` default to empty, which means "no override — use the binary's default." Set them only when you need to deviate.
+
+**Authentication**
+
 | Input | Required | Default | Description |
 |---|---|---|---|
 | `anthropic_api_key` | When provider is `anthropic` | — | Anthropic API key |
 | `openai_api_key` | When provider is `openai`, `deepseek`, `groq`, `together`, or `fireworks` | — | OpenAI-compatible API key |
 | `google_api_key` | When provider is `google` | — | Google API key |
 | `github_token` | Yes | — | GitHub token for posting review comments |
-| `provider` | No | `anthropic` | LLM provider to use |
-| `model` | No | Provider default | Model to use |
-| `max_turns` | No | — | Maximum agentic turns for the reviewer (0 = unlimited) |
-| `prompt` | No | — | Custom review instructions appended to the default prompt |
-| `coding_guidelines` | No | — | Path to a coding guidelines file (relative to repo root) |
+
+**Reviewer / explorer config**
+
+| Input | Default | Description |
+|---|---|---|
+| `provider` | `anthropic` | LLM provider for the reviewer (also the default for the explorer) |
+| `image` | `ghcr.io/gauthierdmn/nominal-code:latest` | Docker image variant (all-in-one; provider-specific images available for smaller footprint) |
+| `model` | — | Reviewer model. Empty uses the provider's default |
+| `max_turns` | — | Reviewer turn budget. Empty uses the bundled default (`8`); `0` means unlimited |
+| `explorer_provider` | — | Explorer sub-agent provider. Empty inherits from `provider` |
+| `explorer_model` | — | Explorer sub-agent model. Empty inherits from `model`. Pair a strong reviewer with a cheaper explorer for cost savings |
+| `explorer_max_turns` | — | Explorer turn budget. Empty uses the bundled default (`32`); `0` means unlimited |
+
+**Prompts and guidelines**
+
+| Input | Default | Description |
+|---|---|---|
+| `prompt` | — | Custom review instructions **appended** to the default reviewer prompt |
+| `coding_guidelines` | — | Inline coding guidelines content. Appended to the reviewer prompt |
+| `coding_guidelines_file` | — | Path to a coding guidelines file (relative to repo root). Wins over `coding_guidelines` if both are set |
+| `reviewer_system_prompt` | — | Inline reviewer system prompt that fully **replaces** the bundled prompt |
+| `reviewer_system_prompt_file` | — | Path to a file whose contents fully **replace** the bundled reviewer system prompt |
+| `explorer_system_prompt` | — | Inline explorer system prompt that fully **replaces** the bundled prompt |
+| `explorer_system_prompt_file` | — | Path to a file whose contents fully **replace** the bundled explorer system prompt |
+| `language_guidelines_dir` | — | Directory of per-language guideline files (e.g. `python.md`). Overrides bundled language guidelines |
+
+For each prompt: `*_file` > inline > bundled default. If both are set, the file wins and a warning is logged.
+
+**Behavior toggles**
+
+| Input | Default | Description |
+|---|---|---|
+| `inline_suggestions` | — | When `false`, disable inline code suggestions. Empty keeps the default (on) |
+| `ignore_existing_comments` | — | When `true`, skip fetching prior PR comments so they don't bias the review (useful for re-runs) |
+| `dry_run` | — | When `true`, run the full pipeline but skip posting comments to the PR |
 
 ## GitLab CI
+
+Include the template via `include: remote:` pointed at the raw GitHub
+URL. The examples below pin to `main` to track the latest template
+alongside the `image: ghcr.io/gauthierdmn/nominal-code:latest` default.
+Pin to a release tag instead (e.g. `.../0.28.0/ci/templates/...`) for
+reproducible builds — the same tag should then pin both the template
+URL and the `image:` input.
+
+GitLab's `include: component:` is **not** supported — it only resolves
+entries published to a GitLab CI/CD Catalog project, which is hosted on
+GitLab and cannot be backed by a GitHub repository.
 
 === "Anthropic (default)"
 
     ```yaml
     include:
-      - component: ghcr.io/gauthierdmn/nominal-code/ci/templates/gitlab-ci.yml
+      - remote: "https://raw.githubusercontent.com/gauthierdmn/nominal-code/main/ci/templates/gitlab-ci.yml"
 
     nominal-code-review:
       variables:
@@ -130,7 +175,7 @@ Or track the latest changes on `main` (may include breaking changes):
 
     ```yaml
     include:
-      - component: ghcr.io/gauthierdmn/nominal-code/ci/templates/gitlab-ci.yml
+      - remote: "https://raw.githubusercontent.com/gauthierdmn/nominal-code/main/ci/templates/gitlab-ci.yml"
         inputs:
           provider: openai
 
@@ -144,7 +189,7 @@ Or track the latest changes on `main` (may include breaking changes):
 
     ```yaml
     include:
-      - component: ghcr.io/gauthierdmn/nominal-code/ci/templates/gitlab-ci.yml
+      - remote: "https://raw.githubusercontent.com/gauthierdmn/nominal-code/main/ci/templates/gitlab-ci.yml"
         inputs:
           provider: google
 
@@ -158,7 +203,7 @@ Or track the latest changes on `main` (may include breaking changes):
 
     ```yaml
     include:
-      - component: ghcr.io/gauthierdmn/nominal-code/ci/templates/gitlab-ci.yml
+      - remote: "https://raw.githubusercontent.com/gauthierdmn/nominal-code/main/ci/templates/gitlab-ci.yml"
         inputs:
           provider: deepseek
 
@@ -211,13 +256,42 @@ image: ghcr.io/gauthierdmn/nominal-code:latest
 
 ### Template Inputs
 
+All inputs except `provider`, `image`, and `stage` default to empty, which means "no override — use the binary's default." Set them only when you need to deviate.
+
+**Reviewer / explorer config**
+
 | Input | Default | Description |
 |---|---|---|
-| `provider` | `anthropic` | LLM provider to use |
+| `provider` | `anthropic` | LLM provider for the reviewer (also the default for the explorer) |
 | `image` | `ghcr.io/gauthierdmn/nominal-code:latest` | Docker image variant (all-in-one; provider-specific images available for smaller footprint) |
-| `model` | — | Model to use |
-| `prompt` | — | Custom review instructions |
-| `coding_guidelines` | — | Path to a coding guidelines file |
+| `model` | — | Reviewer model. Empty uses the provider's default |
+| `max_turns` | — | Reviewer turn budget. Empty uses the bundled default (`8`); `0` means unlimited |
+| `explorer_provider` | — | Explorer sub-agent provider. Empty inherits from `provider` |
+| `explorer_model` | — | Explorer sub-agent model. Empty inherits from `model`. Pair a strong reviewer with a cheaper explorer for cost savings |
+| `explorer_max_turns` | — | Explorer turn budget. Empty uses the bundled default (`32`); `0` means unlimited |
+
+**Prompts and guidelines**
+
+| Input | Default | Description |
+|---|---|---|
+| `prompt` | — | Custom review instructions **appended** to the default reviewer prompt |
+| `coding_guidelines` | — | Inline coding guidelines content. Appended to the reviewer prompt |
+| `coding_guidelines_file` | — | Path to a coding guidelines file (relative to repo root). Wins over `coding_guidelines` if both are set |
+| `reviewer_system_prompt` | — | Inline reviewer system prompt that fully **replaces** the bundled prompt |
+| `reviewer_system_prompt_file` | — | Path to a file whose contents fully **replace** the bundled reviewer system prompt |
+| `explorer_system_prompt` | — | Inline explorer system prompt that fully **replaces** the bundled prompt |
+| `explorer_system_prompt_file` | — | Path to a file whose contents fully **replace** the bundled explorer system prompt |
+| `language_guidelines_dir` | — | Directory of per-language guideline files (e.g. `python.md`). Overrides bundled language guidelines |
+
+For each prompt: `*_file` > inline > bundled default. If both are set, the file wins and a warning is logged.
+
+**Behavior toggles**
+
+| Input | Default | Description |
+|---|---|---|
+| `inline_suggestions` | — | When `false`, disable inline code suggestions. Empty keeps the default (on) |
+| `ignore_existing_comments` | — | When `true`, skip fetching prior MR comments so they don't bias the review (useful for re-runs) |
+| `dry_run` | — | When `true`, run the full pipeline but skip posting comments to the MR |
 | `stage` | `test` | Pipeline stage to run in |
 
 ### Required Variables
@@ -233,7 +307,7 @@ image: ghcr.io/gauthierdmn/nominal-code:latest
 
 ```yaml
 include:
-  - component: ghcr.io/gauthierdmn/nominal-code/ci/templates/gitlab-ci.yml
+  - remote: "https://raw.githubusercontent.com/gauthierdmn/nominal-code/main/ci/templates/gitlab-ci.yml"
     inputs:
       model: your-preferred-model
       prompt: "focus on error handling"

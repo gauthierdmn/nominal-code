@@ -9,6 +9,7 @@ from nominal_code.agent.cli.runner import run_cli_agent
 from nominal_code.agent.result import AgentResult
 from nominal_code.agent.sub_agent import SubAgentConfig
 from nominal_code.config import AgentConfig, ApiAgentConfig, CliAgentConfig
+from nominal_code.config.agent import UNLIMITED_TURNS
 from nominal_code.llm.messages import Message, ToolChoice
 from nominal_code.llm.registry import create_provider
 from nominal_code.platforms.base import PullRequestEvent
@@ -77,7 +78,7 @@ async def invoke_agent(
     agent_config: AgentConfig | None = None,
     conversation_id: str | None = None,
     prior_messages: list[Message] | None = None,
-    max_turns: int = 0,
+    max_turns: int = UNLIMITED_TURNS,
     tool_choice: ToolChoice | None = None,
     notes_file_path: Path | None = None,
     sub_agent_configs: dict[str, SubAgentConfig] | None = None,

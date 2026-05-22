@@ -6,6 +6,7 @@ from pathlib import Path
 from nominal_code.config.agent import (
     EXPLORER_DEFAULT_MAX_TURNS,
     REVIEWER_DEFAULT_MAX_TURNS,
+    UNLIMITED_TURNS,
     AgentConfig,
     AgentRoleConfig,
     ApiAgentConfig,
@@ -361,6 +362,8 @@ def _build_agent(
         )
 
     if provider_name is None:
+        reviewer_max_turns: int = settings.agent.reviewer.max_turns or UNLIMITED_TURNS
+
         return CliAgentConfig(
             model=effective_model,
             cli_path=settings.agent.cli_path,
@@ -369,6 +372,7 @@ def _build_agent(
                 file_path=settings.agent.reviewer.system_prompt_file,
                 default=load_prompt(REVIEWER_BUNDLED_PROMPT),
             ),
+            max_turns=reviewer_max_turns,
         )
 
     return _build_api_agent(

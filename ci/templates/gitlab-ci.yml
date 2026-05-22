@@ -18,16 +18,52 @@ spec:
         openai/deepseek/groq/together/fireworks -> ghcr.io/gauthierdmn/nominal-code-openai:latest
       default: "ghcr.io/gauthierdmn/nominal-code:latest"
     model:
-      description: "Model to use (e.g. claude-sonnet-4-20250514, gpt-4.1). Defaults to the provider's default model."
+      description: "Reviewer model (e.g. claude-sonnet-4-20250514, gpt-4.1). Empty uses the provider's default."
       default: ""
     max_turns:
-      description: "Maximum agentic turns for the reviewer (0 = unlimited)"
-      default: "0"
+      description: "Maximum agentic turns for the reviewer. Empty uses the bundled default (8), 0 means unlimited"
+      default: ""
+    explorer_provider:
+      description: "Explorer sub-agent provider. Empty inherits from `provider`."
+      default: ""
+    explorer_model:
+      description: "Explorer sub-agent model. Empty inherits from `model`. Useful for pairing a strong reviewer with a cheaper explorer."
+      default: ""
+    explorer_max_turns:
+      description: "Maximum turns for explorer sub-agents. Empty uses the bundled default (32), 0 means unlimited"
+      default: ""
     prompt:
-      description: "Custom review instructions appended to the default prompt"
+      description: "Custom review instructions appended to the default reviewer prompt"
       default: ""
     coding_guidelines:
-      description: "Path to a coding guidelines file (relative to repo root)"
+      description: "Inline coding guidelines content. Appended to the reviewer system prompt."
+      default: ""
+    coding_guidelines_file:
+      description: "Path to a coding guidelines file (relative to repo root). Appended to the reviewer system prompt. Wins over `coding_guidelines` if both are set."
+      default: ""
+    reviewer_system_prompt:
+      description: "Inline reviewer system prompt that fully REPLACES the bundled prompt"
+      default: ""
+    reviewer_system_prompt_file:
+      description: "Path to a file whose contents fully REPLACE the bundled reviewer system prompt"
+      default: ""
+    explorer_system_prompt:
+      description: "Inline explorer sub-agent system prompt that fully REPLACES the bundled prompt"
+      default: ""
+    explorer_system_prompt_file:
+      description: "Path to a file whose contents fully REPLACE the bundled explorer system prompt"
+      default: ""
+    language_guidelines_dir:
+      description: "Directory containing per-language guideline files (e.g. python.md). Overrides the bundled language guidelines."
+      default: ""
+    inline_suggestions:
+      description: "Whether to render findings as inline code suggestions. Defaults to true; set 'false' to disable."
+      default: ""
+    ignore_existing_comments:
+      description: "When 'true', skip fetching prior MR comments so they don't bias the review (useful for re-runs)"
+      default: ""
+    dry_run:
+      description: "When 'true', run the full review pipeline but skip posting comments to the MR"
       default: ""
     stage:
       description: "Pipeline stage to run in"
@@ -40,10 +76,22 @@ nominal-code-review:
   image: $[[ inputs.image ]]
   variables:
     AGENT_PROVIDER: $[[ inputs.provider ]]
-    INPUT_MODEL: $[[ inputs.model ]]
-    INPUT_MAX_TURNS: $[[ inputs.max_turns ]]
+    AGENT_MODEL: $[[ inputs.model ]]
+    AGENT_MAX_TURNS: $[[ inputs.max_turns ]]
+    AGENT_EXPLORER_PROVIDER: $[[ inputs.explorer_provider ]]
+    AGENT_EXPLORER_MODEL: $[[ inputs.explorer_model ]]
+    AGENT_EXPLORER_MAX_TURNS: $[[ inputs.explorer_max_turns ]]
     INPUT_PROMPT: $[[ inputs.prompt ]]
-    INPUT_CODING_GUIDELINES: $[[ inputs.coding_guidelines ]]
+    CODING_GUIDELINES: $[[ inputs.coding_guidelines ]]
+    CODING_GUIDELINES_FILE: $[[ inputs.coding_guidelines_file ]]
+    REVIEWER_SYSTEM_PROMPT: $[[ inputs.reviewer_system_prompt ]]
+    REVIEWER_SYSTEM_PROMPT_FILE: $[[ inputs.reviewer_system_prompt_file ]]
+    EXPLORER_SYSTEM_PROMPT: $[[ inputs.explorer_system_prompt ]]
+    EXPLORER_SYSTEM_PROMPT_FILE: $[[ inputs.explorer_system_prompt_file ]]
+    LANGUAGE_GUIDELINES_DIR: $[[ inputs.language_guidelines_dir ]]
+    INLINE_SUGGESTIONS: $[[ inputs.inline_suggestions ]]
+    IGNORE_EXISTING_COMMENTS: $[[ inputs.ignore_existing_comments ]]
+    DRY_RUN_REVIEW: $[[ inputs.dry_run ]]
   script:
     - /entrypoint.sh
   rules:

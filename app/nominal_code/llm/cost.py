@@ -125,8 +125,16 @@ def format_cost_summary(cost: CostSummary | None) -> str:
     tokens_out: int = cost.total_output_tokens
     tokens_line: str = f"  Tokens: {tokens_in:,} in / {tokens_out:,} out"
 
+    extras: list[str] = []
+
+    if cost.total_cache_creation_tokens > 0:
+        extras.append(f"cache write: {cost.total_cache_creation_tokens:,}")
+
     if cost.total_cache_read_tokens > 0:
-        tokens_line += f" (cache read: {cost.total_cache_read_tokens:,})"
+        extras.append(f"cache read: {cost.total_cache_read_tokens:,}")
+
+    if extras:
+        tokens_line += f" ({', '.join(extras)})"
 
     parts.append(tokens_line)
 
@@ -175,4 +183,57 @@ def build_cost_summary(
         provider=provider,
         model=model,
         num_api_calls=num_api_calls,
+    )
+
+
+def aggregate_cost_summary(
+    *,
+    reviewer: CostSummary | None,
+    sub_agents: tuple[CostSummary, ...],
+) -> CostSummary | None:
+    """
+    Sum a reviewer cost with sub-agent costs into one CostSummary.
+
+    ``total_cost_usd`` is preserved as ``None`` only when no input has a
+    cost; otherwise it sums the available values (missing prices are
+    treated as 0 rather than poisoning the total).
+
+    Args:
+        reviewer (CostSummary | None): Reviewer-step cost.
+        sub_agents (tuple[CostSummary, ...]): Sub-agent step costs.
+
+    Returns:
+        CostSummary | None: Aggregated cost, or ``None`` if both inputs
+            are empty.
+    """
+
+    if reviewer is None and not sub_agents:
+        return None
+
+    base: CostSummary = reviewer if reviewer is not None else sub_agents[0]
+    others: tuple[CostSummary, ...] = (
+        sub_agents if reviewer is not None else sub_agents[1:]
+    )
+
+    non_none_costs: list[float] = [
+        component.total_cost_usd
+        for component in (base, *others)
+        if component.total_cost_usd is not None
+    ]
+    total_cost_usd: float | None = sum(non_none_costs) if non_none_costs else None
+
+    return CostSummary(
+        total_input_tokens=base.total_input_tokens
+        + sum(component.total_input_tokens for component in others),
+        total_output_tokens=base.total_output_tokens
+        + sum(component.total_output_tokens for component in others),
+        total_cache_creation_tokens=base.total_cache_creation_tokens
+        + sum(component.total_cache_creation_tokens for component in others),
+        total_cache_read_tokens=base.total_cache_read_tokens
+        + sum(component.total_cache_read_tokens for component in others),
+        total_cost_usd=total_cost_usd,
+        provider=base.provider,
+        model=base.model,
+        num_api_calls=base.num_api_calls
+        + sum(component.num_api_calls for component in others),
     )

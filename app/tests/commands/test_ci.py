@@ -25,9 +25,6 @@ DUMMY_EVENT = PullRequestEvent(
 
 CI_ENV = {
     "INPUT_PROMPT": "",
-    "INPUT_MODEL": "",
-    "INPUT_MAX_TURNS": "0",
-    "INPUT_CODING_GUIDELINES": "",
 }
 
 BUILD_PLATFORM = "nominal_code.commands.ci.main.build_platform"
@@ -71,25 +68,14 @@ def _patch_ci_setup(event=None, platform=None, workspace="/workspace"):
 
 class TestBuildCiConfig:
     def test_defaults_to_anthropic(self):
-        env = {
-            "INPUT_MODEL": "",
-            "INPUT_MAX_TURNS": "0",
-            "INPUT_CODING_GUIDELINES": "",
-        }
-
-        with patch.dict(os.environ, env, clear=False):
+        with patch.dict(os.environ, {}, clear=False):
             config = _build_ci_config()
 
         assert isinstance(config.agent, ApiAgentConfig)
         assert config.agent.reviewer.name == ProviderName.ANTHROPIC
 
     def test_custom_provider(self):
-        env = {
-            "AGENT_PROVIDER": "openai",
-            "INPUT_MODEL": "",
-            "INPUT_MAX_TURNS": "0",
-            "INPUT_CODING_GUIDELINES": "",
-        }
+        env = {"AGENT_PROVIDER": "openai"}
 
         with patch.dict(os.environ, env, clear=False):
             config = _build_ci_config()
@@ -98,12 +84,7 @@ class TestBuildCiConfig:
         assert config.agent.reviewer.name == ProviderName.OPENAI
 
     def test_invalid_provider_raises(self):
-        env = {
-            "AGENT_PROVIDER": "nonexistent",
-            "INPUT_MODEL": "",
-            "INPUT_MAX_TURNS": "0",
-            "INPUT_CODING_GUIDELINES": "",
-        }
+        env = {"AGENT_PROVIDER": "nonexistent"}
 
         with patch.dict(os.environ, env, clear=False):
             with pytest.raises(ValueError, match="nonexistent"):
@@ -161,6 +142,42 @@ class TestFormatCostSummary:
         result = format_cost_summary(cost)
 
         assert "cache read" not in result
+
+    def test_includes_cache_write_tokens(self):
+        cost = CostSummary(
+            total_input_tokens=1000,
+            total_output_tokens=500,
+            total_cache_creation_tokens=300,
+        )
+
+        result = format_cost_summary(cost)
+
+        assert "cache write: 300" in result
+
+    def test_omits_cache_write_when_zero(self):
+        cost = CostSummary(
+            total_input_tokens=1000,
+            total_output_tokens=500,
+            total_cache_creation_tokens=0,
+        )
+
+        result = format_cost_summary(cost)
+
+        assert "cache write" not in result
+
+    def test_includes_both_cache_write_and_read(self):
+        cost = CostSummary(
+            total_input_tokens=1000,
+            total_output_tokens=500,
+            total_cache_creation_tokens=300,
+            total_cache_read_tokens=200,
+        )
+
+        result = format_cost_summary(cost)
+
+        assert "cache write: 300" in result
+        assert "cache read: 200" in result
+        assert "(cache write: 300, cache read: 200)" in result
 
     def test_includes_cost_usd(self):
         cost = CostSummary(
