@@ -58,9 +58,11 @@ These can also be set in the YAML config file under `reviewer` and `access`.
 |---|---|---|---|---|
 | `AGENT_PROVIDER` | `agent.reviewer.provider` | `webhook` `cli` `ci` | — | Reviewer LLM provider (`anthropic`, `openai`, `google`, `deepseek`, `groq`, `together`, `fireworks`). When set in webhook/CLI mode, uses the API runner instead of the Claude Code CLI |
 | `AGENT_MODEL` | `agent.reviewer.model` | `webhook` `cli` `ci` | SDK/provider default | Reviewer model override (e.g. `claude-sonnet-4-6`, `gpt-4.1`) |
+| `AGENT_MAX_TURNS` | `agent.reviewer.max_turns` | `webhook` `cli` `ci` | `8` (CI) / unlimited (webhook, CLI) | Reviewer turn budget. `0` means unlimited. Unset uses the per-mode default: the API runner caps at 8 turns; the Claude Code CLI runner is unlimited (interactive sessions). Set explicitly to cap CLI/webhook reviews |
 | `AGENT_CLI_PATH` | `agent.cli_path` | `webhook` `cli` | Bundled | Path to the `claude` CLI binary (ignored when `AGENT_PROVIDER` is set) |
 | `AGENT_EXPLORER_PROVIDER` | `agent.explorer.provider` | `ci` | Same as reviewer | Explorer sub-agent LLM provider override |
 | `AGENT_EXPLORER_MODEL` | `agent.explorer.model` | `ci` | Same as reviewer | Explorer model override |
+| `AGENT_EXPLORER_MAX_TURNS` | `agent.explorer.max_turns` | `ci` (and `webhook`/`cli` when `AGENT_PROVIDER` is set) | `32` | Explorer sub-agent turn budget. `0` means unlimited; unset uses the bundled default. API-only: explore sub-agents are not spawned by the Claude Code CLI runner |
 
 ## Prompts and Guidelines
 
@@ -68,13 +70,13 @@ Each prompt override has two env vars: a `<NAME>` variant for inline content and
 
 | Variable | YAML path | Modes | Default | Description |
 |---|---|---|---|---|
-| `REVIEWER_SYSTEM_PROMPT` | `agent.reviewer.system_prompt` | `webhook` `cli` | Bundled `reviewer_prompt.md` | Reviewer agent system prompt, inline content. Used verbatim. |
-| `REVIEWER_SYSTEM_PROMPT_FILE` | `agent.reviewer.system_prompt_file` | `webhook` `cli` | — | Path to a file whose contents override the reviewer system prompt. |
+| `REVIEWER_SYSTEM_PROMPT` | `agent.reviewer.system_prompt` | `webhook` `cli` `ci` | Bundled `reviewer_prompt.md` | Reviewer agent system prompt, inline content. Used verbatim. |
+| `REVIEWER_SYSTEM_PROMPT_FILE` | `agent.reviewer.system_prompt_file` | `webhook` `cli` `ci` | — | Path to a file whose contents override the reviewer system prompt. |
 | `EXPLORER_SYSTEM_PROMPT` | `agent.explorer.system_prompt` | `webhook` `cli` `ci` | Bundled `explore/explorer.md` | Explorer sub-agent system prompt, inline content. Used verbatim. |
 | `EXPLORER_SYSTEM_PROMPT_FILE` | `agent.explorer.system_prompt_file` | `webhook` `cli` `ci` | — | Path to a file whose contents override the explorer system prompt. |
 | `CODING_GUIDELINES` | `prompts.coding_guidelines` | `webhook` `cli` `ci` | — | Coding guidelines appended to the reviewer system prompt, inline content. |
 | `CODING_GUIDELINES_FILE` | `prompts.coding_guidelines_file` | `webhook` `cli` `ci` | — | Path to a file whose contents override the coding guidelines. |
-| `LANGUAGE_GUIDELINES_DIR` | `prompts.language_guidelines_dir` | `webhook` `cli` | `prompts/languages` | Directory containing language-specific guideline files (e.g. `python.md`) |
+| `LANGUAGE_GUIDELINES_DIR` | `prompts.language_guidelines_dir` | `webhook` `cli` `ci` | `prompts/languages` | Directory containing language-specific guideline files (e.g. `python.md`) |
 
 ### Resolution rules
 
@@ -98,6 +100,7 @@ See [Prompt File Configuration](configuration.md#prompt-file-configuration) for 
 | `PR_TITLE_EXCLUDE_TAGS` | `access.pr_title_exclude_tags` | `webhook` | — | Comma-separated blocklist of tags. Events whose PR title contains `[tag]` are skipped |
 | `WORKSPACE_BASE_DIR` | `workspace.base_dir` | `webhook` `cli` | System temp dir | Directory for cloning repos |
 | `IGNORE_EXISTING_COMMENTS` | `ignore_existing_comments` | `webhook` `cli` `ci` | `false` | When `true`, skip fetching existing PR/MR comments so they are not included in the reviewer prompt. Useful for re-running reviews on a PR whose prior review output would otherwise bias the run. |
+| `DRY_RUN_REVIEW` | `dry_run` | `webhook` `cli` `ci` | `false` | When `true`, run the full review pipeline but skip posting comments to the PR/MR. Useful for testing pipeline configuration without surfacing findings. |
 
 See [Repository Filtering](configuration.md#repository-filtering), [Auto-Trigger](configuration.md#auto-trigger), and [PR Title Tag Filtering](configuration.md#pr-title-tag-filtering) for rules and examples.
 
@@ -121,10 +124,7 @@ CI mode reads its configuration from action inputs (mapped to `INPUT_*` environm
 | `TOGETHER_API_KEY` | `ci` | Secret | API key for the Together provider |
 | `FIREWORKS_API_KEY` | `ci` | Secret | API key for the Fireworks provider |
 | `GOOGLE_API_KEY` | `ci` | Secret | API key for the Google provider |
-| `INPUT_MODEL` | `ci` | Action/template input | Model override |
-| `INPUT_MAX_TURNS` | `ci` | Action/template input | Maximum agentic turns |
 | `INPUT_PROMPT` | `ci` | Action/template input | Custom review instructions |
-| `INPUT_CODING_GUIDELINES` | `ci` | Action/template input | Path to coding guidelines file |
 | `GITHUB_TOKEN` | `ci` | Secret / CI | GitHub token (required for GitHub CI) |
 | `GITLAB_TOKEN` | `ci` | Secret / CI | GitLab token (required for GitLab CI) |
 | `GITHUB_EVENT_PATH` | `ci` | GitHub Actions | Path to event payload JSON |

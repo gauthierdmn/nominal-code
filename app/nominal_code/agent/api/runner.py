@@ -18,6 +18,7 @@ from nominal_code.agent.api.tools import (
 from nominal_code.agent.compaction import compact_with_notes
 from nominal_code.agent.result import AgentResult
 from nominal_code.agent.sub_agent import SubAgentConfig
+from nominal_code.config.agent import UNLIMITED_TURNS
 from nominal_code.conversation.base import truncate_messages
 from nominal_code.llm.cost import CostSummary, build_cost_summary
 from nominal_code.llm.messages import (
@@ -54,7 +55,7 @@ async def run_api_agent(
     model: str,
     provider: LLMProvider,
     provider_name: ProviderName,
-    max_turns: int = 0,
+    max_turns: int = UNLIMITED_TURNS,
     system_prompt: str = "",
     allowed_tools: list[str] | None = None,
     prior_messages: list[Message] | None = None,
@@ -144,7 +145,11 @@ async def run_api_agent(
                 tool_choice if turns == 0 else None
             )
 
-            if has_submit_review and max_turns > 0 and turns == max_turns - 1:
+            if (
+                has_submit_review
+                and max_turns != UNLIMITED_TURNS
+                and turns == max_turns - 1
+            ):
                 messages.append(
                     Message(
                         role="user",
@@ -274,7 +279,7 @@ async def run_api_agent(
                         context_window_tokens,
                     )
 
-            if max_turns > 0 and turns >= max_turns:
+            if max_turns != UNLIMITED_TURNS and turns >= max_turns:
                 logger.warning(
                     "Agent reached max turns (%d), stopping",
                     max_turns,

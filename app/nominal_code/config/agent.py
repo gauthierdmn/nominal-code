@@ -6,6 +6,7 @@ from nominal_code.models import ProviderName
 
 REVIEWER_DEFAULT_MAX_TURNS: int = 8
 EXPLORER_DEFAULT_MAX_TURNS: int = 32
+UNLIMITED_TURNS: int = 0
 
 
 class AgentRoleConfig(BaseModel):
@@ -61,6 +62,8 @@ class CliAgentConfig(BaseModel):
         cli_path (str | None): Path to the Claude Code CLI binary.
         system_prompt (str): Reviewer system prompt text. Populated by the
             config loader from ``settings.agent.reviewer.system_prompt``.
+        max_turns (int): Maximum agentic turns for the reviewer. Defaults
+            to ``0`` (unlimited).
     """
 
     model_config = ConfigDict(frozen=True)
@@ -68,6 +71,7 @@ class CliAgentConfig(BaseModel):
     model: str | None = None
     cli_path: str | None = None
     system_prompt: str = ""
+    max_turns: int = UNLIMITED_TURNS
 
 
 class ApiAgentConfig(BaseModel):

@@ -18,6 +18,8 @@ RUN uv sync --no-dev --frozen --no-install-project --extra ${EXTRAS}
 COPY app/ ./
 RUN uv sync --no-dev --frozen --no-editable --extra ${EXTRAS}
 
+ENV PATH="/app/.venv/bin:${PATH}"
+
 COPY ci/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 

@@ -33,9 +33,11 @@ ENV_MAP: list[tuple[str, list[str]]] = [
     ("INLINE_SUGGESTIONS", ["reviewer", "inline_suggestions"]),
     ("AGENT_PROVIDER", ["agent", "reviewer", "provider"]),
     ("AGENT_MODEL", ["agent", "reviewer", "model"]),
+    ("AGENT_MAX_TURNS", ["agent", "reviewer", "max_turns"]),
     ("AGENT_CLI_PATH", ["agent", "cli_path"]),
     ("AGENT_EXPLORER_PROVIDER", ["agent", "explorer", "provider"]),
     ("AGENT_EXPLORER_MODEL", ["agent", "explorer", "model"]),
+    ("AGENT_EXPLORER_MAX_TURNS", ["agent", "explorer", "max_turns"]),
     ("ALLOWED_USERS", ["access", "allowed_users"]),
     ("ALLOWED_REPOS", ["access", "allowed_repos"]),
     ("PR_TITLE_INCLUDE_TAGS", ["access", "pr_title_include_tags"]),
@@ -90,6 +92,8 @@ INT_KEYS: frozenset[str] = frozenset(
         "K8S_BACKOFF_LIMIT",
         "K8S_ACTIVE_DEADLINE_SECONDS",
         "K8S_TTL_AFTER_FINISHED",
+        "AGENT_MAX_TURNS",
+        "AGENT_EXPLORER_MAX_TURNS",
     }
 )
 
@@ -174,7 +178,7 @@ def _collect_env_overrides() -> dict[str, Any]:
     for env_name, path in ENV_MAP:
         raw: str | None = os.environ.get(env_name)
 
-        if raw is None:
+        if not raw:
             continue
 
         value: str | int | bool | list[str]

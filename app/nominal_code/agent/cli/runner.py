@@ -24,6 +24,7 @@ from claude_agent_sdk.types import (
 )
 
 from nominal_code.agent.result import AgentResult
+from nominal_code.config.agent import UNLIMITED_TURNS
 from nominal_code.llm.cost import CostSummary
 from nominal_code.models import ErrorType, InvocationError, ProviderName
 
@@ -76,7 +77,7 @@ async def run_cli_agent(
     prompt: str,
     cwd: Path,
     model: str | None = None,
-    max_turns: int = 0,
+    max_turns: int = UNLIMITED_TURNS,
     cli_path: str | None = None,
     conversation_id: str | None = None,
     system_prompt: str = "",
@@ -112,7 +113,7 @@ async def run_cli_agent(
         allowed_tools=allowed_tools or [],
         cwd=cwd,
         model=model,
-        max_turns=max_turns if max_turns > 0 else None,
+        max_turns=max_turns if max_turns != UNLIMITED_TURNS else None,
         cli_path=cli_path,
         resume=conversation_id,
         system_prompt=system_prompt or None,
@@ -156,10 +157,6 @@ async def run_cli_agent(
                     model=options.model or "",
                 )
 
-            # On error the SDK puts the failure description in
-            # ``output``; route it to ``error.message`` and leave
-            # ``output`` empty so the success-vs-failure separation is
-            # structural rather than convention.
             if message.is_error:
                 result = AgentResult(
                     output="",

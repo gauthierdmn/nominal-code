@@ -23,6 +23,7 @@ from nominal_code.agent.prompts import (
 from nominal_code.agent.sandbox import sanitize_output
 from nominal_code.agent.sub_agent import SubAgentConfig
 from nominal_code.config import ApiAgentConfig
+from nominal_code.llm.cost import aggregate_cost_summary
 from nominal_code.llm.messages import ToolChoice
 from nominal_code.llm.registry import create_provider
 from nominal_code.models import (
@@ -350,7 +351,7 @@ async def review(
             "Grep",
             "Bash(git clone*)",
         ]
-        effective_max_turns = 0
+        effective_max_turns = config.agent.max_turns
 
     conversation_id, prior_messages = prepare_conversation(
         event=event,
@@ -460,17 +461,7 @@ async def review(
             event.pr_number,
         )
 
-        # IMPORTANT: ``raw_output`` here is what gets posted to the PR
-        # via ``post_review_result`` — keep it as the generic fallback
-        # comment regardless of why the agent failed. The structured
-        # ``error`` field below carries the underlying cause (e.g.
-        # "Gemini 503") for callers to consume internally; it must
-        # never leak into the PR comment.
         fallback_comment: str = build_fallback_comment(raw_output=result.output)
-
-        # Agent-level failures (provider / runtime) flow through
-        # unchanged. If the agent succeeded, the failure is ours: parse
-        # + repair both came up empty.
         error: InvocationError = result.error or InvocationError(
             type=ErrorType.PARSE_ERROR,
             message=(
@@ -909,14 +900,14 @@ def _log_review_costs(
         reviewer_cost_usd,
     )
 
-    total_tokens_in: int = reviewer_tokens_in
-    total_tokens_out: int = reviewer_tokens_out
-    total_cost: float = reviewer_cost_usd
+    aggregated: CostSummary | None = aggregate_cost_summary(
+        reviewer=reviewer_cost,
+        sub_agents=sub_agent_costs,
+    )
 
-    for cost in sub_agent_costs:
-        total_tokens_in += cost.total_input_tokens
-        total_tokens_out += cost.total_output_tokens
-        total_cost += cost.total_cost_usd or 0.0
+    total_tokens_in: int = aggregated.total_input_tokens if aggregated else 0
+    total_tokens_out: int = aggregated.total_output_tokens if aggregated else 0
+    total_cost: float = aggregated.total_cost_usd or 0.0 if aggregated else 0.0
 
     logger.info(
         "Review complete for %s (findings=%d, turns=%d, duration=%dms, "

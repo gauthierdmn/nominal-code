@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 from environs import Env
 
 from nominal_code.config import Config, load_config
-from nominal_code.llm.cost import format_cost_summary
+from nominal_code.llm.cost import aggregate_cost_summary, format_cost_summary
 from nominal_code.models import ProviderName
 from nominal_code.platforms import build_platform
 from nominal_code.platforms.base import PlatformName, PullRequestEvent
@@ -82,7 +81,12 @@ async def run_ci_review(platform_name: str) -> int:
 
         return 1
 
-    cost_info: str = format_cost_summary(cost=result.cost)
+    cost_info: str = format_cost_summary(
+        cost=aggregate_cost_summary(
+            reviewer=result.cost,
+            sub_agents=result.sub_agent_costs,
+        ),
+    )
 
     logger.info(
         "CI review posted for %s#%d (findings=%d)%s",
@@ -141,8 +145,9 @@ def _build_ci_config() -> Config:
     """
     Build a CI Config from environment variables.
 
-    Reads ``INPUT_MODEL``, ``AGENT_PROVIDER``, and
-    ``INPUT_CODING_GUIDELINES`` from the environment.
+    Reviewer model flows in via ``AGENT_MODEL`` and coding guidelines
+    via ``CODING_GUIDELINES_FILE`` through the standard env→YAML mapping
+    (see ``config/env.py``); only the provider default is forced here.
 
     Returns:
         Config: The resolved CI configuration.
@@ -151,14 +156,4 @@ def _build_ci_config() -> Config:
         ValueError: If ``AGENT_PROVIDER`` is not a recognised provider.
     """
 
-    model_env: str = _env.str("INPUT_MODEL", "")
-    model: str | None = model_env if model_env else None
-
-    guidelines_env: str = _env.str("INPUT_CODING_GUIDELINES", "")
-    guidelines_path: Path | None = Path(guidelines_env) if guidelines_env else None
-
-    return load_config(
-        default_provider=ProviderName.ANTHROPIC,
-        model=model,
-        guidelines_path=guidelines_path,
-    )
+    return load_config(default_provider=ProviderName.ANTHROPIC)
