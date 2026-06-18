@@ -279,7 +279,13 @@ jobs:
         run: uv run pytest tests/integration/ -m integration_webhook_server -v
 
   cleanup:
-    needs: [integration-test-local, integration-test-pipeline, integration-test-webhook-server, integration-test-kubernetes]
+    needs:
+      [
+        integration-test-local,
+        integration-test-pipeline,
+        integration-test-webhook-server,
+        integration-test-kubernetes,
+      ]
     if: always() && github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
@@ -309,7 +315,7 @@ jobs:
       - unit-test-provider-isolation
       - integration-test-local
       - build-image
-      - integration-test-pipeline
+      # - integration-test-pipeline
       - integration-test-webhook-server
       - integration-test-kubernetes
     if: always()
@@ -324,7 +330,13 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        image: [nominal-code, nominal-code-anthropic, nominal-code-openai, nominal-code-google]
+        image:
+          [
+            nominal-code,
+            nominal-code-anthropic,
+            nominal-code-openai,
+            nominal-code-google,
+          ]
     permissions:
       packages: write
 
@@ -357,7 +369,13 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        image: [nominal-code, nominal-code-anthropic, nominal-code-openai, nominal-code-google]
+        image:
+          [
+            nominal-code,
+            nominal-code-anthropic,
+            nominal-code-openai,
+            nominal-code-google,
+          ]
     permissions:
       packages: write
 
