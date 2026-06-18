@@ -85,7 +85,7 @@ def load_config(
     """
 
     settings: AppSettings = load_app_settings()
-
+    logger.info(f"Loaded app settings: {settings.agent}")
     reviewer: ReviewerConfig | None = _build_reviewer(
         settings=settings,
         require_webhook=require_webhook,
@@ -100,6 +100,7 @@ def load_config(
         model=model,
         provider=provider,
     )
+    logger.info(f"Built agent config: {agent_config}")
 
     workspace_base_dir: Path = (
         Path(settings.workspace.base_dir)
@@ -338,8 +339,16 @@ def _build_agent(
         ValueError: If a provider name is not recognised.
     """
 
+    logger.info(
+        f"Building agent config with default_provider={default_provider}, "
+        f"model={model}, provider={provider}",
+    )
     effective_model: str | None = (
         model if model is not None else settings.agent.reviewer.model
+    )
+    logger.info(
+        f"Building agent config with effective model: {effective_model}, "
+        f"provider: {provider}, default_provider: {default_provider}",
     )
 
     if default_provider is not None:
