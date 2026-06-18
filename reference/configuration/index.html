@@ -1,0 +1,1971 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="AI-powered code review bot for GitHub PRs and GitLab MRs">
+      
+      
+      
+        <link rel="canonical" href="https://gauthierdmn.github.io/nominal-code/reference/configuration/">
+      
+      
+        <link rel="prev" href="../../review/">
+      
+      
+        <link rel="next" href="../env-vars/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Configuration - Nominal Code</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#configuration" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Nominal Code" class="md-header__button md-logo" aria-label="Nominal Code" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Nominal Code
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Configuration
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/gauthierdmn/nominal-code" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    gauthierdmn/nominal-code
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Nominal Code" class="md-nav__button md-logo" aria-label="Nominal Code" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Nominal Code
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/gauthierdmn/nominal-code" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    gauthierdmn/nominal-code
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Modes
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Modes
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../modes/ci/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../modes/cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../modes/webhook/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Webhook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Platforms
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Platforms
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../platforms/github/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GitHub
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../platforms/gitlab/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GitLab
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../review/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Review Process
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#yaml-config-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        YAML Config File
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="YAML Config File">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#loading" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Loading
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#full-schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Full Schema
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#minimal-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Minimal Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-configuration-is-loaded" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How Configuration Is Loaded
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mode-comparison" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Mode Comparison
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#prompt-file-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prompt File Configuration
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Prompt File Configuration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#reviewer-system-prompt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reviewer system prompt
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#explorer-system-prompt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Explorer system prompt
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#coding-guidelines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Coding guidelines
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#language-guidelines-directory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Language guidelines directory
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#per-repo-overrides" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-Repo Overrides
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Per-Repo Overrides">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#general-guidelines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        General guidelines
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#language-specific-guidelines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Language-specific guidelines
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#repository-filtering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Repository Filtering
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#auto-trigger" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Auto-Trigger
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pr-title-tag-filtering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PR Title Tag Filtering
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#private-dependencies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Private Dependencies
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#workspace-management" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workspace Management
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../env-vars/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environment Variables
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Deployment
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/standalone/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Standalone
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/kubernetes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Kubernetes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#yaml-config-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        YAML Config File
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="YAML Config File">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#loading" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Loading
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#full-schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Full Schema
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#minimal-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Minimal Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-configuration-is-loaded" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How Configuration Is Loaded
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mode-comparison" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Mode Comparison
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#prompt-file-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prompt File Configuration
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Prompt File Configuration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#reviewer-system-prompt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reviewer system prompt
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#explorer-system-prompt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Explorer system prompt
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#coding-guidelines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Coding guidelines
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#language-guidelines-directory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Language guidelines directory
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#per-repo-overrides" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-Repo Overrides
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Per-Repo Overrides">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#general-guidelines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        General guidelines
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#language-specific-guidelines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Language-specific guidelines
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#repository-filtering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Repository Filtering
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#auto-trigger" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Auto-Trigger
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pr-title-tag-filtering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PR Title Tag Filtering
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#private-dependencies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Private Dependencies
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#workspace-management" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workspace Management
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h1>
+<p>Nominal Code supports two configuration methods: a <strong>YAML config file</strong> (recommended for webhook and Kubernetes deployments) and <strong>environment variables</strong> (for secrets, CI-provided values, and simple setups). Both can be used together — environment variables always override the YAML file.</p>
+<p>For the full environment variable reference, see <a href="../env-vars/">Environment Variables</a>.</p>
+<h2 id="yaml-config-file">YAML Config File<a class="headerlink" href="#yaml-config-file" title="Permanent link">&para;</a></h2>
+<p>The YAML file is the primary way to configure the webhook server. It replaces the flat list of environment variables with a structured, reviewable file that works well with kustomize overlays and GitOps workflows.</p>
+<h3 id="loading">Loading<a class="headerlink" href="#loading" title="Permanent link">&para;</a></h3>
+<p>The app looks for a config file in this order:</p>
+<ol>
+<li>The path in the <code>CONFIG_PATH</code> environment variable (if set)</li>
+<li><code>config.yaml</code> in the current working directory (if it exists)</li>
+<li>No file — all settings come from defaults and environment variables</li>
+</ol>
+<h3 id="full-schema">Full Schema<a class="headerlink" href="#full-schema" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># config.yaml</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">webhook</span><span class="p">:</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span><span class="nt">host</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;0.0.0.0&quot;</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nt">port</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">8080</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="nt">reviewer</span><span class="p">:</span><span class="w">                     </span><span class="c1"># bot identity (user-facing, reviewer-only)</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span><span class="nt">bot_username</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;nominalbot&quot;</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">  </span><span class="nt">inline_suggestions</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">  </span><span class="nt">triggers</span><span class="p">:</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pr_opened</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="nt">agent</span><span class="p">:</span><span class="w">                        </span><span class="c1"># agent runtime, symmetric per role</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">  </span><span class="nt">cli_path</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&quot;</span>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="w">  </span><span class="nt">reviewer</span><span class="p">:</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="w">    </span><span class="nt">provider</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;google&quot;</span>
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="w">    </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&quot;</span>
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="w">    </span><span class="nt">system_prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&quot;</span><span class="w">                                     </span><span class="c1"># inline content</span>
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="w">    </span><span class="nt">system_prompt_file</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;prompts/reviewer_prompt.md&quot;</span><span class="w">      </span><span class="c1"># or a file path</span>
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="w">    </span><span class="nt">max_turns</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">8</span>
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="w">  </span><span class="nt">explorer</span><span class="p">:</span><span class="w">                   </span><span class="c1"># optional; provider/model fall back to reviewer</span>
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="w">    </span><span class="nt">provider</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&quot;</span>
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="w">    </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&quot;</span>
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a><span class="w">    </span><span class="nt">system_prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&quot;</span>
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a><span class="w">    </span><span class="nt">system_prompt_file</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;prompts/explore/explorer.md&quot;</span>
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a><span class="w">    </span><span class="nt">max_turns</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">32</span>
+<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>
+<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a><span class="nt">access</span><span class="p">:</span>
+<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a><span class="w">  </span><span class="nt">allowed_users</span><span class="p">:</span>
+<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">alice</span>
+<a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bob</span>
+<a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a><span class="w">  </span><span class="nt">allowed_repos</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span>
+<a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a><span class="w">  </span><span class="nt">pr_title_include_tags</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span>
+<a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a><span class="w">  </span><span class="nt">pr_title_exclude_tags</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span>
+<a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a>
+<a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a><span class="nt">workspace</span><span class="p">:</span>
+<a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a><span class="w">  </span><span class="nt">base_dir</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;/tmp/nominal-code&quot;</span>
+<a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a>
+<a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a><span class="nt">prompts</span><span class="p">:</span>
+<a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a><span class="w">  </span><span class="nt">coding_guidelines</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&quot;</span>
+<a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a><span class="w">  </span><span class="nt">coding_guidelines_file</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;prompts/coding_guidelines.md&quot;</span>
+<a id="__codelineno-0-41" name="__codelineno-0-41" href="#__codelineno-0-41"></a><span class="w">  </span><span class="nt">language_guidelines_dir</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;prompts/languages&quot;</span>
+<a id="__codelineno-0-42" name="__codelineno-0-42" href="#__codelineno-0-42"></a>
+<a id="__codelineno-0-43" name="__codelineno-0-43" href="#__codelineno-0-43"></a><span class="nt">redis</span><span class="p">:</span>
+<a id="__codelineno-0-44" name="__codelineno-0-44" href="#__codelineno-0-44"></a><span class="w">  </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;redis://redis:6379/0&quot;</span>
+<a id="__codelineno-0-45" name="__codelineno-0-45" href="#__codelineno-0-45"></a><span class="w">  </span><span class="nt">key_ttl_seconds</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">86400</span>
+<a id="__codelineno-0-46" name="__codelineno-0-46" href="#__codelineno-0-46"></a>
+<a id="__codelineno-0-47" name="__codelineno-0-47" href="#__codelineno-0-47"></a><span class="nt">kubernetes</span><span class="p">:</span>
+<a id="__codelineno-0-48" name="__codelineno-0-48" href="#__codelineno-0-48"></a><span class="w">  </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;your-registry.com/nominal-code:latest&quot;</span>
+<a id="__codelineno-0-49" name="__codelineno-0-49" href="#__codelineno-0-49"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;default&quot;</span>
+<a id="__codelineno-0-50" name="__codelineno-0-50" href="#__codelineno-0-50"></a><span class="w">  </span><span class="nt">service_account</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&quot;</span>
+<a id="__codelineno-0-51" name="__codelineno-0-51" href="#__codelineno-0-51"></a><span class="w">  </span><span class="nt">image_pull_policy</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&quot;</span>
+<a id="__codelineno-0-52" name="__codelineno-0-52" href="#__codelineno-0-52"></a><span class="w">  </span><span class="nt">backoff_limit</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span>
+<a id="__codelineno-0-53" name="__codelineno-0-53" href="#__codelineno-0-53"></a><span class="w">  </span><span class="nt">active_deadline_seconds</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">600</span>
+<a id="__codelineno-0-54" name="__codelineno-0-54" href="#__codelineno-0-54"></a><span class="w">  </span><span class="nt">ttl_after_finished</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3600</span>
+<a id="__codelineno-0-55" name="__codelineno-0-55" href="#__codelineno-0-55"></a><span class="w">  </span><span class="nt">env_from_secrets</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span>
+<a id="__codelineno-0-56" name="__codelineno-0-56" href="#__codelineno-0-56"></a><span class="w">  </span><span class="nt">resources</span><span class="p">:</span>
+<a id="__codelineno-0-57" name="__codelineno-0-57" href="#__codelineno-0-57"></a><span class="w">    </span><span class="nt">requests</span><span class="p">:</span>
+<a id="__codelineno-0-58" name="__codelineno-0-58" href="#__codelineno-0-58"></a><span class="w">      </span><span class="nt">cpu</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&quot;</span>
+<a id="__codelineno-0-59" name="__codelineno-0-59" href="#__codelineno-0-59"></a><span class="w">      </span><span class="nt">memory</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&quot;</span>
+<a id="__codelineno-0-60" name="__codelineno-0-60" href="#__codelineno-0-60"></a><span class="w">    </span><span class="nt">limits</span><span class="p">:</span>
+<a id="__codelineno-0-61" name="__codelineno-0-61" href="#__codelineno-0-61"></a><span class="w">      </span><span class="nt">cpu</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&quot;</span>
+<a id="__codelineno-0-62" name="__codelineno-0-62" href="#__codelineno-0-62"></a><span class="w">      </span><span class="nt">memory</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&quot;</span>
+</code></pre></div>
+<p>All sections and fields are optional — omitted fields use the defaults shown above.</p>
+<h3 id="minimal-examples">Minimal Examples<a class="headerlink" href="#minimal-examples" title="Permanent link">&para;</a></h3>
+<div class="tabbed-set tabbed-alternate" data-tabs="1:3"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><input id="__tabbed_1_3" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">Webhook (reviewer only)</label><label for="__tabbed_1_2">Webhook + Kubernetes</label><label for="__tabbed_1_3">CLI / local dev</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">reviewer</span><span class="p">:</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="nt">bot_username</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;nominalbot&quot;</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="nt">triggers</span><span class="p">:</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pr_opened</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="nt">access</span><span class="p">:</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">  </span><span class="nt">allowed_users</span><span class="p">:</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">alice</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bob</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="nt">agent</span><span class="p">:</span>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">  </span><span class="nt">reviewer</span><span class="p">:</span>
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="w">    </span><span class="nt">provider</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;google&quot;</span>
+</code></pre></div>
+</div>
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">reviewer</span><span class="p">:</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="nt">bot_username</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;nominalbot&quot;</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span><span class="nt">triggers</span><span class="p">:</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pr_opened</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="nt">agent</span><span class="p">:</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">  </span><span class="nt">reviewer</span><span class="p">:</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">    </span><span class="nt">provider</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;google&quot;</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="nt">redis</span><span class="p">:</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">  </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;redis://redis:6379/0&quot;</span>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="nt">kubernetes</span><span class="p">:</span>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">  </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;your-registry.com/nominal-code:latest&quot;</span>
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;nominal-code&quot;</span>
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="w">  </span><span class="nt">env_from_secrets</span><span class="p">:</span>
+<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;nominal-code-secrets&quot;</span>
+</code></pre></div>
+</div>
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">agent</span><span class="p">:</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nt">reviewer</span><span class="p">:</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">    </span><span class="nt">provider</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;anthropic&quot;</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">    </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;claude-sonnet-4-6&quot;</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="nt">workspace</span><span class="p">:</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">  </span><span class="nt">base_dir</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;/tmp/nominal-code&quot;</span>
+</code></pre></div>
+</div>
+</div>
+</div>
+<h2 id="how-configuration-is-loaded">How Configuration Is Loaded<a class="headerlink" href="#how-configuration-is-loaded" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Source</th>
+<th>Priority</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Model defaults</td>
+<td>Lowest</td>
+<td>Built-in defaults for every field</td>
+</tr>
+<tr>
+<td>YAML config file</td>
+<td>Medium</td>
+<td>Static config loaded from <code>CONFIG_PATH</code> or <code>config.yaml</code></td>
+</tr>
+<tr>
+<td>Environment variables</td>
+<td>Highest</td>
+<td>Always override YAML — use for secrets, CI-provided vars, and runtime tuning</td>
+</tr>
+<tr>
+<td>CLI flags (<code>--prompt</code>, <code>--model</code>, etc.)</td>
+<td>Highest</td>
+<td>CLI mode only — override everything</td>
+</tr>
+<tr>
+<td>Action/template inputs</td>
+<td>Highest</td>
+<td>CI mode only — mapped to <code>INPUT_*</code> env vars</td>
+</tr>
+<tr>
+<td>Per-repo <code>.nominal/</code> files</td>
+<td>Runtime</td>
+<td>Override global prompt/guidelines per-repository</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Env-only mode</strong> (no YAML file) works identically to the legacy behavior. All legacy flat environment variable names are still supported — see <a href="../env-vars/">Environment Variables</a>.</p>
+<h2 id="mode-comparison">Mode Comparison<a class="headerlink" href="#mode-comparison" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>CI Mode</th>
+<th>CLI Mode</th>
+<th>Webhook Mode</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Trigger</strong></td>
+<td>PR event in CI pipeline</td>
+<td>Manual command</td>
+<td>PR comment via webhook</td>
+</tr>
+<tr>
+<td><strong>Config file</strong></td>
+<td>Not used (CI inputs + env vars)</td>
+<td>Optional</td>
+<td>Recommended</td>
+</tr>
+<tr>
+<td><strong>Agent runner</strong></td>
+<td>LLM provider API (direct)</td>
+<td>Claude Code CLI</td>
+<td>Claude Code CLI</td>
+</tr>
+<tr>
+<td><strong>Requires Claude Code CLI</strong></td>
+<td>No</td>
+<td>Yes</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td><strong>Billing</strong></td>
+<td>Provider API key (per-token)</td>
+<td>Claude Code CLI login (Pro/Max or API key)</td>
+<td>Claude Code CLI login (Pro/Max or API key)</td>
+</tr>
+<tr>
+<td><strong>Server</strong></td>
+<td>Not needed</td>
+<td>Not needed</td>
+<td>aiohttp server required</td>
+</tr>
+<tr>
+<td><strong>Auth check</strong></td>
+<td>None (CI handles it)</td>
+<td>None (you are the user)</td>
+<td><code>ALLOWED_USERS</code> allowlist</td>
+</tr>
+<tr>
+<td><strong>Conversation continuity</strong></td>
+<td>No (one-shot)</td>
+<td>No (one-shot)</td>
+<td>Yes (multi-turn per PR)</td>
+</tr>
+<tr>
+<td><strong>Cost tracking</strong></td>
+<td>Yes (logged + CI output)</td>
+<td>Yes (logged)</td>
+<td>Yes (logged)</td>
+</tr>
+<tr>
+<td><strong>Workspace</strong></td>
+<td>CI runner checkout</td>
+<td>Cloned to temp dir</td>
+<td>Cloned to <code>WORKSPACE_BASE_DIR</code></td>
+</tr>
+<tr>
+<td><strong>Workspace cleanup</strong></td>
+<td>N/A (CI runner)</td>
+<td>Manual</td>
+<td>Manual (K8s uses ephemeral pods)</td>
+</tr>
+<tr>
+<td><strong>Bot username</strong></td>
+<td>Not needed</td>
+<td>Not needed</td>
+<td>Required for <code>@mention</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="prompt-file-configuration">Prompt File Configuration<a class="headerlink" href="#prompt-file-configuration" title="Permanent link">&para;</a></h2>
+<p>The bot loads system prompts and coding guidelines at startup. Each prompt has two override channels: an inline value and a file path. The source is declared by which setting you fill in — there is no filesystem probe and no ambiguity.</p>
+<p>Precedence for every prompt (highest wins):</p>
+<ol>
+<li>The <code>_file</code> setting (<code>system_prompt_file</code> / <code>coding_guidelines_file</code> or its env var). The path must point to a readable file; otherwise the loader raises <code>ValueError</code> and startup fails.</li>
+<li>The inline setting (<code>system_prompt</code> / <code>coding_guidelines</code> or its env var). Used verbatim.</li>
+<li>The bundled default (when one exists).</li>
+</ol>
+<p>If both the inline and <code>_file</code> variants are set, the <code>_file</code> variant wins and a warning is logged.</p>
+<h3 id="reviewer-system-prompt">Reviewer system prompt<a class="headerlink" href="#reviewer-system-prompt" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Inline — YAML: <code>agent.reviewer.system_prompt</code> · Env: <code>REVIEWER_SYSTEM_PROMPT</code></li>
+<li>File — YAML: <code>agent.reviewer.system_prompt_file</code> · Env: <code>REVIEWER_SYSTEM_PROMPT_FILE</code></li>
+</ul>
+<p>System prompt used when the reviewer agent runs. Defaults to the bundled <code>prompts/reviewer_prompt.md</code>.</p>
+<h3 id="explorer-system-prompt">Explorer system prompt<a class="headerlink" href="#explorer-system-prompt" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Inline — YAML: <code>agent.explorer.system_prompt</code> · Env: <code>EXPLORER_SYSTEM_PROMPT</code></li>
+<li>File — YAML: <code>agent.explorer.system_prompt_file</code> · Env: <code>EXPLORER_SYSTEM_PROMPT_FILE</code></li>
+</ul>
+<p>System prompt used by the explorer sub-agent that the reviewer can delegate codebase investigation to. Defaults to the bundled <code>prompts/explore/explorer.md</code>.</p>
+<h3 id="coding-guidelines">Coding guidelines<a class="headerlink" href="#coding-guidelines" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Inline — YAML: <code>prompts.coding_guidelines</code> · Env: <code>CODING_GUIDELINES</code></li>
+<li>File — YAML: <code>prompts.coding_guidelines_file</code> · Env: <code>CODING_GUIDELINES_FILE</code></li>
+</ul>
+<p>Coding guidelines that get appended to the reviewer system prompt. No bundled default — when neither setting is filled, no general coding guidelines are appended.</p>
+<h3 id="language-guidelines-directory">Language guidelines directory<a class="headerlink" href="#language-guidelines-directory" title="Permanent link">&para;</a></h3>
+<p>YAML: <code>prompts.language_guidelines_dir</code> / Env: <code>LANGUAGE_GUIDELINES_DIR</code></p>
+<p>Path to a directory containing language-specific guideline files. Each file should be named <code>{language}.md</code> (e.g. <code>python.md</code>). When the PR diff contains files matching a known language, the corresponding guideline file is appended to the system prompt. Defaults to <code>prompts/languages</code>.</p>
+<h2 id="per-repo-overrides">Per-Repo Overrides<a class="headerlink" href="#per-repo-overrides" title="Permanent link">&para;</a></h2>
+<p>Repositories can override the global guidelines by placing files in a <code>.nominal/</code> directory at the repository root. Per-repo overrides take priority over the built-in defaults.</p>
+<h3 id="general-guidelines">General guidelines<a class="headerlink" href="#general-guidelines" title="Permanent link">&para;</a></h3>
+<p>A <code>.nominal/guidelines.md</code> file replaces the global coding guidelines for that repository. When present, the built-in guidelines are <strong>not</strong> appended — the repo file is used exclusively.</p>
+<h3 id="language-specific-guidelines">Language-specific guidelines<a class="headerlink" href="#language-specific-guidelines" title="Permanent link">&para;</a></h3>
+<p>A <code>.nominal/languages/{language}.md</code> file (e.g. <code>.nominal/languages/python.md</code>) replaces the built-in language guideline for that language.</p>
+<h2 id="repository-filtering">Repository Filtering<a class="headerlink" href="#repository-filtering" title="Permanent link">&para;</a></h2>
+<div class="admonition tip">
+<p class="admonition-title">Policy reference</p>
+<p>The fields in <code>access</code> and <code>reviewer.triggers</code> map to two internal Pydantic models: <code>FilteringPolicy</code> and <code>RoutingPolicy</code>. For programmatic usage and multi-tenant override patterns, see <strong><a href="../policies/">Policies</a></strong>.</p>
+</div>
+<p>Restrict which repositories the bot processes using <code>access.allowed_repos</code> in YAML or <code>ALLOWED_REPOS</code> as an env var:</p>
+<div class="tabbed-set tabbed-alternate" data-tabs="2:2"><input checked="checked" id="__tabbed_2_1" name="__tabbed_2" type="radio" /><input id="__tabbed_2_2" name="__tabbed_2" type="radio" /><div class="tabbed-labels"><label for="__tabbed_2_1">YAML</label><label for="__tabbed_2_2">Env var</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">access</span><span class="p">:</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="nt">allowed_repos</span><span class="p">:</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">owner/repo-a</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">owner/repo-b</span>
+</code></pre></div>
+</div>
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nv">ALLOWED_REPOS</span><span class="o">=</span>owner/repo-a,owner/repo-b
+</code></pre></div>
+</div>
+</div>
+</div>
+<p><strong>Rules:</strong></p>
+<ul>
+<li>When set, only events from the listed repositories are processed. Events from unlisted repositories are silently filtered out.</li>
+<li>When unset or empty, all repositories are accepted (backward compatible).</li>
+<li>Repository names must match exactly (e.g. <code>owner/repo</code>), and are case-sensitive.</li>
+</ul>
+<h2 id="auto-trigger">Auto-Trigger<a class="headerlink" href="#auto-trigger" title="Permanent link">&para;</a></h2>
+<p>The reviewer bot can run automatically on PR lifecycle events without requiring an <code>@mention</code>. Set <code>reviewer.triggers</code> in YAML or <code>REVIEWER_TRIGGERS</code> as an env var:</p>
+<div class="tabbed-set tabbed-alternate" data-tabs="3:2"><input checked="checked" id="__tabbed_3_1" name="__tabbed_3" type="radio" /><input id="__tabbed_3_2" name="__tabbed_3" type="radio" /><div class="tabbed-labels"><label for="__tabbed_3_1">YAML</label><label for="__tabbed_3_2">Env var</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">reviewer</span><span class="p">:</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span><span class="nt">triggers</span><span class="p">:</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pr_opened</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pr_push</span>
+</code></pre></div>
+</div>
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nv">REVIEWER_TRIGGERS</span><span class="o">=</span>pr_opened,pr_push
+</code></pre></div>
+</div>
+</div>
+</div>
+<table>
+<thead>
+<tr>
+<th>Event Type</th>
+<th>GitHub Source</th>
+<th>GitLab Source</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>pr_opened</code></td>
+<td>PR opened</td>
+<td>MR opened</td>
+</tr>
+<tr>
+<td><code>pr_push</code></td>
+<td>New commits pushed to PR</td>
+<td>MR updated with new commits</td>
+</tr>
+<tr>
+<td><code>pr_reopened</code></td>
+<td>PR reopened</td>
+<td>MR reopened</td>
+</tr>
+<tr>
+<td><code>pr_ready_for_review</code></td>
+<td>PR marked ready (was draft)</td>
+<td><em>(not available)</em></td>
+</tr>
+</tbody>
+</table>
+<p>When unset or empty, auto-triggering is disabled and the reviewer only responds to <code>@mentions</code> (backward compatible).</p>
+<p>Auto-triggered reviews skip the <code>ALLOWED_USERS</code> check since there is no comment author. Draft PRs on GitHub and WIP merge requests on GitLab are automatically skipped.</p>
+<h2 id="pr-title-tag-filtering">PR Title Tag Filtering<a class="headerlink" href="#pr-title-tag-filtering" title="Permanent link">&para;</a></h2>
+<p>Filter events based on tags in the PR/MR title. Tags are substrings enclosed in square brackets (e.g. <code>[nominalbot]</code>).</p>
+<div class="tabbed-set tabbed-alternate" data-tabs="4:2"><input checked="checked" id="__tabbed_4_1" name="__tabbed_4" type="radio" /><input id="__tabbed_4_2" name="__tabbed_4" type="radio" /><div class="tabbed-labels"><label for="__tabbed_4_1">YAML</label><label for="__tabbed_4_2">Env var</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nt">access</span><span class="p">:</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span><span class="nt">pr_title_include_tags</span><span class="p">:</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">nominalbot</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">  </span><span class="nt">pr_title_exclude_tags</span><span class="p">:</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">skip</span>
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">wip</span>
+</code></pre></div>
+</div>
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nv">PR_TITLE_INCLUDE_TAGS</span><span class="o">=</span>nominalbot
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="nv">PR_TITLE_EXCLUDE_TAGS</span><span class="o">=</span>skip,wip
+</code></pre></div>
+</div>
+</div>
+</div>
+<p><strong>Rules:</strong></p>
+<ul>
+<li><strong>Include tags</strong> (allowlist) — when set, only events whose PR title contains at least one <code>[tag]</code> are processed.</li>
+<li><strong>Exclude tags</strong> (blocklist) — events whose PR title contains any <code>[tag]</code> from this list are skipped.</li>
+<li>Exclude takes priority over include.</li>
+<li>Both empty = no filtering (backward compatible).</li>
+<li>Matching is case-insensitive.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>PR Title</th>
+<th>Include Tags</th>
+<th>Exclude Tags</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>feat: add login [nominalbot]</code></td>
+<td><code>nominalbot</code></td>
+<td>—</td>
+<td>Processed</td>
+</tr>
+<tr>
+<td><code>feat: add login</code></td>
+<td><code>nominalbot</code></td>
+<td>—</td>
+<td>Skipped</td>
+</tr>
+<tr>
+<td><code>feat: add login [skip]</code></td>
+<td>—</td>
+<td><code>skip</code></td>
+<td>Skipped</td>
+</tr>
+<tr>
+<td><code>feat: add login [nominalbot] [skip]</code></td>
+<td><code>nominalbot</code></td>
+<td><code>skip</code></td>
+<td>Skipped (exclude wins)</td>
+</tr>
+<tr>
+<td><code>feat: add login</code></td>
+<td>—</td>
+<td><code>skip</code></td>
+<td>Processed</td>
+</tr>
+</tbody>
+</table>
+<h2 id="private-dependencies">Private Dependencies<a class="headerlink" href="#private-dependencies" title="Permanent link">&para;</a></h2>
+<p>The reviewer bot can <code>git clone</code> private repositories into a shared <code>.deps/</code> directory inside the workspace. This is useful when a PR depends on internal libraries not available on PyPI — the agent can clone them to inspect source code for context.</p>
+<ul>
+<li>Dependencies are cloned with <code>--depth=1</code> to minimize download time.</li>
+<li>The <code>.deps/</code> directory is shared across PRs for the same repository, so a dependency only needs to be cloned once.</li>
+<li>The reviewer bot is restricted to read-only tools plus <code>git clone</code> — it cannot modify files in cloned dependencies.</li>
+</ul>
+<h2 id="workspace-management">Workspace Management<a class="headerlink" href="#workspace-management" title="Permanent link">&para;</a></h2>
+<p>The bot clones repositories into the workspace base directory (YAML: <code>workspace.base_dir</code>, env: <code>WORKSPACE_BASE_DIR</code>, default: system temp dir). Each PR gets its own shallow clone.</p>
+<p>In production Kubernetes deployments, reviews run in ephemeral Job pods — no disk management is needed. For local or persistent-disk deployments, periodically remove stale <code>pr-{N}</code> directories manually.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.sections", "navigation.expand", "search.highlight", "search.suggest", "content.code.copy", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
