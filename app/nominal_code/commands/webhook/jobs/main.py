@@ -73,6 +73,8 @@ async def run_job_main(
 
         return None
 
+    logger.info(config)
+
     redis: RedisConfig = _build_redis_config()
 
     conversation_store: ConversationStore = build_conversation_store(
