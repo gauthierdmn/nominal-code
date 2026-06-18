@@ -178,7 +178,7 @@ class KubernetesRunner:
             dict[str, Any]: The complete Job resource spec.
         """
 
-        repo_slug: str = _slugify(job.event.repo_full_name)
+        repo_slug: str = _slugify(job.event.repo_full_name)[:63]
 
         labels: dict[str, str] = {
             "app.kubernetes.io/name": "nominal-code",
