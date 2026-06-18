@@ -229,6 +229,7 @@ class KubernetesRunner:
         }
 
         container["volumeMounts"] = [
+            {"name": "config", "mountPath": "/etc/nominal-code", "readOnly": True},
             {"name": "workspace", "mountPath": "/workspace"},
             {"name": "tmp", "mountPath": "/tmp"},
             {"name": "home", "mountPath": "/home/nominal"},
@@ -269,6 +270,7 @@ class KubernetesRunner:
 
         pod_spec["automountServiceAccountToken"] = False
         pod_spec["volumes"] = [
+            {"name": "config", "configMap": {"name": "nominal-code-config"}},
             {"name": "workspace", "emptyDir": {}},
             {"name": "tmp", "emptyDir": {}},
             {"name": "home", "emptyDir": {}},

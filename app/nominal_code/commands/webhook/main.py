@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING
 
 from aiohttp import web
 
+from environs import Env
+
 from nominal_code.commands.webhook.helpers import acknowledge_event, extract_mention
 from nominal_code.commands.webhook.jobs.payload import JobPayload
 from nominal_code.commands.webhook.jobs.runner import build_runner
@@ -30,6 +32,7 @@ if TYPE_CHECKING:
 
 logger: logging.Logger = logging.getLogger(__name__)
 
+_env: Env = Env()
 
 async def run_webhook_server() -> None:
     """
@@ -425,6 +428,11 @@ async def _handle_webhook(
         if filter_reason is not None:
             return web.json_response({"status": filter_reason})
 
+        extra_env: dict[str, str] = {
+            "CONFIG_PATH": _env.str("CONFIG_PATH", ""),
+            "LOG_LEVEL": _env.str("LOG_LEVEL", "INFO"),
+        }
+
         if event.event_type in routing.reviewer_triggers:
             result: DispatchResult = await dispatch_lifecycle_event(
                 event=event,
@@ -432,6 +440,7 @@ async def _handle_webhook(
                 routing=routing,
                 platform=platform,
                 runner=runner,
+                extra_env=extra_env,
             )
         else:
             result = await dispatch_comment_event(
@@ -440,6 +449,7 @@ async def _handle_webhook(
                 routing=routing,
                 platform=platform,
                 runner=runner,
+                extra_env=extra_env,
             )
 
         return web.json_response(
