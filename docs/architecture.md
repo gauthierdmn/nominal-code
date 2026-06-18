@@ -347,7 +347,7 @@ System prompt composition is handled by `agent/prompts.py`, which loads guidelin
 
 Both agent runners capture token usage and compute dollar costs per invocation:
 
-- **Pricing data** — a bundled `llm/data/pricing.json` file maps model IDs to per-token rates (input, output, cache write, cache read). Generated from the [LiteLLM community pricing database](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json) by `scripts/update_pricing.py` and auto-updated weekly via a GitHub Actions workflow.
+- **Pricing data** — a bundled `llm/data/pricing.json` file maps model IDs to per-token rates (input, output, cache write, cache read). Generated from the [LiteLLM community pricing database](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json) by running `scripts/update_pricing.py` manually.
 - **API runner** — accumulates `TokenUsage` from each provider response across the agentic loop, then calls `build_cost_summary()` to compute the total cost.
 - **CLI runner** — extracts `total_cost_usd` and token usage from the SDK's `ResultMessage`.
 - **Output** — cost is attached to `AgentResult.cost` and `ReviewResult.cost`, logged by the review handler, and formatted for CI output.
