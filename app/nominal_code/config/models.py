@@ -275,7 +275,7 @@ class AppSettings(BaseModel):
         kubernetes (KubernetesSettings): Kubernetes job runner settings.
     """
 
-    model_config = ConfigDict(extra='forbid')
+    model_config = ConfigDict(extra="forbid")
 
     github: GitHubSettings = Field(default_factory=GitHubSettings)
     gitlab: GitLabSettings = Field(default_factory=GitLabSettings)
