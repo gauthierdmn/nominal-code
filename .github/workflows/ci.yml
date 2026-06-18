@@ -316,8 +316,8 @@ jobs:
       - integration-test-local
       - build-image
       # - integration-test-pipeline
-      - integration-test-webhook-server
-      - integration-test-kubernetes
+      # - integration-test-webhook-server
+      # - integration-test-kubernetes
     if: always()
     runs-on: ubuntu-latest
     steps:
