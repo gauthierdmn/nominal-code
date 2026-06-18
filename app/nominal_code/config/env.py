@@ -125,7 +125,6 @@ def load_app_settings() -> AppSettings:
     env_overrides: dict[str, Any] = _collect_env_overrides()
     merged: dict[str, Any] = _deep_merge(yaml_data, env_overrides)
 
-    logger.info(f"Merged settings (YAML + env): {merged}")
     return AppSettings(**merged)
 
 

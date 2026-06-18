@@ -73,8 +73,6 @@ async def run_job_main(
 
         return None
 
-    logger.info(f"Using agent: {config.agent}")
-
     redis: RedisConfig = _build_redis_config()
 
     conversation_store: ConversationStore = build_conversation_store(
