@@ -33,6 +33,7 @@ logger: logging.Logger = logging.getLogger(__name__)
 
 _env: Env = Env()
 
+
 async def run_webhook_server() -> None:
     """
     Async core: load config, build platforms, create app, and start server.

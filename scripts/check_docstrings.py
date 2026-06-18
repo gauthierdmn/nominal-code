@@ -12,7 +12,9 @@ from typing import TypedDict
 # ast is imported lazily: only loaded when a file actually needs parsing.
 # This saves ~5ms on hot-path runs where every file is cached and unchanged.
 
-CACHE_FILE = Path(__file__).parent.parent / ".claude" / ".cache" / ".docstring_cache.json"
+CACHE_FILE = (
+    Path(__file__).parent.parent / ".claude" / ".cache" / ".docstring_cache.json"
+)
 
 
 class CacheEntry(TypedDict):
@@ -41,11 +43,7 @@ def source_files(cwd: str) -> list[Path]:
     if not source_dir.is_dir():
         return []
 
-    return sorted(
-        path
-        for path in source_dir.rglob("*.py")
-        if "test" not in path.parts
-    )
+    return sorted(path for path in source_dir.rglob("*.py") if "test" not in path.parts)
 
 
 def load_cache() -> dict[str, CacheEntry]:
@@ -371,8 +369,7 @@ def _run_hook() -> None:
     violation_list = "\n".join(all_violations)
     reason = (
         "Docstring violations detected in nominal_code/. "
-        "Please invoke /check-docstrings to fix the following:\n\n"
-        + violation_list
+        "Please invoke /check-docstrings to fix the following:\n\n" + violation_list
     )
 
     print(json.dumps({"decision": "block", "reason": reason}))
@@ -408,7 +405,9 @@ def main() -> None:
 
     """
 
-    parser = argparse.ArgumentParser(description="Check docstring conventions in nominal_code/.")
+    parser = argparse.ArgumentParser(
+        description="Check docstring conventions in nominal_code/."
+    )
     parser.add_argument(
         "--ci",
         action="store_true",
