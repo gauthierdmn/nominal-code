@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 from typing import Any
@@ -8,6 +9,8 @@ import yaml
 from environs import Env
 
 from nominal_code.config.models import AppSettings
+
+logger: logging.Logger = logging.getLogger(__name__)
 
 _env: Env = Env()
 
@@ -119,9 +122,11 @@ def load_app_settings() -> AppSettings:
     """
 
     yaml_data: dict[str, Any] = _yaml_settings_source()
+    logger.info(f"Loaded YAML settings: {yaml_data}")
     env_overrides: dict[str, Any] = _collect_env_overrides()
     merged: dict[str, Any] = _deep_merge(yaml_data, env_overrides)
 
+    logger.info(f"Merged settings (YAML + env): {merged}")
     return AppSettings(**merged)
 
 
