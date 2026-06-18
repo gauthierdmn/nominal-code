@@ -190,7 +190,7 @@ def _build_job_config() -> Config:
         ValueError: If ``AGENT_PROVIDER`` is not a recognised provider.
     """
 
-    return load_config(default_provider=ProviderName.GOOGLE)
+    return load_config()
 
 
 def _build_redis_config() -> RedisConfig:
