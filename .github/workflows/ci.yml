@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
     tags: ["[0-9]+.[0-9]+.[0-9]+"]
   pull_request:
     branches: [main]
@@ -320,7 +320,7 @@ jobs:
 
   promote:
     needs: [ci]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -336,10 +336,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Retag ${{ matrix.image }}:latest
+      - name: Determine target tag
+        id: tag
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "tag=latest" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=dev" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Retag ${{ matrix.image }}:${{ steps.tag.outputs.tag }}
         run: |
           docker buildx imagetools create \
-            --tag ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:latest \
+            --tag ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ steps.tag.outputs.tag }} \
             ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ github.sha }}
 
   release:
