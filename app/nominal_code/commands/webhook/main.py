@@ -8,7 +8,6 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from aiohttp import web
-
 from environs import Env
 
 from nominal_code.commands.webhook.helpers import acknowledge_event, extract_mention
