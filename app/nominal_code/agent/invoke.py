@@ -202,3 +202,9 @@ def save_conversation(
             value=list(result.messages),
             namespace=namespace,
         )
+        logger.info(
+            "Saved %d messages for %s#%d.",
+            len(result.messages),
+            event.repo_full_name,
+            event.pr_number,
+        )
