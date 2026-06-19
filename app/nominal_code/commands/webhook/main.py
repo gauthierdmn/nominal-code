@@ -304,6 +304,9 @@ async def dispatch_comment_event(
     comment_event: CommentEvent = event
 
     if not routing.reviewer_bot_username:
+        logger.warning(
+            "Reviewer bot username is not configured, ignoring comment event."
+        )
         return DispatchResult(status=DispatchStatus.NO_MENTION)
 
     reviewer_prompt: str | None = extract_mention(
@@ -312,6 +315,9 @@ async def dispatch_comment_event(
     )
 
     if reviewer_prompt is None:
+        logger.warning(
+            "Comment event does not mention reviewer bot, ignoring comment event."
+        )
         return DispatchResult(status=DispatchStatus.NO_MENTION)
 
     mention_prompt: str = reviewer_prompt
