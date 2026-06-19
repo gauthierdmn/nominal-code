@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 from typing import Any
@@ -8,6 +9,8 @@ import yaml
 from environs import Env
 
 from nominal_code.config.models import AppSettings
+
+logger: logging.Logger = logging.getLogger(__name__)
 
 _env: Env = Env()
 

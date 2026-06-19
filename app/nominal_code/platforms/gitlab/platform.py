@@ -210,6 +210,7 @@ class GitLabPlatform:
 
             return None
 
+        logger.info(f"Received GitLab webhook payload: {json.dumps(payload)}.")
         object_kind: str = payload.get("object_kind", "")
 
         if object_kind == "note":

@@ -8,6 +8,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from aiohttp import web
+from environs import Env
 
 from nominal_code.commands.webhook.helpers import acknowledge_event, extract_mention
 from nominal_code.commands.webhook.jobs.payload import JobPayload
@@ -29,6 +30,8 @@ if TYPE_CHECKING:
     from nominal_code.commands.webhook.jobs.runner.base import JobRunner
 
 logger: logging.Logger = logging.getLogger(__name__)
+
+_env: Env = Env()
 
 
 async def run_webhook_server() -> None:
@@ -85,7 +88,7 @@ async def run_webhook_server() -> None:
         webhook.filtering.allowed_users,
     )
 
-    web_runner: web.AppRunner = web.AppRunner(app)
+    web_runner: web.AppRunner = web.AppRunner(app, access_log=None)
 
     await web_runner.setup()
 
@@ -301,6 +304,9 @@ async def dispatch_comment_event(
     comment_event: CommentEvent = event
 
     if not routing.reviewer_bot_username:
+        logger.warning(
+            "Reviewer bot username is not configured, ignoring comment event."
+        )
         return DispatchResult(status=DispatchStatus.NO_MENTION)
 
     reviewer_prompt: str | None = extract_mention(
@@ -309,6 +315,9 @@ async def dispatch_comment_event(
     )
 
     if reviewer_prompt is None:
+        logger.warning(
+            "Comment event does not mention reviewer bot, ignoring comment event."
+        )
         return DispatchResult(status=DispatchStatus.NO_MENTION)
 
     mention_prompt: str = reviewer_prompt
@@ -423,7 +432,19 @@ async def _handle_webhook(
         filter_reason: str | None = filter_event(event=event, filtering=filtering)
 
         if filter_reason is not None:
+            logger.info(
+                "Event from %s filtered: %s | repo=%s | pr=%d",
+                platform_name,
+                filter_reason,
+                event.repo_full_name,
+                event.pr_number,
+            )
             return web.json_response({"status": filter_reason})
+
+        extra_env: dict[str, str] = {
+            "CONFIG_PATH": _env.str("CONFIG_PATH", ""),
+            "LOG_LEVEL": _env.str("LOG_LEVEL", "INFO"),
+        }
 
         if event.event_type in routing.reviewer_triggers:
             result: DispatchResult = await dispatch_lifecycle_event(
@@ -432,6 +453,7 @@ async def _handle_webhook(
                 routing=routing,
                 platform=platform,
                 runner=runner,
+                extra_env=extra_env,
             )
         else:
             result = await dispatch_comment_event(
@@ -440,6 +462,7 @@ async def _handle_webhook(
                 routing=routing,
                 platform=platform,
                 runner=runner,
+                extra_env=extra_env,
             )
 
         return web.json_response(

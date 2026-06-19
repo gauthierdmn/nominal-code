@@ -5,7 +5,7 @@ description = "A bot that monitors GitHub PRs and GitLab MRs for review comments
 requires-python = ">=3.13"
 dependencies = [
     "aiohttp==3.13.3",
-    "claude-agent-sdk==0.1.48",
+    "claude-agent-sdk==0.2.105",
     "httpx==0.28.1",
     "PyJWT[crypto]==2.11.0",
     "pydantic==2.12.5",
@@ -42,7 +42,7 @@ test = [
     "pytest-aiohttp==1.1.0",
 ]
 dev = [
-    {include-group = "test"},
+    { include-group = "test" },
     "nominal-code[all]",
     "mypy==1.19.1",
     "types-PyYAML==6.0.12.20250915",

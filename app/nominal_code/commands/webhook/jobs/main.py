@@ -15,7 +15,6 @@ from nominal_code.config import Config, load_config
 from nominal_code.config.settings import DEFAULT_REDIS_KEY_TTL_SECONDS, RedisConfig
 from nominal_code.conversation.base import ConversationStore, build_conversation_store
 from nominal_code.llm.cost import format_cost_summary
-from nominal_code.models import ProviderName
 from nominal_code.platforms import build_platform
 from nominal_code.platforms.base import Platform, PlatformName
 from nominal_code.review.reviewer import ReviewScope
@@ -190,7 +189,7 @@ def _build_job_config() -> Config:
         ValueError: If ``AGENT_PROVIDER`` is not a recognised provider.
     """
 
-    return load_config(default_provider=ProviderName.GOOGLE)
+    return load_config()
 
 
 def _build_redis_config() -> RedisConfig:

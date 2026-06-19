@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from nominal_code.config.settings import (
     DEFAULT_GITHUB_API_BASE,
@@ -274,6 +274,8 @@ class AppSettings(BaseModel):
         redis (RedisSettings): Redis connection settings.
         kubernetes (KubernetesSettings): Kubernetes job runner settings.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     github: GitHubSettings = Field(default_factory=GitHubSettings)
     gitlab: GitLabSettings = Field(default_factory=GitLabSettings)

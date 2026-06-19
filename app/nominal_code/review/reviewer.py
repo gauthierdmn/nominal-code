@@ -361,18 +361,16 @@ async def review(
     )
 
     logger.info(
-        "Reviewer system prompt for %s#%d (%d chars):\n%s",
+        "Reviewer system prompt for %s#%d: [%d chars].",
         event.repo_full_name,
         event.pr_number,
         len(combined_system_prompt),
-        combined_system_prompt,
     )
     logger.info(
-        "Reviewer user prompt for %s#%d (%d chars):\n%s",
+        "Reviewer user prompt for %s#%d: [%d chars].",
         event.repo_full_name,
         event.pr_number,
         len(full_prompt),
-        full_prompt,
     )
 
     try:
@@ -439,6 +437,7 @@ async def review(
             namespace=namespace,
         )
 
+    logger.info(f"Reviewer output:\n{result.output}\n")
     review_result: AgentReview | None = parse_review_output(output=result.output)
 
     if review_result is None:

@@ -85,7 +85,6 @@ def load_config(
     """
 
     settings: AppSettings = load_app_settings()
-
     reviewer: ReviewerConfig | None = _build_reviewer(
         settings=settings,
         require_webhook=require_webhook,

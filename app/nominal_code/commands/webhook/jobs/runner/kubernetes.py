@@ -178,7 +178,7 @@ class KubernetesRunner:
             dict[str, Any]: The complete Job resource spec.
         """
 
-        repo_slug: str = _slugify(job.event.repo_full_name)
+        repo_slug: str = _slugify(job.event.repo_full_name)[:63]
 
         labels: dict[str, str] = {
             "app.kubernetes.io/name": "nominal-code",
@@ -229,6 +229,7 @@ class KubernetesRunner:
         }
 
         container["volumeMounts"] = [
+            {"name": "config", "mountPath": "/etc/nominal-code", "readOnly": True},
             {"name": "workspace", "mountPath": "/workspace"},
             {"name": "tmp", "mountPath": "/tmp"},
             {"name": "home", "mountPath": "/home/nominal"},
@@ -269,6 +270,7 @@ class KubernetesRunner:
 
         pod_spec["automountServiceAccountToken"] = False
         pod_spec["volumes"] = [
+            {"name": "config", "configMap": {"name": "nominal-code-config"}},
             {"name": "workspace", "emptyDir": {}},
             {"name": "tmp", "emptyDir": {}},
             {"name": "home", "emptyDir": {}},

@@ -11,11 +11,19 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 APP_DIR = REPO_ROOT / "app"
 
 CHECKS: list[tuple[str, list[str], Path]] = [
-    ("ruff format", ["uv", "run", "ruff", "format", "--check", "nominal_code/", "tests/"], APP_DIR),
+    (
+        "ruff format",
+        ["uv", "run", "ruff", "format", "--check", "nominal_code/", "tests/"],
+        APP_DIR,
+    ),
     ("ruff check", ["uv", "run", "ruff", "check", "nominal_code/", "tests/"], APP_DIR),
     ("mypy", ["uv", "run", "mypy", "nominal_code/"], APP_DIR),
     ("pytest", ["uv", "run", "pytest", "-x", "-q"], APP_DIR),
-    ("docstrings", ["python3", str(REPO_ROOT / "scripts" / "check_docstrings.py"), "--ci"], REPO_ROOT),
+    (
+        "docstrings",
+        ["python3", str(REPO_ROOT / "scripts" / "check_docstrings.py"), "--ci"],
+        REPO_ROOT,
+    ),
 ]
 
 
@@ -61,7 +69,9 @@ def main() -> None:
         else:
             sections.append(f"## {name}\n\n{output}")
 
-    reason_parts: list[str] = ["Quality checks failed. Fix all issues below before finishing."]
+    reason_parts: list[str] = [
+        "Quality checks failed. Fix all issues below before finishing."
+    ]
 
     if sections:
         reason_parts.append("\n\n".join(sections))
