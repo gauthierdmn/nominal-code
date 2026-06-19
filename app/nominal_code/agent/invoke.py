@@ -59,6 +59,12 @@ def prepare_conversation(
                 pr_number=event.pr_number,
                 namespace=namespace,
             )
+            logger.info(
+                "Loaded conversation ID for %s#%d: %s",
+                event.repo_full_name,
+                event.pr_number,
+                conversation_id or "<none>",
+            )
     elif isinstance(agent_config, ApiAgentConfig) and conversation_store is not None:
         prior_messages = conversation_store.get_messages(
             platform=event.platform,

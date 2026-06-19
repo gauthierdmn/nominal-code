@@ -8,11 +8,11 @@ from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
     Message,
+    ProcessError,
     ResultMessage,
     SystemMessage,
     UserMessage,
     query,
-    ProcessError,
 )
 from claude_agent_sdk._errors import MessageParseError
 from claude_agent_sdk._internal import client as _sdk_client
@@ -136,7 +136,9 @@ async def run_cli_agent(
 
             if isinstance(message, ResultMessage):
                 output: str = message.result or ""
-                returned_conversation_id = message.session_id or returned_conversation_id
+                returned_conversation_id = (
+                    message.session_id or returned_conversation_id
+                )
 
                 cli_cost: CostSummary | None = None
                 usage_dict: dict[str, Any] | None = (
