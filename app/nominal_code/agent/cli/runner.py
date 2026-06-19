@@ -117,6 +117,7 @@ async def run_cli_agent(
         cli_path=cli_path,
         resume=conversation_id,
         system_prompt=system_prompt or None,
+        stderr=lambda msg: logger.info("[agent stderr] %s", msg),
     )
 
     result: AgentResult | None = None

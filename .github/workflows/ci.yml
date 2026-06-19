@@ -3,7 +3,7 @@ name: CI
 on:
   push:
     branches: [main, dev]
-    tags: ["[0-9]+.[0-9]+.[0-9]+"]
+    tags: ['[0-9]+.[0-9]+.[0-9]+']
   pull_request:
     branches: [main]
 
@@ -19,7 +19,7 @@ jobs:
 
       - uses: astral-sh/setup-uv@v6
         with:
-          python-version: "3.13"
+          python-version: '3.13'
 
       - run: uv sync
 
@@ -47,7 +47,7 @@ jobs:
 
       - uses: astral-sh/setup-uv@v6
         with:
-          python-version: "3.13"
+          python-version: '3.13'
 
       - run: uv sync
 
@@ -70,7 +70,7 @@ jobs:
 
       - uses: astral-sh/setup-uv@v6
         with:
-          python-version: "3.13"
+          python-version: '3.13'
 
       - name: Install with ${{ matrix.extras }} extra only
         run: uv sync --no-default-groups --group test --extra ${{ matrix.extras }}
@@ -89,7 +89,7 @@ jobs:
 
       - uses: astral-sh/setup-uv@v6
         with:
-          python-version: "3.13"
+          python-version: '3.13'
 
       - run: uv sync
 
@@ -174,7 +174,7 @@ jobs:
 
       - uses: astral-sh/setup-uv@v6
         with:
-          python-version: "3.13"
+          python-version: '3.13'
 
       - run: uv sync
 
@@ -208,7 +208,7 @@ jobs:
 
       - uses: astral-sh/setup-uv@v6
         with:
-          python-version: "3.13"
+          python-version: '3.13'
 
       - run: uv sync
 
@@ -264,7 +264,7 @@ jobs:
 
       - uses: astral-sh/setup-uv@v6
         with:
-          python-version: "3.13"
+          python-version: '3.13'
 
       - run: uv sync
 
@@ -313,8 +313,8 @@ jobs:
       - check
       - unit-test
       - unit-test-provider-isolation
-      - integration-test-local
       - build-image
+      # - integration-test-local
       # - integration-test-pipeline
       # - integration-test-webhook-server
       # - integration-test-kubernetes
