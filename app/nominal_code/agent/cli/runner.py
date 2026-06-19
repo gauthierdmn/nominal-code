@@ -12,6 +12,7 @@ from claude_agent_sdk import (
     SystemMessage,
     UserMessage,
     query,
+    ProcessError,
 )
 from claude_agent_sdk._errors import MessageParseError
 from claude_agent_sdk._internal import client as _sdk_client
@@ -123,61 +124,75 @@ async def run_cli_agent(
     result: AgentResult | None = None
     returned_conversation_id: str | None = None
 
-    async for message in query(prompt=prompt, options=options):
-        _log_message(message)
+    try:
+        async for message in query(prompt=prompt, options=options):
+            _log_message(message)
 
-        if (
-            isinstance(message, SystemMessage)
-            and message.subtype == CONVERSATION_ID_INIT_SUBTYPE
-        ):
-            returned_conversation_id = message.data.get("session_id", None)
+            if (
+                isinstance(message, SystemMessage)
+                and message.subtype == CONVERSATION_ID_INIT_SUBTYPE
+            ):
+                returned_conversation_id = message.data.get("session_id", None)
 
-        if isinstance(message, ResultMessage):
-            output: str = message.result or ""
-            returned_conversation_id = message.session_id or returned_conversation_id
+            if isinstance(message, ResultMessage):
+                output: str = message.result or ""
+                returned_conversation_id = message.session_id or returned_conversation_id
 
-            cli_cost: CostSummary | None = None
-            usage_dict: dict[str, Any] | None = (
-                message.usage if isinstance(message.usage, dict) else None
-            )
-
-            if message.total_cost_usd is not None or usage_dict:
-                cli_cost = CostSummary(
-                    total_input_tokens=(usage_dict or {}).get("input_tokens", 0),
-                    total_output_tokens=(usage_dict or {}).get("output_tokens", 0),
-                    total_cache_creation_tokens=(usage_dict or {}).get(
-                        "cache_creation_input_tokens",
-                        0,
-                    ),
-                    total_cache_read_tokens=(usage_dict or {}).get(
-                        "cache_read_input_tokens",
-                        0,
-                    ),
-                    total_cost_usd=message.total_cost_usd,
-                    provider=ProviderName.ANTHROPIC,
-                    model=options.model or "",
+                cli_cost: CostSummary | None = None
+                usage_dict: dict[str, Any] | None = (
+                    message.usage if isinstance(message.usage, dict) else None
                 )
 
-            if message.is_error:
-                result = AgentResult(
-                    output="",
-                    num_turns=message.num_turns,
-                    duration_ms=message.duration_ms,
-                    conversation_id=returned_conversation_id,
-                    cost=cli_cost,
-                    error=InvocationError(
-                        type=ErrorType.RUNTIME_ERROR,
-                        message=output,
-                    ),
-                )
-            else:
-                result = AgentResult(
-                    output=output,
-                    num_turns=message.num_turns,
-                    duration_ms=message.duration_ms,
-                    conversation_id=returned_conversation_id,
-                    cost=cli_cost,
-                )
+                if message.total_cost_usd is not None or usage_dict:
+                    cli_cost = CostSummary(
+                        total_input_tokens=(usage_dict or {}).get("input_tokens", 0),
+                        total_output_tokens=(usage_dict or {}).get("output_tokens", 0),
+                        total_cache_creation_tokens=(usage_dict or {}).get(
+                            "cache_creation_input_tokens",
+                            0,
+                        ),
+                        total_cache_read_tokens=(usage_dict or {}).get(
+                            "cache_read_input_tokens",
+                            0,
+                        ),
+                        total_cost_usd=message.total_cost_usd,
+                        provider=ProviderName.ANTHROPIC,
+                        model=options.model or "",
+                    )
+
+                if message.is_error:
+                    result = AgentResult(
+                        output="",
+                        num_turns=message.num_turns,
+                        duration_ms=message.duration_ms,
+                        conversation_id=returned_conversation_id,
+                        cost=cli_cost,
+                        error=InvocationError(
+                            type=ErrorType.RUNTIME_ERROR,
+                            message=output,
+                        ),
+                    )
+                else:
+                    result = AgentResult(
+                        output=output,
+                        num_turns=message.num_turns,
+                        duration_ms=message.duration_ms,
+                        conversation_id=returned_conversation_id,
+                        cost=cli_cost,
+                    )
+
+    except ProcessError as exc:
+        logger.error("Agent process error: %s", str(exc))
+        result = AgentResult(
+            output="",
+            num_turns=0,
+            duration_ms=0,
+            conversation_id=returned_conversation_id,
+            error=InvocationError(
+                type=ErrorType.RUNTIME_ERROR,
+                message=str(exc),
+            ),
+        )
 
     if result is not None:
         return result

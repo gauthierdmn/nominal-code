@@ -88,7 +88,7 @@ async def run_webhook_server() -> None:
         webhook.filtering.allowed_users,
     )
 
-    web_runner: web.AppRunner = web.AppRunner(app)
+    web_runner: web.AppRunner = web.AppRunner(app, access_log=None)
 
     await web_runner.setup()
 
