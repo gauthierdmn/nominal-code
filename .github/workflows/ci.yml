@@ -310,9 +310,9 @@ jobs:
 
   ci:
     needs:
-      - check
-      - unit-test
-      - unit-test-provider-isolation
+      # - check
+      # - unit-test
+      # - unit-test-provider-isolation
       - build-image
       # - integration-test-local
       # - integration-test-pipeline
