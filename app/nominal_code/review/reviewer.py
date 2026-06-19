@@ -437,6 +437,7 @@ async def review(
             namespace=namespace,
         )
 
+    logger.info(f"Reviewer output:\n{result.output}\n")
     review_result: AgentReview | None = parse_review_output(output=result.output)
 
     if review_result is None:
