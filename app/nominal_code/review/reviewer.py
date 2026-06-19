@@ -377,7 +377,7 @@ async def review(
         result: AgentResult = await invoke_agent(
             prompt=full_prompt,
             cwd=review_context.repo_path,
-            system_prompt="you are a code review agent.",
+            system_prompt=combined_system_prompt,
             allowed_tools=effective_allowed_tools,
             agent_config=config.agent,
             conversation_id=conversation_id,
