@@ -32,3 +32,5 @@ workspaces/
 
 # Local K8s secrets (user-specific, never commit)
 deploy/k8s/secret.yaml
+
+monitor_promote_job.py

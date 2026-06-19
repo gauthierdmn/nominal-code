@@ -426,6 +426,13 @@ async def _handle_webhook(
         filter_reason: str | None = filter_event(event=event, filtering=filtering)
 
         if filter_reason is not None:
+            logger.info(
+                "Event from %s filtered: %s | repo=%s | pr=%d",
+                platform_name,
+                filter_reason,
+                event.repo_full_name,
+                event.pr_number,
+            )
             return web.json_response({"status": filter_reason})
 
         extra_env: dict[str, str] = {
